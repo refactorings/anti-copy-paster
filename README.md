@@ -8,6 +8,7 @@ Before the end of the semester please make sure to:
 2. Update documentation in Wiki and in this readmefile.
 3. Make a video of how the plugin works.
 4. Migrate the website repository to a repository in this organization, just like the plugin.
+5. Add artifacts to the website (such as the poster).
 
 
 AntiCopyPaster is a plugin for IntelliJ IDEA that tracks the copying and pasting carried out by the developer and suggests extracting duplicates into a new method as soon as they are introduced in the code.
