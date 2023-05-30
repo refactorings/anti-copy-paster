@@ -10,7 +10,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Stores information about the plugin usage on the project level in the ./idea/anticopypaster-plugin.xml file.
  */
-@State(name = "AntiCopyPasterUsageStatistics", storages = {@Storage("anticopypaster-plugin.xml")})
+@State(name = "AntiCopyPasterUsageStatistics", storages = {@Storage("anticopypaster-plugin-usage.xml")})
 public class AntiCopyPasterUsageStatistics implements PersistentStateComponent<AntiCopyPasterUsageStatistics.PluginState> {
     private PluginState usageState = new PluginState();
 
