@@ -57,14 +57,15 @@ public class KeywordsMetrics extends Flag{
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         float fvKeywordsValue = getKeywordsMetricFromFV(featuresVector);
-        switch(sensitivity) {
-            case 0:
-                return false;
+        int quartile = (int) Math.ceil(sensitivity / 25.0);
+        switch(quartile) {
             case 1:
-                return fvKeywordsValue >= metricQ1;
+                return true;
             case 2:
-                return fvKeywordsValue >= metricQ2;
+                return fvKeywordsValue >= metricQ1;
             case 3:
+                return fvKeywordsValue >= metricQ2;
+            case 4:
                 return fvKeywordsValue >= metricQ3;
             default:
                 return false;

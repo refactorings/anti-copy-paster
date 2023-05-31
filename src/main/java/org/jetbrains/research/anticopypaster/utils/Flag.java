@@ -10,6 +10,7 @@ import java.util.List;
 public abstract class Flag{
 
     protected int sensitivity;
+    protected boolean required;
 
     protected List<FeaturesVector> featuresVectorList;
 
@@ -80,12 +81,17 @@ public abstract class Flag{
     Any sensitivities apart from 0, 1, 2, or 3 will be set to 0 (off)
      */
     public int changeSensitivity(int sensitivity){
-        if(sensitivity > 3 || sensitivity < 0){
+        if(sensitivity > 100 || sensitivity < 0){
             this.sensitivity = 0;
         } else {
             this.sensitivity = sensitivity;
         }
         return this.sensitivity;
+    }
+
+    public boolean changeRequired(boolean required) {
+        this.required = required;
+        return required;
     }
 
     /**
@@ -94,11 +100,12 @@ public abstract class Flag{
      * @param metricName name of the metric
      */
     protected void logMetric(String filepath, String metricName){
-        String threshold = switch (sensitivity) {
-            case (0) -> "Off";
-            case (1) -> Float.toString(this.metricQ1);
-            case (2) -> Float.toString(this.metricQ2);
-            case (3) -> Float.toString(this.metricQ3);
+        int quartile = (int) Math.ceil(sensitivity / 25.0);
+        String threshold = switch (quartile) {
+            case (1) -> Float.toString(0);
+            case (2) -> Float.toString(this.metricQ1);
+            case (3) -> Float.toString(this.metricQ2);
+            case (4) -> Float.toString(this.metricQ3);
             default -> "INVALID SENSITIVITY";
         };
 

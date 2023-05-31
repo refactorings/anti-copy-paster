@@ -45,14 +45,15 @@ public class SizeMetrics extends Flag{
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         float fvSizeValue = getSizeMetricFromFV(featuresVector);
-        switch(sensitivity) {
-            case 0:
-                return false;
+        int quartile = (int) Math.ceil(sensitivity / 25.0);
+        switch(quartile) {
             case 1:
-                return fvSizeValue >= metricQ1; 
+                return true;
             case 2:
-                return fvSizeValue >= metricQ2; 
+                return fvSizeValue >= metricQ1; 
             case 3:
+                return fvSizeValue >= metricQ2; 
+            case 4:
                 return fvSizeValue >= metricQ3; 
             default:
                 return false;

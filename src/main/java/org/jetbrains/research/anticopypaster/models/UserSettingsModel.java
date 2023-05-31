@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.models;
 
 import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.controller.CustomModelController;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import org.jetbrains.research.anticopypaster.utils.MetricsGatherer;
 import org.jetbrains.research.anticopypaster.utils.KeywordsMetrics;
@@ -19,7 +20,7 @@ public class UserSettingsModel extends PredictionModel{
     private static final String FILE_PATH = ProjectManager.getInstance().getOpenProjects()[0]
             .getBasePath() + "/.idea/custom_metrics.txt";
 
-    private final int DEFAULT_SENSITIVITY = 2;
+    private final int DEFAULT_SENSITIVITY = 50;
     private MetricsGatherer metricsGatherer;
 
     private CustomModelController customModelController = CustomModelController.getInstance();
@@ -29,8 +30,11 @@ public class UserSettingsModel extends PredictionModel{
     private Flag complexityMetrics;
     
     private int sizeSensitivity = 0;
+    private boolean sizeRequired = true;
     private int complexitySensitivity = 0;
+    private boolean complexityRequired = true;
     private int keywordsSensitivity = 0;
+    private boolean keywordsRequired = true;
 
     public UserSettingsModel(MetricsGatherer mg){
         //The metricsGatherer instantiation calls a function that can't be used
@@ -84,7 +88,22 @@ public class UserSettingsModel extends PredictionModel{
     public void setSizeSensitivity(int sensitivity){
         this.sizeSensitivity = sensitivity;
         this.sizeMetrics.changeSensitivity(sensitivity);
-    }    
+    }
+
+    public void setKeywordsRequired(boolean keywordsRequired) {
+        this.keywordsRequired = keywordsRequired;
+        this.keywordsMetrics.changeRequired(keywordsRequired);
+    }
+
+    public void setComplexityRequired(boolean complexityRequired) {
+        this.complexityRequired = complexityRequired;
+        this.complexityMetrics.changeRequired(complexityRequired);
+    }
+
+    public void setSizeRequired(boolean sizeRequired) {
+        this.sizeRequired = sizeRequired;
+        this.sizeMetrics.changeRequired(sizeRequired);
+    }
 
     /**
     Defaulted to medium if the user has not set up flag values,reads in
@@ -96,44 +115,15 @@ public class UserSettingsModel extends PredictionModel{
         int sizeSensFromFrontend = DEFAULT_SENSITIVITY;
         int complexitySensFromFrontend = DEFAULT_SENSITIVITY;
 
-        //Grabs the sensitivity of the flags from the file if the file exists
-        File file = new File(FILE_PATH);
-        if (file.exists()) {
-            try (Scanner scanner = new Scanner(file)) {
-                //throw away first line
-                scanner.nextLine();
-                String keywordsDropdownValue = scanner.nextLine();
-                String sizeDropdownValue = scanner.nextLine();
-                String complexityDropdownValue = scanner.nextLine();
+        ProjectSettingsState savedSettings = (new ProjectSettingsState()).getInstance(ProjectManager.getInstance().getOpenProjects()[0]);
 
-                keywordsSensFromFrontend = customModelController.parseSettingString(keywordsDropdownValue);
-                sizeSensFromFrontend = customModelController.parseSettingString(sizeDropdownValue);
-                complexitySensFromFrontend = customModelController.parseSettingString(complexityDropdownValue);
-            } catch (FileNotFoundException ex) {
-                System.out.println(ex);
-            }
-        }
+        setKeywordsSensitivity(savedSettings.keywordsSensitivity);
+        setSizeSensitivity(savedSettings.sizeSensitivity);
+        setComplexitySensitivity(savedSettings.complexitySensitivity);
 
-        setKeywordsSensitivity(keywordsSensFromFrontend);
-        setSizeSensitivity(sizeSensFromFrontend);
-        setComplexitySensitivity(complexitySensFromFrontend);
-    }
-
-    /**
-    This just gets the count of how many flags are not turned off
-     */
-    private int countOnFlags() {
-        int count = 0;
-        if (sizeSensitivity != 0) {
-            count++;
-        }
-        if (complexitySensitivity != 0) {
-            count++;
-        }
-        if (keywordsSensitivity != 0) {
-            count++;
-        }
-        return count;
+        setKeywordsRequired(savedSettings.keywordsRequired);
+        setSizeRequired(savedSettings.sizeRequired);
+        setComplexityRequired(savedSettings.complexityRequired);
     }
 
     /**
@@ -154,31 +144,15 @@ public class UserSettingsModel extends PredictionModel{
         boolean keywordsTriggered = this.keywordsMetrics.isFlagTriggered(featuresVector);
 
 
-        int count = countOnFlags();
-        boolean shouldNotify;
+        boolean shouldNotify = true;
 
-        switch (count) {
-            case 0:
-                shouldNotify = false;
-                break;
-            case 1:
-                // if ANY flags are flipped, this is true
-                // 1 category being set to on would be: false || false || {category}
-                shouldNotify = sizeTriggered || complexityTriggered || keywordsTriggered;
-                break;
-            case 2:
-                // if 2 flags are flipped, this is true
-                // 2 categories being set to on would be: false || ({category1} && {category2})
-                shouldNotify = (sizeTriggered && complexityTriggered) || (sizeTriggered && keywordsTriggered) || (complexityTriggered && keywordsTriggered);
-                break;
-            case 3:
-                // if all 3 flags are flipped, this is true
-                shouldNotify = sizeTriggered && complexityTriggered && keywordsTriggered;
-                break;
-            default:
-                shouldNotify = false;
-                break;
-        }
+        if (!sizeTriggered && sizeRequired)
+            shouldNotify = false;
+        else if (!complexityTriggered && complexityRequired)
+            shouldNotify = false;
+        else if (!keywordsTriggered && keywordsRequired)
+            shouldNotify = false;
+
 
         return shouldNotify ? 1 : 0;
     }

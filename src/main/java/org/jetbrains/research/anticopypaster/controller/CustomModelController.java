@@ -1,6 +1,8 @@
 package org.jetbrains.research.anticopypaster.controller;
 
+import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.ide.ui.CustomMetricsModel;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.models.UserSettingsModel;
 
 /**
@@ -26,16 +28,16 @@ public final class CustomModelController {
     }
 
     public void changeSettings(CustomMetricsModel customMetricsModel){
+        ProjectSettingsState savedSettings = (new ProjectSettingsState()).getInstance(ProjectManager.getInstance().getOpenProjects()[0]);
         if(userSettingsModel != null) {
-            userSettingsModel.setComplexitySensitivity(parseSettingString(
-                    customMetricsModel.getComplexityDropdownValue())
-            );
-            userSettingsModel.setKeywordsSensitivity(parseSettingString(
-                    customMetricsModel.getKeywordsDropdownValue())
-            );
-            userSettingsModel.setSizeSensitivity(parseSettingString(
-                    customMetricsModel.getSizeDropdownValue())
-            );
+            userSettingsModel.setComplexitySensitivity(savedSettings.complexitySensitivity);
+            userSettingsModel.setComplexityRequired(savedSettings.complexityRequired);
+
+            userSettingsModel.setKeywordsSensitivity(savedSettings.keywordsSensitivity);
+            userSettingsModel.setKeywordsRequired(savedSettings.keywordsRequired);
+
+            userSettingsModel.setSizeSensitivity(savedSettings.sizeSensitivity);
+            userSettingsModel.setSizeRequired(savedSettings.sizeRequired);
         }
     }
 

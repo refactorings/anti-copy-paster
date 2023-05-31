@@ -52,14 +52,16 @@ public class ComplexityMetrics extends Flag{
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         float fvComplexityValue = getComplexityMetricFromFV(featuresVector);
-        switch(sensitivity) {
-            case 0:
-                return false;
+
+        int quartile = (int) Math.ceil(sensitivity / 25.0);
+        switch(quartile) {
             case 1:
-                return fvComplexityValue >= metricQ1;
+                return true;
             case 2:
-                return fvComplexityValue >= metricQ2;
+                return fvComplexityValue >= metricQ1;
             case 3:
+                return fvComplexityValue >= metricQ2;
+            case 4:
                 return fvComplexityValue >= metricQ3;
             default:
                 return false;
