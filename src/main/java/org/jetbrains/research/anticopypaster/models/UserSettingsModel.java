@@ -4,11 +4,7 @@ import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.controller.CustomModelController;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
-import org.jetbrains.research.anticopypaster.utils.MetricsGatherer;
-import org.jetbrains.research.anticopypaster.utils.KeywordsMetrics;
-import org.jetbrains.research.anticopypaster.utils.SizeMetrics;
-import org.jetbrains.research.anticopypaster.utils.ComplexityMetrics;
-import org.jetbrains.research.anticopypaster.utils.Flag;
+import org.jetbrains.research.anticopypaster.utils.*;
 
 import java.io.*;
 import java.util.List;
@@ -28,6 +24,7 @@ public class UserSettingsModel extends PredictionModel{
     private Flag keywordsMetrics;
     private Flag sizeMetrics;
     private Flag complexityMetrics;
+    private Flag couplingMetrics;
     
     private int sizeSensitivity = 0;
     private boolean sizeRequired = true;
@@ -35,6 +32,8 @@ public class UserSettingsModel extends PredictionModel{
     private boolean complexityRequired = true;
     private int keywordsSensitivity = 0;
     private boolean keywordsRequired = true;
+    private int couplingSensitivity = 0;
+    private boolean couplingRequired = true;
 
     public UserSettingsModel(MetricsGatherer mg){
         //The metricsGatherer instantiation calls a function that can't be used
@@ -58,6 +57,10 @@ public class UserSettingsModel extends PredictionModel{
         return this.keywordsSensitivity;
     }
 
+    public int getCouplingSensitivity(){
+        return this.couplingSensitivity;
+    }
+
     /**
     Helper initializaton method for the metrics gatherer.
     This is a separate method so that if we ever wanted to have the metrics 
@@ -71,6 +74,7 @@ public class UserSettingsModel extends PredictionModel{
         this.keywordsMetrics = new KeywordsMetrics(methodMetrics);
         this.complexityMetrics = new ComplexityMetrics(methodMetrics);
         this.sizeMetrics = new SizeMetrics(methodMetrics);
+        this.couplingMetrics = new CouplingMetrics(methodMetrics);
 
         readSensitivitiesFromFrontend();
     }
@@ -90,6 +94,11 @@ public class UserSettingsModel extends PredictionModel{
         this.sizeMetrics.changeSensitivity(sensitivity);
     }
 
+    public void setCouplingSensitivity(int sensitivity){
+        this.couplingSensitivity = sensitivity;
+        this.couplingMetrics.changeSensitivity(sensitivity);
+    }
+
     public void setKeywordsRequired(boolean keywordsRequired) {
         this.keywordsRequired = keywordsRequired;
         this.keywordsMetrics.changeRequired(keywordsRequired);
@@ -105,6 +114,11 @@ public class UserSettingsModel extends PredictionModel{
         this.sizeMetrics.changeRequired(sizeRequired);
     }
 
+    public void setCouplingRequired(boolean couplingRequired) {
+        this.couplingRequired = couplingRequired;
+        this.couplingMetrics.changeRequired(couplingRequired);
+    }
+
     /**
     Defaulted to medium if the user has not set up flag values,reads in
      the sensitivities from the frontend file if the user has set values
@@ -114,16 +128,19 @@ public class UserSettingsModel extends PredictionModel{
         int keywordsSensFromFrontend = DEFAULT_SENSITIVITY;
         int sizeSensFromFrontend = DEFAULT_SENSITIVITY;
         int complexitySensFromFrontend = DEFAULT_SENSITIVITY;
+        int couplingSensFromFrontend = DEFAULT_SENSITIVITY;
 
         ProjectSettingsState savedSettings = (new ProjectSettingsState()).getInstance(ProjectManager.getInstance().getOpenProjects()[0]);
 
         setKeywordsSensitivity(savedSettings.keywordsSensitivity);
         setSizeSensitivity(savedSettings.sizeSensitivity);
         setComplexitySensitivity(savedSettings.complexitySensitivity);
+        setCouplingSensitivity(savedSettings.couplingSensitivity);
 
         setKeywordsRequired(savedSettings.keywordsRequired);
         setSizeRequired(savedSettings.sizeRequired);
         setComplexityRequired(savedSettings.complexityRequired);
+        setCouplingRequired(savedSettings.couplingRequired);
     }
 
     /**
@@ -135,14 +152,14 @@ public class UserSettingsModel extends PredictionModel{
     @Override
     public float predict(FeaturesVector featuresVector){
 
-        if(sizeMetrics == null || complexityMetrics == null || keywordsMetrics == null){
+        if(sizeMetrics == null || complexityMetrics == null || keywordsMetrics == null || couplingMetrics == null){
             return 0;
         }
 
         boolean sizeTriggered = this.sizeMetrics.isFlagTriggered(featuresVector);
         boolean complexityTriggered = this.complexityMetrics.isFlagTriggered(featuresVector);
         boolean keywordsTriggered = this.keywordsMetrics.isFlagTriggered(featuresVector);
-
+        boolean couplingTriggered = this.couplingMetrics.isFlagTriggered(featuresVector);
 
         boolean shouldNotify = true;
 
@@ -151,6 +168,8 @@ public class UserSettingsModel extends PredictionModel{
         else if (!complexityTriggered && complexityRequired)
             shouldNotify = false;
         else if (!keywordsTriggered && keywordsRequired)
+            shouldNotify = false;
+        else if (!couplingTriggered && couplingRequired)
             shouldNotify = false;
 
 
@@ -166,6 +185,7 @@ public class UserSettingsModel extends PredictionModel{
         this.complexityMetrics.logMetric(filepath);
         this.keywordsMetrics.logMetric(filepath);
         this.sizeMetrics.logMetric(filepath);
+        this.couplingMetrics.logMetric(filepath);
     }
 
     /**
@@ -176,5 +196,6 @@ public class UserSettingsModel extends PredictionModel{
         this.complexityMetrics.logThresholds(filepath);
         this.keywordsMetrics.logThresholds(filepath);
         this.sizeMetrics.logThresholds(filepath);
+        this.couplingMetrics.logMetric(filepath);
     }
 }
