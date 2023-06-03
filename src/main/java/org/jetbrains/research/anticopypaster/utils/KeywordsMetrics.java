@@ -1,5 +1,8 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -48,6 +51,16 @@ public class KeywordsMetrics extends Flag{
         boxPlotCalculations(keywordsMetricsValues);
     }
 
+    /**
+     * Required override function from Flag. Gets the sensitivity for this metric
+     * by grabbing its appropriate settings from this project's ProjectSettingsState.
+     */
+    @Override
+    protected int getSensitivity() {
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+        return settings.keywordsSensitivity;
+    }
 
     /**
     Required override function from Flag. This just compares the keywords
@@ -57,7 +70,8 @@ public class KeywordsMetrics extends Flag{
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         float fvKeywordsValue = getKeywordsMetricFromFV(featuresVector);
-        int quartile = (int) Math.ceil(sensitivity / 25.0);
+
+        int quartile = (int) Math.ceil(getSensitivity() / 25.0);
         switch(quartile) {
             case 1:
                 return true;

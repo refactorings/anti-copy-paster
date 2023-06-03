@@ -9,9 +9,6 @@ import java.util.List;
 
 public abstract class Flag{
 
-    protected int sensitivity;
-    protected boolean required;
-
     protected List<FeaturesVector> featuresVectorList;
 
     protected float metricQ1;
@@ -19,6 +16,8 @@ public abstract class Flag{
     protected float metricQ3;
 
     protected float lastCalculatedMetric;
+
+    protected abstract int getSensitivity();
 
     public abstract boolean isFlagTriggered(FeaturesVector featuresVector);
 
@@ -77,30 +76,12 @@ public abstract class Flag{
     }
 
     /**
-    Change the sensitivity of the flag. 
-    Any sensitivities apart from 0, 1, 2, or 3 will be set to 0 (off)
-     */
-    public int changeSensitivity(int sensitivity){
-        if(sensitivity > 100 || sensitivity < 0){
-            this.sensitivity = 0;
-        } else {
-            this.sensitivity = sensitivity;
-        }
-        return this.sensitivity;
-    }
-
-    public boolean changeRequired(boolean required) {
-        this.required = required;
-        return required;
-    }
-
-    /**
      * This function logs the last known metric and the current threshold
      * @param filepath path to the log file
      * @param metricName name of the metric
      */
     protected void logMetric(String filepath, String metricName){
-        int quartile = (int) Math.ceil(sensitivity / 25.0);
+        int quartile = (int) Math.ceil(getSensitivity() / 25.0);
         String threshold = switch (quartile) {
             case (1) -> Float.toString(0);
             case (2) -> Float.toString(this.metricQ1);

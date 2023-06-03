@@ -1,7 +1,7 @@
 package org.jetbrains.research.anticopypaster.models;
 
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-import org.jetbrains.research.anticopypaster.controller.CustomModelController;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import org.jetbrains.research.anticopypaster.utils.*;
@@ -19,21 +19,10 @@ public class UserSettingsModel extends PredictionModel{
     private final int DEFAULT_SENSITIVITY = 50;
     private MetricsGatherer metricsGatherer;
 
-    private CustomModelController customModelController = CustomModelController.getInstance();
-
     private Flag keywordsMetrics;
     private Flag sizeMetrics;
     private Flag complexityMetrics;
     private Flag couplingMetrics;
-    
-    private int sizeSensitivity = 0;
-    private boolean sizeRequired = true;
-    private int complexitySensitivity = 0;
-    private boolean complexityRequired = true;
-    private int keywordsSensitivity = 0;
-    private boolean keywordsRequired = true;
-    private int couplingSensitivity = 0;
-    private boolean couplingRequired = true;
 
     public UserSettingsModel(MetricsGatherer mg){
         //The metricsGatherer instantiation calls a function that can't be used
@@ -42,23 +31,6 @@ public class UserSettingsModel extends PredictionModel{
         if(mg != null){
             initMetricsGathererAndMetricsFlags(mg);
         }
-        customModelController.setUserSettingsModel(this);
-    }
-
-    public int getSizeSensitivity(){
-        return this.sizeSensitivity;
-    }
-
-    public int getComplexitySensitivity(){
-        return this.complexitySensitivity;
-    }
-
-    public int getKeywordsSensitivity(){
-        return this.keywordsSensitivity;
-    }
-
-    public int getCouplingSensitivity(){
-        return this.couplingSensitivity;
     }
 
     /**
@@ -75,72 +47,6 @@ public class UserSettingsModel extends PredictionModel{
         this.complexityMetrics = new ComplexityMetrics(methodMetrics);
         this.sizeMetrics = new SizeMetrics(methodMetrics);
         this.couplingMetrics = new CouplingMetrics(methodMetrics);
-
-        readSensitivitiesFromFrontend();
-    }
-
-    public void setKeywordsSensitivity(int sensitivity){
-        this.keywordsSensitivity = sensitivity;
-        this.keywordsMetrics.changeSensitivity(sensitivity);
-    }
-
-    public void setComplexitySensitivity(int sensitivity){
-        this.complexitySensitivity = sensitivity;
-        this.complexityMetrics.changeSensitivity(sensitivity);
-    }
-
-    public void setSizeSensitivity(int sensitivity){
-        this.sizeSensitivity = sensitivity;
-        this.sizeMetrics.changeSensitivity(sensitivity);
-    }
-
-    public void setCouplingSensitivity(int sensitivity){
-        this.couplingSensitivity = sensitivity;
-        this.couplingMetrics.changeSensitivity(sensitivity);
-    }
-
-    public void setKeywordsRequired(boolean keywordsRequired) {
-        this.keywordsRequired = keywordsRequired;
-        this.keywordsMetrics.changeRequired(keywordsRequired);
-    }
-
-    public void setComplexityRequired(boolean complexityRequired) {
-        this.complexityRequired = complexityRequired;
-        this.complexityMetrics.changeRequired(complexityRequired);
-    }
-
-    public void setSizeRequired(boolean sizeRequired) {
-        this.sizeRequired = sizeRequired;
-        this.sizeMetrics.changeRequired(sizeRequired);
-    }
-
-    public void setCouplingRequired(boolean couplingRequired) {
-        this.couplingRequired = couplingRequired;
-        this.couplingMetrics.changeRequired(couplingRequired);
-    }
-
-    /**
-    Defaulted to medium if the user has not set up flag values,reads in
-     the sensitivities from the frontend file if the user has set values
-    */
-    private void readSensitivitiesFromFrontend(){
-        //Default values if the user has not yet specified flag values
-        int keywordsSensFromFrontend = DEFAULT_SENSITIVITY;
-        int sizeSensFromFrontend = DEFAULT_SENSITIVITY;
-        int complexitySensFromFrontend = DEFAULT_SENSITIVITY;
-        int couplingSensFromFrontend = DEFAULT_SENSITIVITY;
-
-        ProjectSettingsState savedSettings = (new ProjectSettingsState()).getInstance(ProjectManager.getInstance().getOpenProjects()[0]);
-
-        setKeywordsSensitivity(savedSettings.keywordsSensitivity);
-        setSizeSensitivity(savedSettings.sizeSensitivity);
-        setComplexitySensitivity(savedSettings.complexitySensitivity);
-        setCouplingSensitivity(savedSettings.couplingSensitivity);
-
-        setKeywordsRequired(savedSettings.keywordsRequired);
-        setSizeRequired(savedSettings.sizeRequired);
-        setComplexityRequired(savedSettings.complexityRequired);
-        setCouplingRequired(savedSettings.couplingRequired);
     }
 
     /**
@@ -150,9 +56,9 @@ public class UserSettingsModel extends PredictionModel{
     has been implemented.
      */
     @Override
-    public float predict(FeaturesVector featuresVector){
+    public float predict(FeaturesVector featuresVector) {
 
-        if(sizeMetrics == null || complexityMetrics == null || keywordsMetrics == null || couplingMetrics == null){
+        if (sizeMetrics == null || complexityMetrics == null || keywordsMetrics == null || couplingMetrics == null){
             return 0;
         }
 
@@ -161,17 +67,18 @@ public class UserSettingsModel extends PredictionModel{
         boolean keywordsTriggered = this.keywordsMetrics.isFlagTriggered(featuresVector);
         boolean couplingTriggered = this.couplingMetrics.isFlagTriggered(featuresVector);
 
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+
         boolean shouldNotify = true;
-
-        if (!sizeTriggered && sizeRequired)
+        if (!sizeTriggered && settings.sizeRequired)
             shouldNotify = false;
-        else if (!complexityTriggered && complexityRequired)
+        else if (!complexityTriggered && settings.complexityRequired)
             shouldNotify = false;
-        else if (!keywordsTriggered && keywordsRequired)
+        else if (!keywordsTriggered && settings.keywordsRequired)
             shouldNotify = false;
-        else if (!couplingTriggered && couplingRequired)
+        else if (!couplingTriggered && settings.couplingRequired)
             shouldNotify = false;
-
 
         return shouldNotify ? 1 : 0;
     }

@@ -1,5 +1,8 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.util.ArrayList;
@@ -44,6 +47,18 @@ public class CouplingMetrics extends Flag{
         Collections.sort(couplingMetricsValues);
         boxPlotCalculations(couplingMetricsValues);
     }
+
+    /**
+     * Required override function from Flag. Gets the sensitivity for this metric
+     * by grabbing its appropriate settings from this project's ProjectSettingsState.
+     */
+    @Override
+    protected int getSensitivity() {
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+        return settings.couplingSensitivity;
+    }
+
     /**
     Required override function from Flag. This just compares the coupling
     of the passed in FeaturesVector against the correct quartile value 
@@ -53,7 +68,7 @@ public class CouplingMetrics extends Flag{
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         float fvCouplingValue = getCouplingMetricFromFV(featuresVector);
 
-        int quartile = (int) Math.ceil(sensitivity / 25.0);
+        int quartile = (int) Math.ceil(getSensitivity() / 25.0);
         switch(quartile) {
             case 1:
                 return true;
