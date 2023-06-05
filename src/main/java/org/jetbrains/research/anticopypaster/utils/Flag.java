@@ -6,39 +6,39 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-
 public abstract class Flag{
+
+    protected int sensitivity;
+    protected boolean required;
 
     protected List<FeaturesVector> featuresVectorList;
 
-    protected float metricQ1;
-    protected float metricQ2;
-    protected float metricQ3;
-
+    protected ArrayList<Float> metricQ1;
+    protected ArrayList<Float> metricQ2;
+    protected ArrayList<Float> metricQ3;
     protected float lastCalculatedMetric;
 
-    protected abstract int getSensitivity();
 
     public abstract boolean isFlagTriggered(FeaturesVector featuresVector);
 
     public Flag(List<FeaturesVector> featuresVectorList){
         this.featuresVectorList = featuresVectorList;
-        this.metricQ1=0;
-        this.metricQ2=0;
-        this.metricQ3=0;
+        metricQ1 = new ArrayList<>();
+        metricQ2 = new ArrayList<>();
+        metricQ3 = new ArrayList<>();
         this.lastCalculatedMetric = -1;
     }
 
     /**
-    Takes a SORTED list and generates/sets the Q1-3 values based on a box plot
-    of those metric values
+     Takes a SORTED list and generates/sets the Q1-3 values based on a box plot
+     of those metric values
      */
     protected void boxPlotCalculations(ArrayList<Float> data){
 
         if(data == null || data.size() == 0){
-            metricQ1=0;
-            metricQ2=0;
-            metricQ3=0;
+            metricQ1.add(0f);
+            metricQ2.add(0f);
+            metricQ3.add(0f);
             return;
         }
 
@@ -57,23 +57,25 @@ public abstract class Flag{
             q2 = data.get(data.size()/2);
             q3 = data.get(data.size()*3/4);
         }
-        
-        metricQ1 = q1;
-        metricQ2 = q2;
-        metricQ3 = q3;
+
+        metricQ1.add(q1);
+        metricQ2.add(q2);
+        metricQ3.add(q3);
     }
 
-    public float getMetricQ1(){
+    public ArrayList<Float> getMetricQ1(){
         return this.metricQ1;
     }
 
-    public float getMetricQ2(){
+    public ArrayList<Float> getMetricQ2(){
         return this.metricQ2;
     }
 
-    public float getMetricQ3(){
+    public ArrayList<Float> getMetricQ3(){
         return this.metricQ3;
     }
+
+    public int getSensitivity(){ return this.sensitivity;}
 
     /**
      * This function logs the last known metric and the current threshold
@@ -84,9 +86,9 @@ public abstract class Flag{
         int quartile = (int) Math.ceil(getSensitivity() / 25.0);
         String threshold = switch (quartile) {
             case (1) -> Float.toString(0);
-            case (2) -> Float.toString(this.metricQ1);
-            case (3) -> Float.toString(this.metricQ2);
-            case (4) -> Float.toString(this.metricQ3);
+            case (2) -> metricQ1.toString();
+            case (3) -> metricQ2.toString();
+            case (4) -> metricQ3.toString();
             default -> "INVALID SENSITIVITY";
         };
 

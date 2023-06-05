@@ -9,6 +9,8 @@ import java.util.Collections;
 import java.util.List;
 
 public class SizeMetrics extends Flag{
+    private int[] selectedMetrics = {0, 1, 2, 3, 4};
+    //TODO: replace with actual function to retrive these numbers once advanced settings are made/integrated
 
     public SizeMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList);
@@ -16,6 +18,7 @@ public class SizeMetrics extends Flag{
     }
 
     private void calculateAverageSizeMetrics(){
+        /*
         ArrayList<Float> sizeMetricsValues = new ArrayList<Float>();
 
         for(FeaturesVector f : featuresVectorList){
@@ -24,16 +27,29 @@ public class SizeMetrics extends Flag{
 
         Collections.sort(sizeMetricsValues);
         boxPlotCalculations(sizeMetricsValues);
+        */
+
+
+        for(int metricNum: selectedMetrics){
+            ArrayList<Float> sizeMetricsValues = new ArrayList<Float>();
+
+            for(FeaturesVector f: featuresVectorList){
+                sizeMetricsValues.add(getSizeMetricFromFV(f, metricNum));
+            }
+            Collections.sort(sizeMetricsValues);
+            boxPlotCalculations(sizeMetricsValues);
+        }
+
     }
 
     /**
-    This takes metric 1 from the array and gets size
-    of the enclosing method
+     This takes a specific from the array and gets size
+     of the enclosing method
      */
-    private float getSizeMetricFromFV(FeaturesVector fv){
+    private float getSizeMetricFromFV(FeaturesVector fv, int index){
         if(fv != null){
             float[] fvArr = fv.buildArray();
-            lastCalculatedMetric = fvArr[0];
+            lastCalculatedMetric = fvArr[index];
             return lastCalculatedMetric;
         }
         lastCalculatedMetric = 0;
@@ -41,39 +57,47 @@ public class SizeMetrics extends Flag{
     }
 
     /**
-     * Required override function from Flag. Gets the sensitivity for this metric
-     * by grabbing its appropriate settings from this project's ProjectSettingsState.
-     */
-    @Override
-    protected int getSensitivity() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        return settings.sizeSensitivity;
-    }
-
-    /**
-    Required override function from Flag. This just compares the size (M1/M12)
-    of the passed in FeaturesVector against the correct quartile value 
-    based on the box plot depending on whatever the sensitivity is.
+     Required override function from Flag. This just compares the size (M1/M12)
+     of the passed in FeaturesVector against the correct quartile value
+     based on the box plot depending on whatever the sensitivity is.
      */
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
-        float fvSizeValue = getSizeMetricFromFV(featuresVector);
+        ArrayList<Boolean> metricsPassed = new ArrayList<>();
+        for(int i = 0; i < selectedMetrics.length; i++){
+            float fvSizeValue = getSizeMetricFromFV(featuresVector, selectedMetrics[i]);
+            int quartile = (int) Math.ceil(sensitivity / 25.0);
+            switch(quartile) {
+                case 1:
+                    metricsPassed.add(true);
+                case 2:
+                    if(fvSizeValue >= metricQ1.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
 
-        int quartile = (int) Math.ceil(getSensitivity() / 25.0);
-        switch(quartile) {
-            case 1:
-                return true;
-            case 2:
-                return fvSizeValue >= metricQ1; 
-            case 3:
-                return fvSizeValue >= metricQ2; 
-            case 4:
-                return fvSizeValue >= metricQ3; 
-            default:
-                return false;
+                case 3:
+                    if(fvSizeValue >= metricQ2.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
+                case 4:
+                    if(fvSizeValue >= metricQ3.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
+                default:
+                    metricsPassed.add(false);
+            }
         }
+        for (boolean passed : metricsPassed) {
+            if (passed) {
+                return true;
+            }
+        }
+        return false;
     }
+
 
     /**
      * Easier to use logMetric
