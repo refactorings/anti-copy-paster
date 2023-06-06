@@ -10,7 +10,8 @@ import java.util.Collections;
 import java.util.List;
 
 public class CouplingMetrics extends Flag{
-
+    private final int[] selectedMetrics = {5, 6, 7, 8, 9, 10};
+    //TODO: replace with actual function to retrieve these numbers once advanced settings are made/integrated
     public CouplingMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList);
         calculateAverageCouplingMetrics();
@@ -22,13 +23,14 @@ public class CouplingMetrics extends Flag{
     Coupling only uses Metric #6, so getting the value at index 5
     from the fv array gives us the right value
      */
-    private float getCouplingMetricFromFV(FeaturesVector fv){
+    private float getCouplingMetricFromFV(FeaturesVector fv, int index){
         if(fv != null){
-            lastCalculatedMetric = fv.buildArray()[5];
+            float[] fvArr = fv.buildArray();
+            lastCalculatedMetric = fvArr[index];
             return lastCalculatedMetric;
-        } else {
-            return 0;
         }
+        lastCalculatedMetric = 0;
+        return lastCalculatedMetric;
     }
 
     /**
@@ -38,14 +40,17 @@ public class CouplingMetrics extends Flag{
     method to get Q1, Q2, and Q3 for the sensitivities
      */
     private void calculateAverageCouplingMetrics(){
-        ArrayList<Float> couplingMetricsValues = new ArrayList<Float>();
 
-        for(FeaturesVector f : featuresVectorList){
-            couplingMetricsValues.add(getCouplingMetricFromFV(f));
+        for(int metricNum: selectedMetrics){
+            ArrayList<Float> sizeMetricsValues = new ArrayList<>();
+
+            for(FeaturesVector f: featuresVectorList){
+                sizeMetricsValues.add(getCouplingMetricFromFV(f, metricNum));
+            }
+            Collections.sort(sizeMetricsValues);
+            boxPlotCalculations(sizeMetricsValues);
         }
 
-        Collections.sort(couplingMetricsValues);
-        boxPlotCalculations(couplingMetricsValues);
     }
 
     /**
@@ -53,7 +58,7 @@ public class CouplingMetrics extends Flag{
      * by grabbing its appropriate settings from this project's ProjectSettingsState.
      */
     @Override
-    protected int getSensitivity() {
+    public int getSensitivity() {
         Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         return settings.couplingSensitivity;
@@ -66,21 +71,39 @@ public class CouplingMetrics extends Flag{
      */
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
-        float fvCouplingValue = getCouplingMetricFromFV(featuresVector);
+        ArrayList<Boolean> metricsPassed = new ArrayList<>();
+        for(int i = 0; i < selectedMetrics.length; i++){
+            float fvSizeValue = getCouplingMetricFromFV(featuresVector, selectedMetrics[i]);
+            int quartile = (int) Math.ceil(sensitivity / 25.0);
+            switch(quartile) {
+                case 1:
+                    metricsPassed.add(true);
+                case 2:
+                    if(fvSizeValue >= metricQ1.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
 
-        int quartile = (int) Math.ceil(getSensitivity() / 25.0);
-        switch(quartile) {
-            case 1:
-                return true;
-            case 2:
-                return fvCouplingValue >= metricQ1;
-            case 3:
-                return fvCouplingValue >= metricQ2;
-            case 4:
-                return fvCouplingValue >= metricQ3;
-            default:
-                return false;
+                case 3:
+                    if(fvSizeValue >= metricQ2.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
+                case 4:
+                    if(fvSizeValue >= metricQ3.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
+                default:
+                    metricsPassed.add(false);
+            }
         }
+        for (boolean passed : metricsPassed) {
+            if (passed) {
+                return true;
+            }
+        }
+        return false;
 
     }
 

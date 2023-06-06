@@ -9,8 +9,8 @@ import java.util.Collections;
 import java.util.List;
 
 public class SizeMetrics extends Flag{
-    private int[] selectedMetrics = {0, 1, 2, 3, 4};
-    //TODO: replace with actual function to retrive these numbers once advanced settings are made/integrated
+    private final int[] selectedMetrics = {0, 1, 2, 3, 4};
+    //TODO: replace with actual function to retrieve these numbers once advanced settings are made/integrated
 
     public SizeMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList);
@@ -18,20 +18,9 @@ public class SizeMetrics extends Flag{
     }
 
     private void calculateAverageSizeMetrics(){
-        /*
-        ArrayList<Float> sizeMetricsValues = new ArrayList<Float>();
-
-        for(FeaturesVector f : featuresVectorList){
-            sizeMetricsValues.add(getSizeMetricFromFV(f));
-        }
-
-        Collections.sort(sizeMetricsValues);
-        boxPlotCalculations(sizeMetricsValues);
-        */
-
 
         for(int metricNum: selectedMetrics){
-            ArrayList<Float> sizeMetricsValues = new ArrayList<Float>();
+            ArrayList<Float> sizeMetricsValues = new ArrayList<>();
 
             for(FeaturesVector f: featuresVectorList){
                 sizeMetricsValues.add(getSizeMetricFromFV(f, metricNum));

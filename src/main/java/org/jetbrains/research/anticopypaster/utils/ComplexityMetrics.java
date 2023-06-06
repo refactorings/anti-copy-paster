@@ -10,7 +10,8 @@ import java.util.Collections;
 import java.util.List;
 
 public class ComplexityMetrics extends Flag{
-
+    private final int[] selectedMetrics = {11, 12, 13, 14, 15};
+    //TODO: replace with actual function to retrieve these numbers once advanced settings are made/integrated
     public ComplexityMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList);
         calculateAverageComplexityMetrics();
@@ -22,13 +23,14 @@ public class ComplexityMetrics extends Flag{
     Complexity only uses Metric #4, so getting the value at index 3
     from the fv array gives us the right value
      */
-    private float getComplexityMetricFromFV(FeaturesVector fv){
+    private float getComplexityMetricFromFV(FeaturesVector fv, int index){
         if(fv != null){
-            lastCalculatedMetric = fv.buildArray()[3];
+            float[] fvArr = fv.buildArray();
+            lastCalculatedMetric = fvArr[index];
             return lastCalculatedMetric;
-        } else {
-            return 0;
         }
+        lastCalculatedMetric = 0;
+        return lastCalculatedMetric;
     }
 
     /**
@@ -38,14 +40,15 @@ public class ComplexityMetrics extends Flag{
     method to get Q1, Q2, and Q3 for the sensitivities
      */
     private void calculateAverageComplexityMetrics(){
-        ArrayList<Float> complexityMetricsValues = new ArrayList<Float>();
+        for(int metricNum: selectedMetrics){
+            ArrayList<Float> sizeMetricsValues = new ArrayList<>();
 
-        for(FeaturesVector f : featuresVectorList){
-            complexityMetricsValues.add(getComplexityMetricFromFV(f));
+            for(FeaturesVector f: featuresVectorList){
+                sizeMetricsValues.add(getComplexityMetricFromFV(f, metricNum));
+            }
+            Collections.sort(sizeMetricsValues);
+            boxPlotCalculations(sizeMetricsValues);
         }
-
-        Collections.sort(complexityMetricsValues);
-        boxPlotCalculations(complexityMetricsValues);
     }
 
     /**
@@ -53,7 +56,7 @@ public class ComplexityMetrics extends Flag{
      * by grabbing its appropriate settings from this project's ProjectSettingsState.
      */
     @Override
-    protected int getSensitivity() {
+    public int getSensitivity() {
         Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         return settings.complexitySensitivity;
@@ -66,22 +69,39 @@ public class ComplexityMetrics extends Flag{
      */
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
-        float fvComplexityValue = getComplexityMetricFromFV(featuresVector);
+        ArrayList<Boolean> metricsPassed = new ArrayList<>();
+        for(int i = 0; i < selectedMetrics.length; i++){
+            float fvSizeValue = getComplexityMetricFromFV(featuresVector, selectedMetrics[i]);
+            int quartile = (int) Math.ceil(sensitivity / 25.0);
+            switch(quartile) {
+                case 1:
+                    metricsPassed.add(true);
+                case 2:
+                    if(fvSizeValue >= metricQ1.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
 
-        int quartile = (int) Math.ceil(getSensitivity() / 25.0);
-        switch(quartile) {
-            case 1:
-                return true;
-            case 2:
-                return fvComplexityValue >= metricQ1;
-            case 3:
-                return fvComplexityValue >= metricQ2;
-            case 4:
-                return fvComplexityValue >= metricQ3;
-            default:
-                return false;
+                case 3:
+                    if(fvSizeValue >= metricQ2.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
+                case 4:
+                    if(fvSizeValue >= metricQ3.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
+                default:
+                    metricsPassed.add(false);
+            }
         }
-
+        for (boolean passed : metricsPassed) {
+            if (passed) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

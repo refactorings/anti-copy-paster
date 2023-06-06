@@ -9,9 +9,16 @@ import java.util.Collections;
 import java.util.List;
 
 public class KeywordsMetrics extends Flag{
-
+    private final int[] selectedMetrics;
+    //TODO: replace with actual function to retrieve these numbers once advanced settings are made/integrated
     public KeywordsMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList);
+        selectedMetrics = new int[62];
+        int num = 16;
+        for (int i = 0; i < selectedMetrics.length; i++) {
+            selectedMetrics[i] = num;
+            num++;
+        }
         calculateAverageKeywordsMetrics();
     }
 
@@ -20,18 +27,14 @@ public class KeywordsMetrics extends Flag{
     the FeaturesVector that is passed in
     Keywords uses every odd-number value from metrics 17-78 
      */
-    private float getKeywordsMetricFromFV(FeaturesVector fv){
+    private float getKeywordsMetricFromFV(FeaturesVector fv, int index){
         if(fv != null){
-            float[] fvArray = fv.buildArray();
-            int totalKeywords = 0;
-            for(int i = 16; i<77; i+=2){
-                totalKeywords += fvArray[i];
-            }
-            lastCalculatedMetric = totalKeywords;
+            float[] fvArr = fv.buildArray();
+            lastCalculatedMetric = fvArr[index];
             return lastCalculatedMetric;
-        } else {
-            return 0;
         }
+        lastCalculatedMetric = 0;
+        return lastCalculatedMetric;
     }
 
     /**
@@ -41,14 +44,16 @@ public class KeywordsMetrics extends Flag{
     method to get Q1, Q2, and Q3 for the sensitivities
      */
     private void calculateAverageKeywordsMetrics(){
-        ArrayList<Float> keywordsMetricsValues = new ArrayList<Float>();
 
-        for(FeaturesVector f : featuresVectorList){
-            keywordsMetricsValues.add(getKeywordsMetricFromFV(f));
+        for(int metricNum: selectedMetrics){
+            ArrayList<Float> sizeMetricsValues = new ArrayList<>();
+
+            for(FeaturesVector f: featuresVectorList){
+                sizeMetricsValues.add(getKeywordsMetricFromFV(f, metricNum));
+            }
+            Collections.sort(sizeMetricsValues);
+            boxPlotCalculations(sizeMetricsValues);
         }
-
-        Collections.sort(keywordsMetricsValues);
-        boxPlotCalculations(keywordsMetricsValues);
     }
 
     /**
@@ -56,7 +61,7 @@ public class KeywordsMetrics extends Flag{
      * by grabbing its appropriate settings from this project's ProjectSettingsState.
      */
     @Override
-    protected int getSensitivity() {
+    public int getSensitivity() {
         Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         return settings.keywordsSensitivity;
@@ -69,21 +74,39 @@ public class KeywordsMetrics extends Flag{
      */
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
-        float fvKeywordsValue = getKeywordsMetricFromFV(featuresVector);
+        ArrayList<Boolean> metricsPassed = new ArrayList<>();
+        for(int i = 0; i < selectedMetrics.length; i++){
+            float fvSizeValue = getKeywordsMetricFromFV(featuresVector, selectedMetrics[i]);
+            int quartile = (int) Math.ceil(sensitivity / 25.0);
+            switch(quartile) {
+                case 1:
+                    metricsPassed.add(true);
+                case 2:
+                    if(fvSizeValue >= metricQ1.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
 
-        int quartile = (int) Math.ceil(getSensitivity() / 25.0);
-        switch(quartile) {
-            case 1:
-                return true;
-            case 2:
-                return fvKeywordsValue >= metricQ1;
-            case 3:
-                return fvKeywordsValue >= metricQ2;
-            case 4:
-                return fvKeywordsValue >= metricQ3;
-            default:
-                return false;
+                case 3:
+                    if(fvSizeValue >= metricQ2.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
+                case 4:
+                    if(fvSizeValue >= metricQ3.get(i)){
+                        metricsPassed.add(true);
+                    }
+                    else{metricsPassed.add(false);}
+                default:
+                    metricsPassed.add(false);
+            }
         }
+        for (boolean passed : metricsPassed) {
+            if (passed) {
+                return true;
+            }
+        }
+        return false;
         
     }
 
