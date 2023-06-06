@@ -17,6 +17,24 @@ import org.mockito.Mock;
 import static org.mockito.Mockito.*;
 
 public class SizeMetricsTest {
+
+    /**
+     * Testing variant of SizeMetrics.
+     * Stores sensitivity setting locally rather than through IntelliJ project settings.
+     */
+    private class TestingSizeMetrics extends SizeMetrics {
+
+        public TestingSizeMetrics(List<FeaturesVector> featuresVectorList) {
+            super(featuresVectorList);
+        }
+
+        @Override
+        protected int getSensitivity() {
+            return sensitivity;
+        }
+    }
+
+    private int sensitivity;
     
     /**
     Inner class to mock a FeaturesVector
@@ -42,7 +60,7 @@ public class SizeMetricsTest {
         }
     }
 
-    private SizeMetrics sizeMetrics;
+    private TestingSizeMetrics sizeMetrics;
     private List<FeaturesVector> fvList;
 
     @BeforeEach
@@ -54,8 +72,8 @@ public class SizeMetricsTest {
 
     @Test
     public void testIsTriggeredSensitivityZero(){
-        this.sizeMetrics = new SizeMetrics(fvList);
-        sizeMetrics.changeSensitivity(0);
+        this.sizeMetrics = new TestingSizeMetrics(fvList);
+        sensitivity = 100;
         assertFalse(sizeMetrics.isFlagTriggered(null));
     }
 
@@ -89,8 +107,8 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.sizeMetrics = new SizeMetrics(fvList);
-        sizeMetrics.changeSensitivity(1);
+        this.sizeMetrics = new TestingSizeMetrics(fvList);
+        sensitivity = 25;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 3;
@@ -129,8 +147,8 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.sizeMetrics = new SizeMetrics(fvList);
-        sizeMetrics.changeSensitivity(1);
+        this.sizeMetrics = new TestingSizeMetrics(fvList);
+        sensitivity = 25;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 1;
@@ -169,8 +187,8 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.sizeMetrics = new SizeMetrics(fvList);
-        sizeMetrics.changeSensitivity(2);
+        this.sizeMetrics = new TestingSizeMetrics(fvList);
+        sensitivity = 50;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 4;
@@ -209,8 +227,8 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.sizeMetrics = new SizeMetrics(fvList);
-        sizeMetrics.changeSensitivity(2);
+        this.sizeMetrics = new TestingSizeMetrics(fvList);
+        sensitivity = 50;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 2;
@@ -249,8 +267,8 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.sizeMetrics = new SizeMetrics(fvList);
-        sizeMetrics.changeSensitivity(3);
+        this.sizeMetrics = new TestingSizeMetrics(fvList);
+        sensitivity = 75;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 5;
@@ -289,8 +307,8 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.sizeMetrics = new SizeMetrics(fvList);
-        sizeMetrics.changeSensitivity(3);
+        this.sizeMetrics = new TestingSizeMetrics(fvList);
+        sensitivity = 75;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 3;

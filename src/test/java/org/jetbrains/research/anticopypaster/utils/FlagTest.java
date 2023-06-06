@@ -26,7 +26,12 @@ public class FlagTest {
             super(featuresVectorList);
         }
 
-        @Override 
+        @Override
+        protected int getSensitivity() {
+            return sensitivity;
+        }
+
+        @Override
         public boolean isFlagTriggered(FeaturesVector featuresVector){
             return false;
         }
@@ -42,6 +47,7 @@ public class FlagTest {
     }
 
     private TestingFlag testFlag;
+    private int sensitivity;
 
     @BeforeEach
     public void beforeTest(){
@@ -50,38 +56,26 @@ public class FlagTest {
 
     @Test
     public void testSensitivityZero(){
-        int newSens = testFlag.changeSensitivity(0);
-        assertEquals(newSens, 0);
+        sensitivity = 0;
+        assertEquals(testFlag.getSensitivity(), 0);
     }
 
     @Test
     public void testSensitivityOne(){
-        int newSens = testFlag.changeSensitivity(1);
-        assertEquals(newSens, 1);
+        sensitivity = 1;
+        assertEquals(testFlag.getSensitivity(), 1);
     }
 
     @Test
     public void testSensitivityTwo(){
-        int newSens = testFlag.changeSensitivity(2);
-        assertEquals(newSens, 2);
+        sensitivity = 2;
+        assertEquals(testFlag.getSensitivity(), 2);
     }
 
     @Test
     public void testSensitivityThree(){
-        int newSens = testFlag.changeSensitivity(3);
-        assertEquals(newSens, 3);
-    }
-
-    @Test
-    public void testSensitivityOutOfRangePositive(){
-        int newSens = testFlag.changeSensitivity(4);
-        assertEquals(newSens, 0);
-    }
-
-    @Test
-    public void testSensitivityOutOfRangeNegative(){
-        int newSens = testFlag.changeSensitivity(-1);
-        assertEquals(newSens, 0);
+        sensitivity = 3;
+        assertEquals(testFlag.getSensitivity(), 3);
     }
 
     @Test 
