@@ -68,7 +68,7 @@ public class ComplexityMetrics extends Flag{
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         float fvComplexityValue = getComplexityMetricFromFV(featuresVector);
 
-        int quartile = (int) Math.ceil(getSensitivity() / 25.0);
+        int quartile = (int) Math.ceil((getSensitivity() + 1) / 25.0);
         switch(quartile) {
             case 1:
                 return true;

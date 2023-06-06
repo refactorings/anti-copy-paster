@@ -68,7 +68,7 @@ public class CouplingMetrics extends Flag{
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         float fvCouplingValue = getCouplingMetricFromFV(featuresVector);
 
-        int quartile = (int) Math.ceil(getSensitivity() / 25.0);
+        int quartile = (int) Math.ceil((getSensitivity() + 1) / 25.0);
         switch(quartile) {
             case 1:
                 return true;
