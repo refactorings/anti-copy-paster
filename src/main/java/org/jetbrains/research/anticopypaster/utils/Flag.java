@@ -9,6 +9,7 @@ import java.util.List;
 public abstract class Flag{
 
     protected int sensitivity;
+
     protected boolean required;
 
     protected List<FeaturesVector> featuresVectorList;
@@ -76,6 +77,25 @@ public abstract class Flag{
     }
 
     public int getSensitivity(){ return this.sensitivity;}
+
+
+    /**
+     Change the sensitivity of the flag.
+     Any sensitivities apart from 0, 1, 2, or 3 will be set to 0 (off)
+     */
+    public int changeSensitivity(int sensitivity){
+        if(sensitivity > 100 || sensitivity < 0){
+            this.sensitivity = 0;
+        } else {
+            this.sensitivity = sensitivity;
+        }
+        return this.sensitivity;
+    }
+
+    public boolean changeRequired(boolean required) {
+        this.required = required;
+        return required;
+    }
 
     /**
      * This function logs the last known metric and the current threshold
