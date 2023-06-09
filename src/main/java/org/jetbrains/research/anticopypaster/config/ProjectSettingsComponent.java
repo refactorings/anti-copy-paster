@@ -1,6 +1,9 @@
 package org.jetbrains.research.anticopypaster.config;
 
 import javax.swing.*;
+import com.intellij.openapi.project.Project;
+
+import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 
 public class ProjectSettingsComponent {
 
@@ -15,11 +18,18 @@ public class ProjectSettingsComponent {
     private JCheckBox sizeCheckBox;
     private JSlider complexitySlider;
     private JCheckBox complexityCheckBox;
+    private JButton advancedSettingsButton;
 
-    public ProjectSettingsComponent() {
+    public ProjectSettingsComponent(Project project) {
         ButtonGroup radioButtons = new ButtonGroup();
         radioButtons.add(useModelControlRadioButton);
         radioButtons.add(useManualControlRadioButton);
+        advancedSettingsButton.addActionListener( e-> {
+                AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
+                boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
+                advancedDialog.saveSettings(displayAndResolveAdvanced);
+            }
+        );
     }
 
     public JPanel getPanel() {
