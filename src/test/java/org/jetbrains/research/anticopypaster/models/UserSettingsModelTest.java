@@ -310,7 +310,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
 
         settings.keywordsRequired = false;
-        settings.couplingRequired = true;
+        settings.couplingRequired = false;
         settings.sizeRequired = true;
         settings.complexityRequired = false;
 
