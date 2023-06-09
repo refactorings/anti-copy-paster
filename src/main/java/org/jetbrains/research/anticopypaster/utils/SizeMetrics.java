@@ -12,25 +12,14 @@ public class SizeMetrics extends Flag{
 
     public SizeMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList);
-        calculateAverageSizeMetrics();
-    }
-
-    private void calculateAverageSizeMetrics(){
-        ArrayList<Float> sizeMetricsValues = new ArrayList<Float>();
-
-        for(FeaturesVector f : featuresVectorList){
-            sizeMetricsValues.add(getSizeMetricFromFV(f));
-        }
-
-        Collections.sort(sizeMetricsValues);
-        boxPlotCalculations(sizeMetricsValues);
     }
 
     /**
     This takes metric 1 from the array and gets size
     of the enclosing method
      */
-    private float getSizeMetricFromFV(FeaturesVector fv){
+    @Override
+    protected float getMetric(FeaturesVector fv){
         if(fv != null){
             float[] fvArr = fv.buildArray();
             lastCalculatedMetric = fvArr[0];
@@ -52,33 +41,10 @@ public class SizeMetrics extends Flag{
     }
 
     /**
-    Required override function from Flag. This just compares the size (M1/M12)
-    of the passed in FeaturesVector against the correct quartile value 
-    based on the box plot depending on whatever the sensitivity is.
-     */
-    @Override
-    public boolean isFlagTriggered(FeaturesVector featuresVector){
-        float fvSizeValue = getSizeMetricFromFV(featuresVector);
-
-        int quartile = (int) Math.ceil((getSensitivity() + 1) / 25.0);
-        switch(quartile) {
-            case 1:
-                return true;
-            case 2:
-                return fvSizeValue >= metricQ1; 
-            case 3:
-                return fvSizeValue >= metricQ2; 
-            case 4:
-                return fvSizeValue >= metricQ3; 
-            default:
-                return false;
-        }
-    }
-
-    /**
      * Easier to use logMetric
      * @param filepath path to the log file
      */
+    @Override
     public void logMetric(String filepath){
         logMetric(filepath, "Size");
     }
@@ -87,6 +53,7 @@ public class SizeMetrics extends Flag{
      * Easier to use logThresholds
      * @param filepath path to the log file
      */
+    @Override
     public void logThresholds(String filepath){
         logThresholds(filepath, "Size");
     }

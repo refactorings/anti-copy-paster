@@ -12,7 +12,6 @@ public class KeywordsMetrics extends Flag{
 
     public KeywordsMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList);
-        calculateAverageKeywordsMetrics();
     }
 
     /**
@@ -20,7 +19,8 @@ public class KeywordsMetrics extends Flag{
     the FeaturesVector that is passed in
     Keywords uses every odd-number value from metrics 17-78 
      */
-    private float getKeywordsMetricFromFV(FeaturesVector fv){
+    @Override
+    protected float getMetric(FeaturesVector fv){
         if(fv != null){
             float[] fvArray = fv.buildArray();
             int totalKeywords = 0;
@@ -35,23 +35,6 @@ public class KeywordsMetrics extends Flag{
     }
 
     /**
-    This will iterate over all of the FeaturesVectors passed in to the
-    class, and then export only the relevant metric values to an array.
-    That array will then be sorted and run through the Flag boxplot 
-    method to get Q1, Q2, and Q3 for the sensitivities
-     */
-    private void calculateAverageKeywordsMetrics(){
-        ArrayList<Float> keywordsMetricsValues = new ArrayList<Float>();
-
-        for(FeaturesVector f : featuresVectorList){
-            keywordsMetricsValues.add(getKeywordsMetricFromFV(f));
-        }
-
-        Collections.sort(keywordsMetricsValues);
-        boxPlotCalculations(keywordsMetricsValues);
-    }
-
-    /**
      * Required override function from Flag. Gets the sensitivity for this metric
      * by grabbing its appropriate settings from this project's ProjectSettingsState.
      */
@@ -63,34 +46,10 @@ public class KeywordsMetrics extends Flag{
     }
 
     /**
-    Required override function from Flag. This just compares the keywords
-    of the passed in FeaturesVector against the correct quartile value 
-    based on the box plot depending on whatever the sensitivity is.
-     */
-    @Override
-    public boolean isFlagTriggered(FeaturesVector featuresVector){
-        float fvKeywordsValue = getKeywordsMetricFromFV(featuresVector);
-
-        int quartile = (int) Math.ceil((getSensitivity() + 1) / 25.0);
-        switch(quartile) {
-            case 1:
-                return true;
-            case 2:
-                return fvKeywordsValue >= metricQ1;
-            case 3:
-                return fvKeywordsValue >= metricQ2;
-            case 4:
-                return fvKeywordsValue >= metricQ3;
-            default:
-                return false;
-        }
-        
-    }
-
-    /**
      * Easier to use logMetric
      * @param filepath path to the log file
      */
+    @Override
     public void logMetric(String filepath){
         logMetric(filepath, "Keywords");
     }
@@ -99,6 +58,7 @@ public class KeywordsMetrics extends Flag{
      * Easier to use logThresholds
      * @param filepath path to the log file
      */
+    @Override
     public void logThresholds(String filepath){
         logThresholds(filepath, "Keywords");
     }

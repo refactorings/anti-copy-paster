@@ -32,8 +32,16 @@ public class FlagTest {
         }
 
         @Override
+        protected float getMetric(FeaturesVector featuresVector) { return 0; }
+
+        @Override
         public boolean isFlagTriggered(FeaturesVector featuresVector){
             return false;
+        }
+
+        @Override
+        protected void calculateAverageMetrics() {
+            // Do nothing just lets tests go
         }
 
         @Override

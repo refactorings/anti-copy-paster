@@ -5,6 +5,7 @@ import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public abstract class Flag{
@@ -19,7 +20,7 @@ public abstract class Flag{
 
     protected abstract int getSensitivity();
 
-    public abstract boolean isFlagTriggered(FeaturesVector featuresVector);
+    protected abstract float getMetric(FeaturesVector featuresVector);
 
     public Flag(List<FeaturesVector> featuresVectorList){
         this.featuresVectorList = featuresVectorList;
@@ -27,6 +28,42 @@ public abstract class Flag{
         this.metricQ2=0;
         this.metricQ3=0;
         this.lastCalculatedMetric = -1;
+        calculateAverageMetrics();
+    }
+
+    /**
+     This will iterate over all of the FeaturesVectors passed in to the
+     class, and then export only the relevant metric values to an array.
+     That array will then be sorted and run through the Flag boxplot
+     method to get Q1, Q2, and Q3 for the sensitivities
+     */
+    public boolean isFlagTriggered(FeaturesVector featuresVector) {
+        float metricValue = getMetric(featuresVector);
+
+        int quartile = (int) Math.ceil((getSensitivity() + 1) / 25.0);
+        switch (quartile) {
+            case 1:
+                return true;
+            case 2:
+                return metricValue >= metricQ1;
+            case 3:
+                return metricValue >= metricQ2;
+            case 4:
+                return metricValue >= metricQ3;
+            default:
+                return false;
+        }
+    }
+
+    protected void calculateAverageMetrics() {
+        ArrayList<Float> metricsValues = new ArrayList<Float>();
+
+        for (FeaturesVector f : featuresVectorList) {
+            metricsValues.add(getMetric(f));
+        }
+
+        Collections.sort(metricsValues);
+        boxPlotCalculations(metricsValues);
     }
 
     /**
