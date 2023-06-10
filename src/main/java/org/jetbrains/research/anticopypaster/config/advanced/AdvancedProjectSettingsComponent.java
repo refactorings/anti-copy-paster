@@ -110,7 +110,7 @@ public class AdvancedProjectSettingsComponent {
 
     public void setDefineComplexityByTotal(boolean totalMode) {
         measureTotalComplexityRadioButton.setSelected(totalMode);
-        measureComplexityPerLineRadioButton.setSelected(totalMode);
+        measureComplexityPerLineRadioButton.setSelected(!totalMode);
     }
 
     public void setDefineCouplingByTotal(boolean totalMode) {
