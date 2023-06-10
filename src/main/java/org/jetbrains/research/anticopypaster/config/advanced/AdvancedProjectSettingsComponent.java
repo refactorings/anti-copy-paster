@@ -72,6 +72,7 @@ public class AdvancedProjectSettingsComponent {
         CONTINUE, FOR, NEW, SWITCH, ASSERT, SYNCHRONIZED, BOOLEAN, DO, IF, THIS, BREAK, DOUBLE, THROW, BYTE, ELSE,
         CASE, INSTANCEOF, RETURN, TRANSIENT, CATCH, INT, SHORT, TRY, CHAR, FINAL, FINALLY, LONG, STRICTFP, FLOAT, SUPER, WHILE
     }
+
     public void setActiveKeywords(EnumMap <JavaKeywords, Boolean> active) {
         continueCheckBox.setSelected(active.get(JavaKeywords.CONTINUE));
         forCheckBox.setSelected(active.get(JavaKeywords.FOR));

@@ -21,15 +21,11 @@ public class ProjectSettingsComponent {
     private JButton advancedSettingsButton;
 
     public ProjectSettingsComponent(Project project) {
-        ButtonGroup radioButtons = new ButtonGroup();
-        radioButtons.add(useModelControlRadioButton);
-        radioButtons.add(useManualControlRadioButton);
-        advancedSettingsButton.addActionListener( e-> {
-                AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
-                boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
-                advancedDialog.saveSettings(displayAndResolveAdvanced);
-            }
-        );
+        advancedSettingsButton.addActionListener(e -> {
+            AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
+            boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
+            advancedDialog.saveSettings(displayAndResolveAdvanced);
+        });
     }
 
     public JPanel getPanel() {
