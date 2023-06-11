@@ -17,7 +17,25 @@ import org.mockito.Mock;
 import static org.mockito.Mockito.*;
 
 public class ComplexityMetricsTest {
-    
+
+    /**
+     * Testing variant of ComplexityMetrics.
+     * Stores sensitivity setting locally rather than through IntelliJ project settings.
+     */
+    private class TestingComplexityMetrics extends ComplexityMetrics {
+
+        public TestingComplexityMetrics(List<FeaturesVector> featuresVectorList) {
+            super(featuresVectorList);
+        }
+
+        @Override
+        public int getSensitivity() {
+            return sensitivity;
+        }
+    }
+
+    private int sensitivity;
+
     /**
     Inner class to mock a FeaturesVector
      */
@@ -42,7 +60,7 @@ public class ComplexityMetricsTest {
         }
     }
 
-    private ComplexityMetrics complexityMetrics;
+    private TestingComplexityMetrics complexityMetrics;
     private List<FeaturesVector> fvList;
 
     @BeforeEach
@@ -54,8 +72,8 @@ public class ComplexityMetricsTest {
     
     @Test
     public void testIsTriggeredSensitivityZero(){
-        this.complexityMetrics = new ComplexityMetrics(fvList);
-        complexityMetrics.changeSensitivity(0);
+        this.complexityMetrics = new TestingComplexityMetrics(fvList);
+        sensitivity = 100;
         assertFalse(complexityMetrics.isFlagTriggered(null));
     }
 
@@ -89,8 +107,8 @@ public class ComplexityMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.complexityMetrics = new ComplexityMetrics(fvList);
-        complexityMetrics.changeSensitivity(1);
+        this.complexityMetrics = new TestingComplexityMetrics(fvList);
+        sensitivity = 25;
 
         float[] passedInArray = new float[78];
         passedInArray[3] = (float)3;
@@ -129,8 +147,8 @@ public class ComplexityMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.complexityMetrics = new ComplexityMetrics(fvList);
-        this.complexityMetrics.changeSensitivity(1);
+        this.complexityMetrics = new TestingComplexityMetrics(fvList);
+        sensitivity = 25;
 
         float[] passedInArray = new float[78];
         passedInArray[3] = (float)1;
@@ -169,8 +187,8 @@ public class ComplexityMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.complexityMetrics = new ComplexityMetrics(fvList);
-        complexityMetrics.changeSensitivity(2);
+        this.complexityMetrics = new TestingComplexityMetrics(fvList);
+        sensitivity = 50;
 
         float[] passedInArray = new float[78];
         passedInArray[3] = (float)4;
@@ -209,8 +227,8 @@ public class ComplexityMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.complexityMetrics = new ComplexityMetrics(fvList);
-        this.complexityMetrics.changeSensitivity(2);
+        this.complexityMetrics = new TestingComplexityMetrics(fvList);
+        sensitivity = 50;
 
         float[] passedInArray = new float[78];
         passedInArray[3] = (float)2;
@@ -249,8 +267,8 @@ public class ComplexityMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.complexityMetrics = new ComplexityMetrics(fvList);
-        complexityMetrics.changeSensitivity(3);
+        this.complexityMetrics = new TestingComplexityMetrics(fvList);
+        sensitivity = 75;
 
         float[] passedInArray = new float[78];
         passedInArray[3] = (float)5;
@@ -289,8 +307,8 @@ public class ComplexityMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.complexityMetrics = new ComplexityMetrics(fvList);
-        this.complexityMetrics.changeSensitivity(3);
+        this.complexityMetrics = new TestingComplexityMetrics(fvList);
+        sensitivity = 75;
 
         float[] passedInArray = new float[78];
         passedInArray[3] = (float)3;

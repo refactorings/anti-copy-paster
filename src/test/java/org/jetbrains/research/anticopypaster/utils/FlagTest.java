@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.utils;
 
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -26,10 +27,19 @@ public class FlagTest {
             super(featuresVectorList);
         }
 
-        @Override 
+        @Override
+        public int getSensitivity() {
+            return sensitivity;
+        }
+
+
+
+        @Override
         public boolean isFlagTriggered(FeaturesVector featuresVector){
             return false;
         }
+
+
 
         @Override
         public void logMetric(String filepath){
@@ -42,6 +52,7 @@ public class FlagTest {
     }
 
     private TestingFlag testFlag;
+    private int sensitivity;
 
     @BeforeEach
     public void beforeTest(){
@@ -50,55 +61,46 @@ public class FlagTest {
 
     @Test
     public void testSensitivityZero(){
-        int newSens = testFlag.changeSensitivity(0);
-        assertEquals(newSens, 0);
+        sensitivity = 0;
+        assertEquals(testFlag.getSensitivity(), 0);
     }
 
     @Test
     public void testSensitivityOne(){
-        int newSens = testFlag.changeSensitivity(1);
-        assertEquals(newSens, 1);
+        sensitivity = 1;
+        assertEquals(testFlag.getSensitivity(), 1);
     }
 
     @Test
     public void testSensitivityTwo(){
-        int newSens = testFlag.changeSensitivity(2);
-        assertEquals(newSens, 2);
+        sensitivity = 2;
+        assertEquals(testFlag.getSensitivity(), 2);
     }
 
     @Test
     public void testSensitivityThree(){
-        int newSens = testFlag.changeSensitivity(3);
-        assertEquals(newSens, 3);
-    }
-
-    @Test
-    public void testSensitivityOutOfRangePositive(){
-        int newSens = testFlag.changeSensitivity(4);
-        assertEquals(newSens, 0);
-    }
-
-    @Test
-    public void testSensitivityOutOfRangeNegative(){
-        int newSens = testFlag.changeSensitivity(-1);
-        assertEquals(newSens, 0);
+        sensitivity = 3;
+        assertEquals(testFlag.getSensitivity(), 3);
     }
 
     @Test 
     public void testBoxPlotNullList(){
         testFlag.boxPlotCalculations(null);
-        assertEquals(0, testFlag.getMetricQ1(), 0);
-        assertEquals(0, testFlag.getMetricQ2(), 0);
-        assertEquals(0, testFlag.getMetricQ3(), 0);
+        ArrayList<Float> expected = new ArrayList<>(List.of(0f));
+        assertEquals(expected, testFlag.getMetricQ1());
+        assertEquals(expected, testFlag.getMetricQ2());
+        assertEquals(expected, testFlag.getMetricQ3());
     }
 
     @Test 
     public void testBoxPlotEmptyList(){
         ArrayList emptyList = new ArrayList<Float>();
         testFlag.boxPlotCalculations(emptyList);
-        assertEquals(0, testFlag.getMetricQ1(), 0);
-        assertEquals(0, testFlag.getMetricQ2(), 0);
-        assertEquals(0, testFlag.getMetricQ3(), 0);
+
+        ArrayList<Float> expected = new ArrayList<>(List.of(0f));
+        assertEquals(expected, testFlag.getMetricQ1());
+        assertEquals(expected, testFlag.getMetricQ2());
+        assertEquals(expected, testFlag.getMetricQ3());
     }
 
     @Test 
@@ -113,9 +115,11 @@ public class FlagTest {
         Collections.sort(fourValueSameNumberFloatList);
 
         testFlag.boxPlotCalculations(fourValueSameNumberFloatList);
-        assertEquals(1, testFlag.getMetricQ1(), 0);
-        assertEquals(1, testFlag.getMetricQ2(), 0);
-        assertEquals(1, testFlag.getMetricQ3(), 0);
+
+        ArrayList<Float> expected = new ArrayList<>((List.of(1f)));
+        assertEquals(expected, testFlag.getMetricQ1());
+        assertEquals(expected, testFlag.getMetricQ2());
+        assertEquals(expected, testFlag.getMetricQ3());
     }
 
     @Test 
@@ -131,9 +135,11 @@ public class FlagTest {
         Collections.sort(fiveValueSameNumberFloatList);
 
         testFlag.boxPlotCalculations(fiveValueSameNumberFloatList);
-        assertEquals(1, testFlag.getMetricQ1(), 0);
-        assertEquals(1, testFlag.getMetricQ2(), 0);
-        assertEquals(1, testFlag.getMetricQ3(), 0);
+
+        ArrayList<Float> expected = new ArrayList<>(Arrays.asList(1f));
+        assertEquals(expected, testFlag.getMetricQ1());
+        assertEquals(expected, testFlag.getMetricQ2());
+        assertEquals(expected, testFlag.getMetricQ3());
     }
 
     @Test 
@@ -148,9 +154,13 @@ public class FlagTest {
         Collections.sort(fourValueDifferentNumberFloatList);
 
         testFlag.boxPlotCalculations(fourValueDifferentNumberFloatList);
-        assertEquals(1.5, testFlag.getMetricQ1(), 0);
-        assertEquals(2.5, testFlag.getMetricQ2(), 0);
-        assertEquals(3.5, testFlag.getMetricQ3(), 0);
+
+        ArrayList<Float> expectedQ1 = new ArrayList<>(List.of(1.5f));
+        ArrayList<Float> expectedQ2 = new ArrayList<>(List.of(2.5f));
+        ArrayList<Float> expectedQ3 = new ArrayList<>(List.of(3.5f));
+        assertEquals(expectedQ1, testFlag.getMetricQ1());
+        assertEquals(expectedQ2, testFlag.getMetricQ2());
+        assertEquals(expectedQ3, testFlag.getMetricQ3());
     }
 
     @Test 
@@ -166,9 +176,13 @@ public class FlagTest {
         Collections.sort(fiveValueDifferentNumberFloatList);
 
         testFlag.boxPlotCalculations(fiveValueDifferentNumberFloatList);
-        assertEquals(2, testFlag.getMetricQ1(), 0);
-        assertEquals(3, testFlag.getMetricQ2(), 0);
-        assertEquals(4, testFlag.getMetricQ3(), 0);
+
+        ArrayList<Float> expectedQ1 = new ArrayList<>(List.of(2f));
+        ArrayList<Float> expectedQ2 = new ArrayList<>(List.of(3f));
+        ArrayList<Float> expectedQ3 = new ArrayList<>(List.of(4f));
+        assertEquals(expectedQ1, testFlag.getMetricQ1());
+        assertEquals(expectedQ2, testFlag.getMetricQ2());
+        assertEquals(expectedQ3, testFlag.getMetricQ3());
     }
 
     @Test 
@@ -184,9 +198,42 @@ public class FlagTest {
         Collections.sort(fiveValueDifferentNumberDecimalFloatList);
 
         testFlag.boxPlotCalculations(fiveValueDifferentNumberDecimalFloatList);
-        assertEquals(0.25, testFlag.getMetricQ1(), 0);
-        assertEquals(0.5, testFlag.getMetricQ2(), 0);
-        assertEquals(0.75, testFlag.getMetricQ3(), 0);
+
+        ArrayList<Float> expectedQ1 = new ArrayList<>(List.of(0.25f));
+        ArrayList<Float> expectedQ2 = new ArrayList<>(List.of(0.5f));
+        ArrayList<Float> expectedQ3 = new ArrayList<>(List.of(0.75f));
+        assertEquals(expectedQ1, testFlag.getMetricQ1());
+        assertEquals(expectedQ2, testFlag.getMetricQ2());
+        assertEquals(expectedQ3, testFlag.getMetricQ3());
+    }
+
+    @Test
+    public void testBoxPlotMultipleIterations(){
+        ArrayList fourValueDifferentNumberFloatList = new ArrayList<Float>();
+        fourValueDifferentNumberFloatList.add((float)1.0);
+        fourValueDifferentNumberFloatList.add((float)2.0);
+        fourValueDifferentNumberFloatList.add((float)3.0);
+        fourValueDifferentNumberFloatList.add((float)4.0);
+
+        Collections.sort(fourValueDifferentNumberFloatList);
+        testFlag.boxPlotCalculations(fourValueDifferentNumberFloatList);
+
+        ArrayList fiveValueDifferentNumberDecimalFloatList = new ArrayList<Float>();
+        fiveValueDifferentNumberDecimalFloatList.add((float)0);
+        fiveValueDifferentNumberDecimalFloatList.add((float)0.25);
+        fiveValueDifferentNumberDecimalFloatList.add((float)0.5);
+        fiveValueDifferentNumberDecimalFloatList.add((float)0.75);
+        fiveValueDifferentNumberDecimalFloatList.add((float)1);
+
+        Collections.sort(fiveValueDifferentNumberDecimalFloatList);
+        testFlag.boxPlotCalculations(fiveValueDifferentNumberDecimalFloatList);
+
+        ArrayList<Float> expectedQ1 = new ArrayList<>(List.of(1.5f, 0.25f));
+        ArrayList<Float> expectedQ2 = new ArrayList<>(List.of(2.5f, 0.5f));
+        ArrayList<Float> expectedQ3 = new ArrayList<>(List.of(3.5f, 0.75f));
+        assertEquals(expectedQ1, testFlag.getMetricQ1());
+        assertEquals(expectedQ2, testFlag.getMetricQ2());
+        assertEquals(expectedQ3, testFlag.getMetricQ3());
     }
 
 }

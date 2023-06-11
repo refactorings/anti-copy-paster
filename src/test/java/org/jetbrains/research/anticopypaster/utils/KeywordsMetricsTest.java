@@ -17,6 +17,24 @@ import org.mockito.Mock;
 import static org.mockito.Mockito.*;
 
 public class KeywordsMetricsTest {
+
+    /**
+     * Testing variant of KeywordsMetrics.
+     * Stores sensitivity setting locally rather than through IntelliJ project settings.
+     */
+    private class TestingKeywordsMetrics extends KeywordsMetrics {
+
+        public TestingKeywordsMetrics(List<FeaturesVector> featuresVectorList) {
+            super(featuresVectorList);
+        }
+
+        @Override
+        public int getSensitivity() {
+            return sensitivity;
+        }
+    }
+
+    private int sensitivity;
     
     /**
     Inner class to mock a FeaturesVector
@@ -50,7 +68,7 @@ public class KeywordsMetricsTest {
         return floatArr;
     }
 
-    private KeywordsMetrics keywordsMetrics;
+    private TestingKeywordsMetrics keywordsMetrics;
     private List<FeaturesVector> fvList;
 
     @BeforeEach
@@ -62,8 +80,8 @@ public class KeywordsMetricsTest {
     
     @Test
     public void testIsTriggeredSensitivityZero(){
-        this.keywordsMetrics = new KeywordsMetrics(fvList);
-        keywordsMetrics.changeSensitivity(0);
+        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        sensitivity = 100;
         assertFalse(keywordsMetrics.isFlagTriggered(null));
     }
 
@@ -89,8 +107,8 @@ public class KeywordsMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.keywordsMetrics = new KeywordsMetrics(fvList);
-        keywordsMetrics.changeSensitivity(1);
+        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        sensitivity = 25;
 
         float[] passedInArray = generateArrayForKeywordsPopulatedByValue(3);
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
@@ -119,8 +137,8 @@ public class KeywordsMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.keywordsMetrics = new KeywordsMetrics(fvList);
-        keywordsMetrics.changeSensitivity(1);
+        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        sensitivity = 25;
 
         float[] passedInArray = generateArrayForKeywordsPopulatedByValue(1);
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
@@ -149,8 +167,8 @@ public class KeywordsMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.keywordsMetrics = new KeywordsMetrics(fvList);
-        keywordsMetrics.changeSensitivity(2);
+        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        sensitivity = 50;
 
         float[] passedInArray = generateArrayForKeywordsPopulatedByValue(4);
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
@@ -179,8 +197,8 @@ public class KeywordsMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.keywordsMetrics = new KeywordsMetrics(fvList);
-        keywordsMetrics.changeSensitivity(2);
+        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        sensitivity = 50;
 
         float[] passedInArray = generateArrayForKeywordsPopulatedByValue(2);
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
@@ -209,8 +227,8 @@ public class KeywordsMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.keywordsMetrics = new KeywordsMetrics(fvList);
-        keywordsMetrics.changeSensitivity(3);
+        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        sensitivity = 75;
 
         float[] passedInArray = generateArrayForKeywordsPopulatedByValue(5);
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
@@ -239,8 +257,8 @@ public class KeywordsMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
 
-        this.keywordsMetrics = new KeywordsMetrics(fvList);
-        keywordsMetrics.changeSensitivity(3);
+        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        sensitivity = 75;
 
         float[] passedInArray = generateArrayForKeywordsPopulatedByValue(3);
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);

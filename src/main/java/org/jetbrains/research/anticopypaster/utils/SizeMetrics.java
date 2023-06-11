@@ -52,36 +52,41 @@ public class SizeMetrics extends Flag{
      */
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
-        ArrayList<Boolean> metricsPassed = new ArrayList<>();
-        for(int i = 0; i < selectedMetrics.length; i++){
-            float fvSizeValue = getSizeMetricFromFV(featuresVector, selectedMetrics[i]);
-            int quartile = (int) Math.ceil(sensitivity / 25.0);
-            switch(quartile) {
-                case 1:
-                    metricsPassed.add(true);
-                case 2:
-                    if(fvSizeValue >= metricQ1.get(i)){
+        if(featuresVector != null) {
+            ArrayList<Boolean> metricsPassed = new ArrayList<>();
+            for (int i = 0; i < selectedMetrics.length; i++) {
+                float fvSizeValue = getSizeMetricFromFV(featuresVector, selectedMetrics[i]);
+                int quartile = (int) Math.ceil(sensitivity + 1 / 25.0);
+                switch (quartile) {
+                    case 1:
                         metricsPassed.add(true);
-                    }
-                    else{metricsPassed.add(false);}
+                    case 2:
+                        if (fvSizeValue >= metricQ1.get(i)) {
+                            metricsPassed.add(true);
+                        } else {
+                            metricsPassed.add(false);
+                        }
 
-                case 3:
-                    if(fvSizeValue >= metricQ2.get(i)){
-                        metricsPassed.add(true);
-                    }
-                    else{metricsPassed.add(false);}
-                case 4:
-                    if(fvSizeValue >= metricQ3.get(i)){
-                        metricsPassed.add(true);
-                    }
-                    else{metricsPassed.add(false);}
-                default:
-                    metricsPassed.add(false);
+                    case 3:
+                        if (fvSizeValue >= metricQ2.get(i)) {
+                            metricsPassed.add(true);
+                        } else {
+                            metricsPassed.add(false);
+                        }
+                    case 4:
+                        if (fvSizeValue >= metricQ3.get(i)) {
+                            metricsPassed.add(true);
+                        } else {
+                            metricsPassed.add(false);
+                        }
+                    default:
+                        metricsPassed.add(false);
+                }
             }
-        }
-        for (boolean passed : metricsPassed) {
-            if (passed) {
-                return true;
+            for (boolean passed : metricsPassed) {
+                if (passed) {
+                    return true;
+                }
             }
         }
         return false;

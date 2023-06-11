@@ -1,6 +1,7 @@
 package org.jetbrains.research.anticopypaster.models;
 
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.junit.Before;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,6 +35,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         super.setUp();
         while (!getProject().isInitialized());
         model = new UserSettingsModel(null);
+        settings = ProjectSettingsState.getInstance(getProject());
     }
 
     /**
@@ -93,6 +95,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     private UserSettingsModel model;
+    private ProjectSettingsState settings;
 
     /**
     This is a test to make sure that if the model has a null metrics
@@ -146,10 +149,17 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
+
         // turn everything off
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(0);
+        settings.keywordsRequired = true;
+        settings.couplingRequired = true;
+        settings.sizeRequired = true;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that would trip the flag, but should not
         float[] passedInArray = generateAndFillArray(1);
@@ -198,9 +208,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = false;
+
+        settings.complexitySensitivity = 100;
+        settings.keywordsSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.couplingSensitivity = 100;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = new float[78];
@@ -241,9 +258,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = new float[78];
@@ -284,9 +308,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(2);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 50;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = new float[78];
@@ -327,9 +358,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(2);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 50;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = new float[78];
@@ -370,9 +408,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(3);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 75;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = new float[78];
@@ -413,9 +458,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(3);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 75;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = new float[78];
@@ -456,9 +508,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = new float[78];
@@ -499,9 +558,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = new float[78];
@@ -542,9 +608,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(2);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 50;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = new float[78];
@@ -585,9 +658,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(2);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 50;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = new float[78];
@@ -628,9 +708,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(3);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 75;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = new float[78];
@@ -671,9 +758,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(3);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 75;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = new float[78];
@@ -706,9 +800,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = generateAndFillArray(3);
@@ -740,9 +841,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = generateAndFillArray(1);
@@ -774,9 +882,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(2);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 50;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = generateAndFillArray(4);
@@ -808,9 +923,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(2);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 50;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = generateAndFillArray(2);
@@ -842,9 +964,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(3);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 75;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = generateAndFillArray(5);
@@ -876,9 +1005,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(3);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 75;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = generateAndFillArray(3);
@@ -929,9 +1065,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = new float[78];
@@ -984,9 +1127,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = new float[78];
@@ -1039,9 +1189,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(0);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = false;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 100;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = new float[78];
@@ -1094,9 +1251,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = generateAndFillArray(3);
@@ -1148,9 +1312,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = generateAndFillArray(1);
@@ -1202,9 +1373,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(0);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = false;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 100;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = generateAndFillArray(1);
@@ -1251,9 +1429,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = generateAndFillArray(3);
@@ -1300,9 +1485,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = generateAndFillArray(1);
@@ -1349,9 +1541,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(0);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = false;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 100;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = generateAndFillArray(1);
@@ -1409,9 +1608,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will trip the flag
         float[] passedInArray = generateAndFillArray(3);
@@ -1470,9 +1676,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = generateAndFillArray(3);
@@ -1531,9 +1744,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = generateAndFillArray(3);
@@ -1592,9 +1812,16 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
         this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-        this.model.setComplexitySensitivity(1);
-        this.model.setKeywordsSensitivity(1);
-        this.model.setSizeSensitivity(1);
+
+        settings.keywordsRequired = true;
+        settings.couplingRequired = false;
+        settings.sizeRequired = true;
+        settings.complexityRequired = true;
+
+        settings.keywordsSensitivity = 25;
+        settings.couplingSensitivity = 100;
+        settings.sizeSensitivity = 25;
+        settings.complexitySensitivity = 25;
 
         // Make a FeaturesVector that will NOT trip the flag
         float[] passedInArray = generateAndFillArray(1);

@@ -70,15 +70,17 @@ public class UserSettingsModel extends PredictionModel{
         Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
-        boolean shouldNotify = true;
-        if (!sizeTriggered && settings.sizeRequired)
-            shouldNotify = false;
-        else if (!complexityTriggered && settings.complexityRequired)
-            shouldNotify = false;
-        else if (!keywordsTriggered && settings.keywordsRequired)
-            shouldNotify = false;
-        else if (!couplingTriggered && settings.couplingRequired)
-            shouldNotify = false;
+        boolean shouldNotify = sizeTriggered || complexityTriggered || keywordsTriggered || couplingTriggered;
+        if (shouldNotify) {
+            if (!sizeTriggered && settings.sizeRequired)
+                shouldNotify = false;
+            else if (!complexityTriggered && settings.complexityRequired)
+                shouldNotify = false;
+            else if (!keywordsTriggered && settings.keywordsRequired)
+                shouldNotify = false;
+            else if (!couplingTriggered && settings.couplingRequired)
+                shouldNotify = false;
+        }
 
         return shouldNotify ? 1 : 0;
     }
