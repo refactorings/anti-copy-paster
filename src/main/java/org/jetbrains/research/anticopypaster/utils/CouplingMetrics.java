@@ -18,13 +18,28 @@ public class CouplingMetrics extends Flag{
     /**
     This is a function that will get the coupling metric out of
     the FeaturesVector that is passed in
-    Coupling only uses Metric #6, so getting the value at index 5
-    from the fv array gives us the right value
+    Coupling uses one of Metrics 6 through 11, according to this scheme:
+        * Metric index 5: Total connectivity
+        * Metric index 6: Total connectivity per line
+        * Metric index 7: Field connectivity
+        * Metric index 8: Field connectivity per line
+        * Metric index 9: Method connectivity
+        * Metric index 10: Method connectivity per line
      */
     @Override
     protected float getMetric(FeaturesVector fv){
         if(fv != null){
-            lastCalculatedMetric = fv.buildArray()[5];
+            Project project = ProjectManager.getInstance().getOpenProjects()[0];
+            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+
+            int couplingMetricIndex = 5;
+            if (settings.connectivityType == 1)         { couplingMetricIndex = 7; }
+            else if (settings.connectivityType == 2)    { couplingMetricIndex = 9; }
+
+            // Add one to index if the metric is measured per line.
+            if (!settings.measureCouplingByTotal)       { couplingMetricIndex += 1; }
+
+            lastCalculatedMetric = fv.buildArray()[couplingMetricIndex];
             return lastCalculatedMetric;
         } else {
             return 0;

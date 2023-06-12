@@ -32,7 +32,7 @@ public class ProjectSettingsState implements PersistentStateComponent<ProjectSet
         }
     }
 
-    public int connectivityType = 1;
+    public int connectivityType = 0;
 
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);

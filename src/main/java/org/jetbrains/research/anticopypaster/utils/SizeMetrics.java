@@ -15,14 +15,20 @@ public class SizeMetrics extends Flag{
     }
 
     /**
-    This takes metric 1 from the array and gets size
-    of the enclosing method
+    Size can be defined as either the number of lines or number of symbols in a code body.
+     getMetric() returns the relevant metric depending on the user's settings.
      */
     @Override
     protected float getMetric(FeaturesVector fv){
         if(fv != null){
+            Project project = ProjectManager.getInstance().getOpenProjects()[0];
+            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+
+            int sizeMetricIndex = 0;
+            if (!settings.defineSizeByLines) { sizeMetricIndex = 1; }
+
             float[] fvArr = fv.buildArray();
-            lastCalculatedMetric = fvArr[0];
+            lastCalculatedMetric = fvArr[sizeMetricIndex];
             return lastCalculatedMetric;
         }
         lastCalculatedMetric = 0;

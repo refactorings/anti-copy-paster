@@ -18,13 +18,19 @@ public class ComplexityMetrics extends Flag{
     /**
     This is a function that will get the complexity metric out of 
     the FeaturesVector that is passed in
-    Complexity only uses Metric #4, so getting the value at index 3
+    Complexity only uses Metrics #4 and #5, so getting the value at index 3 or 4 (depending on user settings)
     from the fv array gives us the right value
      */
     @Override
     protected float getMetric(FeaturesVector fv){
         if(fv != null){
-            lastCalculatedMetric = fv.buildArray()[3];
+            Project project = ProjectManager.getInstance().getOpenProjects()[0];
+            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+
+            int complexityMetricIndex = 3;
+            if (!settings.measureComplexityByTotal) { complexityMetricIndex = 4; }
+
+            lastCalculatedMetric = fv.buildArray()[complexityMetricIndex];
             return lastCalculatedMetric;
         } else {
             return 0;
