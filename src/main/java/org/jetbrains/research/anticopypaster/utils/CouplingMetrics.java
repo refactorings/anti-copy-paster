@@ -29,7 +29,7 @@ public class CouplingMetrics extends Flag{
     @Override
     protected float getMetric(FeaturesVector fv){
         if(fv != null){
-            Project project = ProjectManager.getInstance().getOpenProjects()[0];
+            //Project project = ProjectManager.getInstance().getOpenProjects()[0];
             ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
             int couplingMetricIndex = 5;
@@ -52,7 +52,7 @@ public class CouplingMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         return settings.couplingSensitivity;
     }

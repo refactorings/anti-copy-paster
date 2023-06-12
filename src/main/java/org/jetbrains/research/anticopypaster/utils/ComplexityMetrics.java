@@ -24,7 +24,7 @@ public class ComplexityMetrics extends Flag{
     @Override
     protected float getMetric(FeaturesVector fv){
         if(fv != null){
-            Project project = ProjectManager.getInstance().getOpenProjects()[0];
+            //Project project = ProjectManager.getInstance().getOpenProjects()[0];
             ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
             int complexityMetricIndex = 3;
@@ -43,7 +43,7 @@ public class ComplexityMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         return settings.complexitySensitivity;
     }
