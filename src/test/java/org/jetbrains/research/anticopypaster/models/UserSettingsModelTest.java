@@ -34,7 +34,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     protected void setUp() throws Exception {
         super.setUp();
         while (!getProject().isInitialized());
-        model = new UserSettingsModel(null);
+        model = new UserSettingsModel(null, getProject());
         settings = ProjectSettingsState.getInstance(getProject());
     }
 

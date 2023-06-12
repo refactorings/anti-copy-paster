@@ -1,5 +1,6 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import com.intellij.openapi.project.Project;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.io.FileWriter;
@@ -18,16 +19,19 @@ public abstract class Flag{
 
     protected float lastCalculatedMetric;
 
+    protected Project project;
+
     protected abstract int getSensitivity();
 
     protected abstract float getMetric(FeaturesVector featuresVector);
 
-    public Flag(List<FeaturesVector> featuresVectorList){
+    public Flag(List<FeaturesVector> featuresVectorList, Project project){
         this.featuresVectorList = featuresVectorList;
         this.metricQ1=0;
         this.metricQ2=0;
         this.metricQ3=0;
         this.lastCalculatedMetric = -1;
+        this.project = project;
         calculateAverageMetrics();
     }
 

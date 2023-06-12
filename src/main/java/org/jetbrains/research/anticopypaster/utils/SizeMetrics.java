@@ -10,8 +10,8 @@ import java.util.List;
 
 public class SizeMetrics extends Flag{
 
-    public SizeMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList);
+    public SizeMetrics(List<FeaturesVector> featuresVectorList, Project project){
+        super(featuresVectorList, project);
     }
 
     /**
@@ -21,7 +21,7 @@ public class SizeMetrics extends Flag{
     @Override
     protected float getMetric(FeaturesVector fv){
         if(fv != null){
-            Project project = ProjectManager.getInstance().getOpenProjects()[0];
+            //Project project = ProjectManager.getInstance().getOpenProjects()[0];
             ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
             int sizeMetricIndex = 0;

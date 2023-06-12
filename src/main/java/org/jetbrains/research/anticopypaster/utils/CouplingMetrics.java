@@ -11,8 +11,8 @@ import java.util.List;
 
 public class CouplingMetrics extends Flag{
 
-    public CouplingMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList);
+    public CouplingMetrics(List<FeaturesVector> featuresVectorList, Project project){
+        super(featuresVectorList, project);
     }
 
     /**

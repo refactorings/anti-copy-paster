@@ -1,5 +1,6 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,7 +16,7 @@ import org.mockito.Mock;
 
 import static org.mockito.Mockito.*;
 
-public class FlagTest {
+public class FlagTest extends LightJavaCodeInsightFixtureTestCase {
 
     /**
     Inner, nonspecific testing implementation for this class to test the shared utilities
@@ -23,7 +24,7 @@ public class FlagTest {
     class TestingFlag extends Flag{
 
         public TestingFlag(List<FeaturesVector> featuresVectorList){
-            super(featuresVectorList);
+            super(featuresVectorList, getProject());
         }
 
         @Override

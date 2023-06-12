@@ -57,6 +57,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         HashMap<String, Integer> variablesCountsInCodeFragment = new HashMap<>();
 
         AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
+        refactoringNotificationTask.setProject(project);
 
         if (editor == null || file == null || !FragmentCorrectnessChecker.isCorrect(project, file,
                 text,

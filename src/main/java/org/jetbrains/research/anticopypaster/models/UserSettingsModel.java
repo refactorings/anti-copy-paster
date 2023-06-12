@@ -13,8 +13,8 @@ import java.util.Scanner;
 
 public class UserSettingsModel extends PredictionModel{
 
-    private static final String FILE_PATH = ProjectManager.getInstance().getOpenProjects()[0]
-            .getBasePath() + "/.idea/custom_metrics.txt";
+    /*private static final String FILE_PATH = ProjectManager.getInstance().getOpenProjects()[0]
+            .getBasePath() + "/.idea/custom_metrics.txt";*/
 
     private final int DEFAULT_SENSITIVITY = 50;
     private MetricsGatherer metricsGatherer;
@@ -23,12 +23,15 @@ public class UserSettingsModel extends PredictionModel{
     private Flag sizeMetrics;
     private Flag complexityMetrics;
     private Flag couplingMetrics;
+    private Project project;
 
-    public UserSettingsModel(MetricsGatherer mg){
+    public UserSettingsModel(MetricsGatherer mg, Project project){
         //The metricsGatherer instantiation calls a function that can't be used
         //outside the context of an installed plugin, so in order to unit test
         //our model, the metrics gatherer is passed in from the constructor
+        this.project = project;
         if(mg != null){
+            mg.setProject(project);
             initMetricsGathererAndMetricsFlags(mg);
         }
     }
@@ -43,10 +46,10 @@ public class UserSettingsModel extends PredictionModel{
         this.metricsGatherer = mg;
 
         List<FeaturesVector> methodMetrics = mg.getMethodsMetrics();
-        this.keywordsMetrics = new KeywordsMetrics(methodMetrics);
-        this.complexityMetrics = new ComplexityMetrics(methodMetrics);
-        this.sizeMetrics = new SizeMetrics(methodMetrics);
-        this.couplingMetrics = new CouplingMetrics(methodMetrics);
+        this.keywordsMetrics = new KeywordsMetrics(methodMetrics, project);
+        this.complexityMetrics = new ComplexityMetrics(methodMetrics, project);
+        this.sizeMetrics = new SizeMetrics(methodMetrics, project);
+        this.couplingMetrics = new CouplingMetrics(methodMetrics, project);
     }
 
     /**
@@ -67,7 +70,7 @@ public class UserSettingsModel extends PredictionModel{
         boolean keywordsTriggered = this.keywordsMetrics.isFlagTriggered(featuresVector);
         boolean couplingTriggered = this.couplingMetrics.isFlagTriggered(featuresVector);
 
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
         boolean shouldNotify = sizeTriggered || complexityTriggered || keywordsTriggered || couplingTriggered;
@@ -106,5 +109,9 @@ public class UserSettingsModel extends PredictionModel{
         this.keywordsMetrics.logThresholds(filepath);
         this.sizeMetrics.logThresholds(filepath);
         this.couplingMetrics.logMetric(filepath);
+    }
+
+    public void setProject(Project project) {
+        this.project = project;
     }
 }

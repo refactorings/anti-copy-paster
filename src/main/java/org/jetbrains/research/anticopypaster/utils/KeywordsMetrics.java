@@ -9,8 +9,8 @@ import java.util.List;
 
 public class KeywordsMetrics extends Flag{
 
-    public KeywordsMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList);
+    public KeywordsMetrics(List<FeaturesVector> featuresVectorList, Project project){
+        super(featuresVectorList, project);
     }
 
     /**

@@ -28,13 +28,15 @@ public class MetricsGatherer {
      * the IntelliJ Project.
      */
     private List<FeaturesVector> methodsMetrics;
+    private Project project;
 
     /**
      * Builds an instance of the MetricsGatherer and
      * does the initial (and only) metrics gathering.
      */
-    public MetricsGatherer(){
+    public MetricsGatherer(Project project){
         this.methodsMetrics = new ArrayList<>();
+        this.project = project;
         gatherMetrics();
     }
 
@@ -50,7 +52,7 @@ public class MetricsGatherer {
      */
     private void gatherMetrics(){
         // Gets the first currently opened project
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
 
         var vfCollectionWrapper = new Object(){ Collection<VirtualFile> vfCollection = null; };
         ApplicationManager.getApplication().runReadAction(() -> {
@@ -102,5 +104,9 @@ public class MetricsGatherer {
                 this.methodsMetrics.add(features);
             }
         }
+    }
+
+    public void setProject(Project project) {
+        this.project = project;
     }
 }
