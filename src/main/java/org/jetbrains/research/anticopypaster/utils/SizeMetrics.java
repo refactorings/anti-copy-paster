@@ -60,7 +60,6 @@ public class SizeMetrics extends Flag{
             for (int i = 0; i < selectedMetrics.length; i++) {
                 float fvSizeValue = getSizeMetricFromFV(featuresVector, selectedMetrics[i]);
                 int quartile = (int) Math.ceil((sensitivity + 1) / 25.0);
-
                 switch (quartile) {
                     case 1 -> {
                         metricsPassed.add(true);
@@ -80,7 +79,6 @@ public class SizeMetrics extends Flag{
                                 }
                             }
                             metricsPassed.add(false);
-
                         }
                     }
                     case 3 -> {
@@ -138,6 +136,7 @@ public class SizeMetrics extends Flag{
                     return true;
                 }
             }
+
         }
         return false;
     }

@@ -73,7 +73,7 @@ public class ComplexityMetricsTest {
     @Test
     public void testIsTriggeredSensitivityZero(){
         this.complexityMetrics = new TestingComplexityMetrics(fvList);
-        sensitivity = 100;
+        this.complexityMetrics.sensitivity = 100;
         assertFalse(complexityMetrics.isFlagTriggered(null));
     }
 
@@ -82,19 +82,19 @@ public class ComplexityMetricsTest {
 
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[3] = 1;
+        fvArrayValue1[11] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[3] = 2;
+        fvArrayValue2[11] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[3] = 3;
+        fvArrayValue3[11] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[3] = 4;
+        fvArrayValue4[11] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[3] = 5;
+        fvArrayValue5[11] = 5;
         
         //Adding these values gives:
         // Q1 = 2
@@ -108,10 +108,11 @@ public class ComplexityMetricsTest {
 
 
         this.complexityMetrics = new TestingComplexityMetrics(fvList);
-        sensitivity = 25;
+        this.complexityMetrics.sensitivity = 25;
+
 
         float[] passedInArray = new float[78];
-        passedInArray[3] = (float)3;
+        passedInArray[11] = (float)3;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
         assertTrue(complexityMetrics.isFlagTriggered(passedInFv.getMock()));
@@ -122,19 +123,19 @@ public class ComplexityMetricsTest {
 
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[3] = 1;
+        fvArrayValue1[11] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[3] = 2;
+        fvArrayValue2[11] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[3] = 3;
+        fvArrayValue3[11] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[3] = 4;
+        fvArrayValue4[11] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[3] = 5;
+        fvArrayValue5[11] = 5;
         
         //Adding these values gives:
         // Q1 = 2
@@ -148,11 +149,14 @@ public class ComplexityMetricsTest {
 
 
         this.complexityMetrics = new TestingComplexityMetrics(fvList);
-        sensitivity = 25;
+        this.complexityMetrics.sensitivity = 25;
+
 
         float[] passedInArray = new float[78];
-        passedInArray[3] = (float)1;
+        passedInArray[11] = (float)1;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
+
+
 
         assertFalse(complexityMetrics.isFlagTriggered(passedInFv.getMock()));
     }
@@ -162,19 +166,19 @@ public class ComplexityMetricsTest {
 
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[3] = 1;
+        fvArrayValue1[11] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[3] = 2;
+        fvArrayValue2[11] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[3] = 3;
+        fvArrayValue3[11] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[3] = 4;
+        fvArrayValue4[11] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[3] = 5;
+        fvArrayValue5[11] = 5;
         
         //Adding these values gives:
         // Q1 = 2
@@ -188,10 +192,10 @@ public class ComplexityMetricsTest {
 
 
         this.complexityMetrics = new TestingComplexityMetrics(fvList);
-        sensitivity = 50;
+        this.complexityMetrics.sensitivity = 50;
 
         float[] passedInArray = new float[78];
-        passedInArray[3] = (float)4;
+        passedInArray[11] = (float)4;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
         assertTrue(complexityMetrics.isFlagTriggered(passedInFv.getMock()));
@@ -205,16 +209,16 @@ public class ComplexityMetricsTest {
         fvArrayValue1[3] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[3] = 2;
+        fvArrayValue2[11] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[3] = 3;
+        fvArrayValue3[11] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[3] = 4;
+        fvArrayValue4[11] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[3] = 5;
+        fvArrayValue5[11] = 5;
         
         //Adding these values gives:
         // Q1 = 2
@@ -228,10 +232,10 @@ public class ComplexityMetricsTest {
 
 
         this.complexityMetrics = new TestingComplexityMetrics(fvList);
-        sensitivity = 50;
+        this.complexityMetrics.sensitivity = 50;
 
         float[] passedInArray = new float[78];
-        passedInArray[3] = (float)2;
+        passedInArray[11] = (float)2;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
         assertFalse(complexityMetrics.isFlagTriggered(passedInFv.getMock()));
@@ -242,19 +246,19 @@ public class ComplexityMetricsTest {
 
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[3] = 1;
+        fvArrayValue1[11] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[3] = 2;
+        fvArrayValue2[11] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[3] = 3;
+        fvArrayValue3[11] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[3] = 4;
+        fvArrayValue4[11] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[3] = 5;
+        fvArrayValue5[11] = 5;
         
         //Adding these values gives:
         // Q1 = 2
@@ -268,10 +272,10 @@ public class ComplexityMetricsTest {
 
 
         this.complexityMetrics = new TestingComplexityMetrics(fvList);
-        sensitivity = 75;
+        this.complexityMetrics.sensitivity = 75;
 
         float[] passedInArray = new float[78];
-        passedInArray[3] = (float)5;
+        passedInArray[11] = (float)5;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
         assertTrue(complexityMetrics.isFlagTriggered(passedInFv.getMock()));
@@ -282,19 +286,19 @@ public class ComplexityMetricsTest {
 
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[3] = 1;
+        fvArrayValue1[11] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[3] = 2;
+        fvArrayValue2[11] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[3] = 3;
+        fvArrayValue3[11] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[3] = 4;
+        fvArrayValue4[11] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[3] = 5;
+        fvArrayValue5[11] = 5;
         
         //Adding these values gives:
         // Q1 = 2
@@ -308,10 +312,138 @@ public class ComplexityMetricsTest {
 
 
         this.complexityMetrics = new TestingComplexityMetrics(fvList);
-        sensitivity = 75;
+        this.complexityMetrics.sensitivity = 75;
 
         float[] passedInArray = new float[78];
-        passedInArray[3] = (float)3;
+        passedInArray[11] = (float)3;
+        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
+
+        assertFalse(complexityMetrics.isFlagTriggered(passedInFv.getMock()));
+    }
+
+    @Test
+    public void testIsTriggeredMultiMetricSensitivityOne(){
+
+        float[] fvArrayValue1 = new float[78];
+        fvArrayValue1[11] = 1;
+        fvArrayValue1[12] = 12;
+        fvArrayValue1[13] = 12;
+        fvArrayValue1[14] = 1;
+        fvArrayValue1[15] = 1;
+
+        float[] fvArrayValue2 = new float[78];
+        fvArrayValue2[11] = 2;
+        fvArrayValue2[12] = 5;
+        fvArrayValue2[13] = 5;
+        fvArrayValue2[14] = 2;
+        fvArrayValue2[15] = 1;
+
+        float[] fvArrayValue3 = new float[78];
+        fvArrayValue3[11] = 3;
+        fvArrayValue3[12] = 2;
+        fvArrayValue3[13] = 2;
+        fvArrayValue3[14] = 3;
+        fvArrayValue3[15] = 1;
+
+        float[] fvArrayValue4 = new float[78];
+        fvArrayValue4[11] = 4;
+        fvArrayValue4[12] = 0;
+        fvArrayValue4[13] = 7;
+        fvArrayValue4[14] = 4;
+        fvArrayValue4[15] = 1;
+
+        float[] fvArrayValue5 = new float[78];
+        fvArrayValue5[11] = 5;
+        fvArrayValue5[12] = 4;
+        fvArrayValue5[13] = 24;
+        fvArrayValue5[14] = 5;
+        fvArrayValue5[15] = 1;
+
+        //Adding these values gives:
+        // Q1 = 2, 2, 5, 2, 1
+        // Q2 = 3, 4, 7, 3, 1
+        // Q3 = 4, 5,12, 4, 1
+        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
+        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
+        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
+        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
+        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
+
+
+        this.complexityMetrics = new TestingComplexityMetrics(fvList);
+        this.complexityMetrics.sensitivity = 25;
+
+
+        float[] passedInArray = new float[78];
+        passedInArray[11] = 3;
+        passedInArray[12] = 1;
+        passedInArray[13] = 5;
+        passedInArray[14] = 10;
+        passedInArray[15] = 0;
+
+        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
+
+        assertTrue(complexityMetrics.isFlagTriggered(passedInFv.getMock()));
+    }
+    @Test
+    public void testIsNotTriggeredMultiMetricSensitivityOne(){
+
+        float[] fvArrayValue1 = new float[78];
+        fvArrayValue1[11] = 1;
+        fvArrayValue1[12] = 12;
+        fvArrayValue1[13] = 12;
+        fvArrayValue1[14] = 1;
+        fvArrayValue1[15] = 1;
+
+        float[] fvArrayValue2 = new float[78];
+        fvArrayValue2[11] = 2;
+        fvArrayValue2[12] = 5;
+        fvArrayValue2[13] = 5;
+        fvArrayValue2[14] = 2;
+        fvArrayValue2[15] = 1;
+
+        float[] fvArrayValue3 = new float[78];
+        fvArrayValue3[11] = 3;
+        fvArrayValue3[12] = 2;
+        fvArrayValue3[13] = 2;
+        fvArrayValue3[14] = 3;
+        fvArrayValue3[15] = 1;
+
+        float[] fvArrayValue4 = new float[78];
+        fvArrayValue4[11] = 4;
+        fvArrayValue4[12] = 0;
+        fvArrayValue4[13] = 7;
+        fvArrayValue4[14] = 4;
+        fvArrayValue4[15] = 1;
+
+        float[] fvArrayValue5 = new float[78];
+        fvArrayValue5[11] = 5;
+        fvArrayValue5[12] = 4;
+        fvArrayValue5[13] = 24;
+        fvArrayValue5[14] = 5;
+        fvArrayValue5[15] = 1;
+
+        //Adding these values gives:
+        // Q1 = 2, 2, 5, 2, 1
+        // Q2 = 3, 4, 7, 3, 1
+        // Q3 = 4, 5,12, 4, 1
+        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
+        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
+        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
+        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
+        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
+
+
+        this.complexityMetrics = new TestingComplexityMetrics(fvList);
+        this.complexityMetrics.sensitivity = 25;
+
+        float[] passedInArray = new float[78];
+        passedInArray[11] = 1;
+        passedInArray[12] = 1;
+        passedInArray[13] = 4;
+        passedInArray[14] = 1;
+        passedInArray[15] = 0;
+
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
         assertFalse(complexityMetrics.isFlagTriggered(passedInFv.getMock()));

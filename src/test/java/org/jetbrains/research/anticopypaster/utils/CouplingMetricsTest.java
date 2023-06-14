@@ -1,9 +1,5 @@
 package org.jetbrains.research.anticopypaster.utils;
 
-import org.apache.commons.lang3.builder.ToStringExclude;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
-import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,21 +13,18 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
 
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 
 import static org.mockito.Mockito.*;
-
-public class SizeMetricsTest {
-
+public class CouplingMetricsTest {
     /**
-     * Testing variant of SizeMetrics.
+     * Testing variant of CouplingMetrics.
      * Stores sensitivity setting locally rather than through IntelliJ project settings.
      */
-    @Mock
-    private ProjectSettingsState settings;
+    private class TestingCouplingMetrics extends CouplingMetrics {
 
-    private class TestingSizeMetrics extends SizeMetrics {
-        public TestingSizeMetrics(List<FeaturesVector> featuresVectorList) {super(featuresVectorList);}
+        public TestingCouplingMetrics(List<FeaturesVector> featuresVectorList) {
+            super(featuresVectorList);
+        }
 
         @Override
         public int getSensitivity() {
@@ -39,68 +32,63 @@ public class SizeMetricsTest {
         }
     }
 
-    private int sensitivity;
-
-    /**
-    Inner class to mock a FeaturesVector
-     */
     public class FeaturesVectorMock {
         @Mock
         private FeaturesVector mockFeaturesVector;
-        
+
         private float[] metricsArray;
 
         public FeaturesVectorMock(float[] metricsArray) {
             mockFeaturesVector = mock(FeaturesVector.class);
             this.metricsArray = metricsArray;
-            
+
             // mock methods for the FeaturesVector class
             when(mockFeaturesVector.buildArray())
-                .thenReturn(this.metricsArray);
-            
+                    .thenReturn(this.metricsArray);
+
         }
-        
+
         public FeaturesVector getMock() {
             return mockFeaturesVector;
         }
     }
 
-    private TestingSizeMetrics sizeMetrics;
+    private TestingCouplingMetrics couplingMetrics;
     private List<FeaturesVector> fvList;
 
     @BeforeEach
     public void beforeTest(){
         //Zero out everything
-        this.sizeMetrics = null;
+        this.couplingMetrics = null;
         this.fvList = new ArrayList<FeaturesVector>();
     }
 
     @Test
     public void testIsTriggeredSensitivityZero(){
-        this.sizeMetrics = new TestingSizeMetrics(fvList);
-        sensitivity = 100;
-        assertFalse(sizeMetrics.isFlagTriggered(null));
+        this.couplingMetrics = new TestingCouplingMetrics(fvList);
+        this.couplingMetrics.sensitivity = 100;
+        assertFalse(couplingMetrics.isFlagTriggered(null));
     }
 
     @Test
-    public void testIsTriggeredSensitivityOneTrue(){
+    public void testIsTriggeredSensitivityOneTrue() {
 
-        // This category uses metric 1, so we set just those
+        // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[0] = 1;
+        fvArrayValue1[5] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[0] = 2;
+        fvArrayValue2[5] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[0] = 3;
+        fvArrayValue3[5] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[0] = 4;
+        fvArrayValue4[5] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[0] = 5;
-        
+        fvArrayValue5[5] = 5;
+
         //Adding these values gives:
         // Q1 = 2
         // Q2 = 3
@@ -111,38 +99,34 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
-
-        this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 25;
-        System.out.println(sizeMetrics.metricQ1.toString());
-
+        this.couplingMetrics = new TestingCouplingMetrics(fvList);
+        this.couplingMetrics.sensitivity = 25;
 
         float[] passedInArray = new float[78];
-        passedInArray[0] = 3;
+        passedInArray[5] = (float)3;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
-        assertTrue(sizeMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertTrue(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
     }
-
     @Test
-    public void testIsTriggeredSensitivityOneFalse(){
+    public void testIsTriggeredSensitivityOneFalse() {
 
-        // This category uses metric 1, so we set just those
+        // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[0] = 1;
+        fvArrayValue1[5] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[0] = 2;
+        fvArrayValue2[5] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[0] = 3;
+        fvArrayValue3[5] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[0] = 4;
+        fvArrayValue4[5] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[0] = 5;
-        
+        fvArrayValue5[5] = 5;
+
         //Adding these values gives:
         // Q1 = 2
         // Q2 = 3
@@ -153,39 +137,34 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
-
-       // this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 25;
-        System.out.println(sizeMetrics.metricQ1.toString());
-        System.out.println();
-
+        this.couplingMetrics = new TestingCouplingMetrics(fvList);
+        this.couplingMetrics.sensitivity = 25;
 
         float[] passedInArray = new float[78];
-        passedInArray[0] = 1;
+        passedInArray[5] = (float)1;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
-        assertFalse(sizeMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertFalse(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
     }
-
     @Test
-    public void testIsTriggeredSensitivityTwoTrue(){
+    public void testIsTriggeredSensitivityTwoTrue() {
 
-        // This category uses metric 1, so we set just those
+        // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[0] = 1;
+        fvArrayValue1[5] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[0] = 2;
+        fvArrayValue2[5] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[0] = 3;
+        fvArrayValue3[5] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[0] = 4;
+        fvArrayValue4[5] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[0] = 5;
-        
+        fvArrayValue5[5] = 5;
+
         //Adding these values gives:
         // Q1 = 2
         // Q2 = 3
@@ -196,36 +175,34 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
-
-        //this.sizeMetrics = new TestingSizeMetrics(fvList);
-        sensitivity = 50;
+        this.couplingMetrics = new TestingCouplingMetrics(fvList);
+        this.couplingMetrics.sensitivity = 50;
 
         float[] passedInArray = new float[78];
-        passedInArray[0] = 4;
+        passedInArray[5] = (float)5;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
-        assertTrue(sizeMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertTrue(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
     }
-
     @Test
-    public void testIsTriggeredSensitivityTwoFalse(){
+    public void testIsTriggeredSensitivityTwoFalse() {
 
-        // This category uses metric 1, so we set just those
+        // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[0] = 1;
+        fvArrayValue1[5] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[0] = 2;
+        fvArrayValue2[5] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[0] = 3;
+        fvArrayValue3[5] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[0] = 4;
+        fvArrayValue4[5] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[0] = 5;
-        
+        fvArrayValue5[5] = 5;
+
         //Adding these values gives:
         // Q1 = 2
         // Q2 = 3
@@ -236,36 +213,34 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
-
-        this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 50;
+        this.couplingMetrics = new TestingCouplingMetrics(fvList);
+        this.couplingMetrics.sensitivity = 50;
 
         float[] passedInArray = new float[78];
-        passedInArray[0] = 2;
+        passedInArray[5] = (float)1;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
-        assertFalse(sizeMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertFalse(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
     }
-
     @Test
-    public void testIsTriggeredSensitivityThreeTrue(){
+    public void testIsTriggeredSensitivityThreeTrue() {
 
-        // This category uses metric 1, so we set just those
+        // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[0] = 1;
+        fvArrayValue1[5] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[0] = 2;
+        fvArrayValue2[5] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[0] = 3;
+        fvArrayValue3[5] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[0] = 4;
+        fvArrayValue4[5] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[0] = 5;
-        
+        fvArrayValue5[5] = 5;
+
         //Adding these values gives:
         // Q1 = 2
         // Q2 = 3
@@ -276,40 +251,34 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
-
-        this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 75;
+        this.couplingMetrics = new TestingCouplingMetrics(fvList);
+        this.couplingMetrics.sensitivity = 75;
 
         float[] passedInArray = new float[78];
-        passedInArray[0] = 5;
+        passedInArray[5] = (float)5;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
-        assertTrue(sizeMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertTrue(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
     }
-
     @Test
-    public void testIsTriggeredSensitivityThreeFalse(){
+    public void testIsTriggeredSensitivityThreeFalse() {
 
-        // This category uses metrics 1 and 12, so we set just those
+        // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[0] = 1;
-
+        fvArrayValue1[5] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[0] = 2;
+        fvArrayValue2[5] = 2;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[0] = 3;
-
+        fvArrayValue3[5] = 3;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[0] = 4;
-
+        fvArrayValue4[5] = 4;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[0] = 5;
+        fvArrayValue5[5] = 5;
 
-        
         //Adding these values gives:
         // Q1 = 2
         // Q2 = 3
@@ -320,54 +289,53 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
-
-        this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 75;
+        this.couplingMetrics = new TestingCouplingMetrics(fvList);
+        this.couplingMetrics.sensitivity = 75;
 
         float[] passedInArray = new float[78];
-        passedInArray[0] = 3;
+        passedInArray[5] = (float)5;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
-        assertFalse(sizeMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertTrue(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
     }
 
     @Test
-    public void testIsTriggeredMultiMetricSensitivityOne(){
+    public void testIsTriggeredMultiMetricSensitivityOne() {
 
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[0] = 1;
-        fvArrayValue1[1] = 12;
-        fvArrayValue1[2] = 12;
-        fvArrayValue1[3] = 1;
-        fvArrayValue1[4] = 1;
+        fvArrayValue1[5] = 1;
+        fvArrayValue1[6] = 12;
+        fvArrayValue1[7] = 12;
+        fvArrayValue1[8] = 1;
+        fvArrayValue1[9] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[0] = 2;
-        fvArrayValue2[1] = 5;
-        fvArrayValue2[2] = 5;
-        fvArrayValue2[3] = 2;
-        fvArrayValue2[4] = 1;
+        fvArrayValue2[5] = 2;
+        fvArrayValue2[6] = 5;
+        fvArrayValue2[7] = 5;
+        fvArrayValue2[8] = 2;
+        fvArrayValue2[9] = 1;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[0] = 3;
-        fvArrayValue3[1] = 2;
-        fvArrayValue3[2] = 2;
-        fvArrayValue3[3] = 3;
-        fvArrayValue3[4] = 1;
+        fvArrayValue3[5] = 3;
+        fvArrayValue3[6] = 2;
+        fvArrayValue3[7] = 2;
+        fvArrayValue3[8] = 3;
+        fvArrayValue3[9] = 1;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[0] = 4;
-        fvArrayValue4[1] = 0;
-        fvArrayValue4[2] = 7;
-        fvArrayValue4[3] = 4;
-        fvArrayValue4[4] = 1;
+        fvArrayValue4[5] = 4;
+        fvArrayValue4[6] = 0;
+        fvArrayValue4[7] = 7;
+        fvArrayValue4[8] = 4;
+        fvArrayValue4[9] = 1;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[0] = 5;
-        fvArrayValue5[1] = 4;
-        fvArrayValue5[2] = 24;
-        fvArrayValue5[3] = 5;
-        fvArrayValue5[4] = 1;
+        fvArrayValue5[5] = 5;
+        fvArrayValue5[6] = 4;
+        fvArrayValue5[7] = 24;
+        fvArrayValue5[8] = 5;
+        fvArrayValue5[9] = 1;
 
         //Adding these values gives:
         // Q1 = 2, 2, 5, 2, 1
@@ -379,57 +347,56 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
-
-        this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 25;
+        this.couplingMetrics = new TestingCouplingMetrics(fvList);
+        this.couplingMetrics.sensitivity = 75;
 
         float[] passedInArray = new float[78];
-        passedInArray[0] = 1;
-        passedInArray[1] = 1;
-        passedInArray[2] = 5;
-        passedInArray[3] = 10;
-        passedInArray[4] = 0;
+        passedInArray[5] = 3;
+        passedInArray[6] = 1;
+        passedInArray[7] = 5;
+        passedInArray[8] = 10;
+        passedInArray[9] = 0;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
-        assertTrue(sizeMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertTrue(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
     }
     @Test
-    public void testIsNotTriggeredMultiMetricSensitivityOne(){
+    public void testIsNotTriggeredMultiMetricSensitivityOne() {
 
         float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[0] = 1;
-        fvArrayValue1[1] = 12;
-        fvArrayValue1[2] = 12;
-        fvArrayValue1[3] = 1;
-        fvArrayValue1[4] = 1;
+        fvArrayValue1[5] = 1;
+        fvArrayValue1[6] = 12;
+        fvArrayValue1[7] = 12;
+        fvArrayValue1[8] = 1;
+        fvArrayValue1[9] = 1;
 
         float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[0] = 2;
-        fvArrayValue2[1] = 5;
-        fvArrayValue2[2] = 5;
-        fvArrayValue2[3] = 2;
-        fvArrayValue2[4] = 1;
+        fvArrayValue2[5] = 2;
+        fvArrayValue2[6] = 5;
+        fvArrayValue2[7] = 5;
+        fvArrayValue2[8] = 2;
+        fvArrayValue2[9] = 1;
 
         float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[0] = 3;
-        fvArrayValue3[1] = 2;
-        fvArrayValue3[2] = 2;
-        fvArrayValue3[3] = 3;
-        fvArrayValue3[4] = 1;
+        fvArrayValue3[5] = 3;
+        fvArrayValue3[6] = 2;
+        fvArrayValue3[7] = 2;
+        fvArrayValue3[8] = 3;
+        fvArrayValue3[9] = 1;
 
         float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[0] = 4;
-        fvArrayValue4[1] = 0;
-        fvArrayValue4[2] = 7;
-        fvArrayValue4[3] = 4;
-        fvArrayValue4[4] = 1;
+        fvArrayValue4[5] = 4;
+        fvArrayValue4[6] = 0;
+        fvArrayValue4[7] = 7;
+        fvArrayValue4[8] = 4;
+        fvArrayValue4[9] = 1;
 
         float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[0] = 5;
-        fvArrayValue5[1] = 4;
-        fvArrayValue5[2] = 24;
-        fvArrayValue5[3] = 5;
-        fvArrayValue5[4] = 1;
+        fvArrayValue5[5] = 5;
+        fvArrayValue5[6] = 4;
+        fvArrayValue5[7] = 24;
+        fvArrayValue5[8] = 5;
+        fvArrayValue5[9] = 1;
 
         //Adding these values gives:
         // Q1 = 2, 2, 5, 2, 1
@@ -441,19 +408,17 @@ public class SizeMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
-
-        this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 25;
+        this.couplingMetrics = new TestingCouplingMetrics(fvList);
+        this.couplingMetrics.sensitivity = 75;
 
         float[] passedInArray = new float[78];
-        passedInArray[0] = 1;
-        passedInArray[1] = 1;
-        passedInArray[2] = 4;
-        passedInArray[3] = 1;
-        passedInArray[4] = 0;
+        passedInArray[5] = 1;
+        passedInArray[6] = 1;
+        passedInArray[7] = 4;
+        passedInArray[8] = 1;
+        passedInArray[9] = 0;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
-        assertFalse(sizeMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertFalse(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
     }
 }
-
