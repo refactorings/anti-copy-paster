@@ -47,24 +47,31 @@ public abstract class Flag{
     /**
      * Recalculates this Flag's threshold from its current sensitivity value.
      * This is done by calculating its relevant metric for each of its FVs,
-     * sorting the resulting list, and grabbing the element of the list
+     * sorting the resulting list, and grabbing the element of the list at
+     * the same relative position in the list as the sensitivity value is
+     * within the range of 0 to 100.
      */
     public void calculateThreshold() {
         if (featuresVectorList == null || featuresVectorList.size() == 0) {
             threshold = 0;
-            return;
+        } else if (featuresVectorList.size() == 1) {
+            threshold = getMetric(featuresVectorList.get(0));
+        } else {
+            float[] metricValues = new float[featuresVectorList.size()];
+            for (int i = 0; i < metricValues.length; i++)
+                metricValues[i] = getMetric(featuresVectorList.get(i));
+            Arrays.sort(metricValues);
+
+            if (getSensitivity() == 100) {
+                threshold = metricValues[metricValues.length - 1];
+            } else {
+                double position = (double) getSensitivity() * featuresVectorList.size() / 100;
+                int lowerIndex = (int) Math.floor(position);
+                float proportion = (float) position % 1;
+
+                threshold = proportion * metricValues[lowerIndex] + (1 - proportion) * metricValues[lowerIndex + 1];
+            }
         }
-
-        float[] metricValues = new float[featuresVectorList.size()];
-        for (int i = 0; i < metricValues.length; i++)
-            metricValues[i] = getMetric(featuresVectorList.get(i));
-        Arrays.sort(metricValues);
-
-        double position = (double) getSensitivity() * featuresVectorList.size() / 100;
-        int lowerIndex = (int) Math.floor(position);
-        float proportion = (float) position % 1;
-
-        threshold = proportion * metricValues[lowerIndex] + (1 - proportion) * metricValues[lowerIndex + 1];
     }
 
     /**
