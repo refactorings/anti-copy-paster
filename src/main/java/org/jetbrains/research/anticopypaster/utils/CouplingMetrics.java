@@ -72,6 +72,8 @@ public class CouplingMetrics extends Flag{
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         ArrayList<Boolean> metricsPassed = new ArrayList<>();
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         for(int i = 0; i < selectedMetrics.length; i++){
             float fvSizeValue = getCouplingMetricFromFV(featuresVector, selectedMetrics[i]);
             int quartile = (int) Math.ceil(sensitivity / 25.0);
@@ -82,19 +84,61 @@ public class CouplingMetrics extends Flag{
                     if(fvSizeValue >= metricQ1.get(i)){
                         metricsPassed.add(true);
                     }
-                    else{metricsPassed.add(false);}
+                    else{
+                        if(selectedMetrics[i] % 2 == 0){
+                            if(settings.couplingRequired) { //TODO: change couplingRequired to measureCouplingByTotal
+                                return false; //since this field is required no need to go through the other coupling metrics
+                            }
+                        }else {
+                            if(settings.couplingRequired) { //TODO: change couplingRequired to measureCouplingPerLine
+                                return false; //since this field is required no need to go through the other coupling metrics
+                            }
+                        }
+                        metricsPassed.add(false);
+                    }
 
                 case 3:
                     if(fvSizeValue >= metricQ2.get(i)){
                         metricsPassed.add(true);
                     }
-                    else{metricsPassed.add(false);}
+                    else{
+                        if(selectedMetrics[i] % 2 == 0){
+                            if(settings.couplingRequired) { //TODO: change couplingRequired to measureCouplingByTotal
+                                return false; //since this field is required no need to go through the other coupling metrics
+                            }
+                        }else {
+                            if(settings.couplingRequired) { //TODO: change couplingRequired to measureCouplingPerLine
+                                return false; //since this field is required no need to go through the other coupling metrics
+                            }
+                        }
+                        metricsPassed.add(false);
+                    }
                 case 4:
                     if(fvSizeValue >= metricQ3.get(i)){
                         metricsPassed.add(true);
                     }
-                    else{metricsPassed.add(false);}
+                    else{
+                        if(selectedMetrics[i] % 2 == 0){
+                            if(settings.couplingRequired) { //TODO: change couplingRequired to measureCouplingByTotal
+                                return false; //since this field is required no need to go through the other coupling metrics
+                            }
+                        }else {
+                            if(settings.couplingRequired) { //TODO: change couplingRequired to measureCouplingPerLine
+                                return false; //since this field is required no need to go through the other coupling metrics
+                            }
+                        }
+                        metricsPassed.add(false);
+                    }
                 default:
+                    if(selectedMetrics[i] % 2 == 0){
+                        if(settings.couplingRequired) { //TODO: change couplingRequired to measureCouplingByTotal
+                            return false; //since this field is required no need to go through the other coupling metrics
+                        }
+                    }else {
+                        if(settings.couplingRequired) { //TODO: change couplingRequired to measureCouplingPerLine
+                            return false; //since this field is required no need to go through the other coupling metrics
+                        }
+                    }
                     metricsPassed.add(false);
             }
         }

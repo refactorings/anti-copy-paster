@@ -75,6 +75,8 @@ public class KeywordsMetrics extends Flag{
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         ArrayList<Boolean> metricsPassed = new ArrayList<>();
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         for(int i = 0; i < selectedMetrics.length; i++){
             float fvSizeValue = getKeywordsMetricFromFV(featuresVector, selectedMetrics[i]);
             int quartile = (int) Math.ceil(sensitivity / 25.0);
@@ -85,19 +87,61 @@ public class KeywordsMetrics extends Flag{
                     if(fvSizeValue >= metricQ1.get(i)){
                         metricsPassed.add(true);
                     }
-                    else{metricsPassed.add(false);}
+                    else{
+                        if(selectedMetrics[i] % 2 == 0){
+                            if(settings.keywordsRequired) { //TODO: change keywordsRequired to measureKeywordsByTotal
+                                return false; //since this field is required no need to go through the other keywords
+                            }
+                        }else {
+                            if(settings.keywordsRequired) { //TODO: change keywordsRequired to measureKeywordsPerLine
+                                return false; //since this field is required no need to go through the other keywords
+                            }
+                        }
+                        metricsPassed.add(false);
+                    }
 
                 case 3:
                     if(fvSizeValue >= metricQ2.get(i)){
                         metricsPassed.add(true);
                     }
-                    else{metricsPassed.add(false);}
+                    else{
+                        if(selectedMetrics[i] % 2 == 0){
+                            if(settings.keywordsRequired) { //TODO: change keywordsRequired to measureKeywordsByTotal
+                                return false; //since this field is required no need to go through the other keywords
+                            }
+                        }else {
+                            if(settings.keywordsRequired) { //TODO: change keywordsRequired to measureKeywordsPerLine
+                                return false; //since this field is required no need to go through the other keywords
+                            }
+                        }
+                        metricsPassed.add(false);
+                    }
                 case 4:
                     if(fvSizeValue >= metricQ3.get(i)){
                         metricsPassed.add(true);
                     }
-                    else{metricsPassed.add(false);}
+                    else{
+                        if(selectedMetrics[i] % 2 == 0){
+                            if(settings.keywordsRequired) { //TODO: change keywordsRequired to measureKeywordsByTotal
+                                return false; //since this field is required no need to go through the other keywords
+                            }
+                        }else {
+                            if(settings.keywordsRequired) { //TODO: change keywordsRequired to measureKeywordsPerLine
+                                return false; //since this field is required no need to go through the other keywords
+                            }
+                        }
+                        metricsPassed.add(false);
+                    }
                 default:
+                    if(selectedMetrics[i] % 2 == 0){
+                        if(settings.keywordsRequired) { //TODO: change this to measureKeywordsByTotal
+                            return false; //since this field is required no need to go through the other keywords
+                        }
+                    }else {
+                        if(settings.keywordsRequired) { //TODO: change this to measureKeywordsPerLine
+                            return false; //since this field is required no need to go through the other keywords
+                        }
+                    }
                     metricsPassed.add(false);
             }
         }

@@ -10,7 +10,7 @@ import java.util.Collections;
 import java.util.List;
 
 public class ComplexityMetrics extends Flag{
-    private final int[] selectedMetrics = {11, 12, 13, 14, 15};
+    private final int[] selectedMetrics = {3, 4};
     //TODO: replace with actual function to retrieve these numbers once advanced settings are made/integrated
     public ComplexityMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList);
@@ -70,6 +70,8 @@ public class ComplexityMetrics extends Flag{
     @Override
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         ArrayList<Boolean> metricsPassed = new ArrayList<>();
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         for(int i = 0; i < selectedMetrics.length; i++){
             float fvSizeValue = getComplexityMetricFromFV(featuresVector, selectedMetrics[i]);
             int quartile = (int) Math.ceil(sensitivity / 25.0);
@@ -80,19 +82,61 @@ public class ComplexityMetrics extends Flag{
                     if(fvSizeValue >= metricQ1.get(i)){
                         metricsPassed.add(true);
                     }
-                    else{metricsPassed.add(false);}
+                    else{
+                        if(selectedMetrics[i] == 3){
+                            if(settings.complexityRequired) { //TODO: change complexityRequired to measureComplexityByTotal
+                                return false;
+                            }
+                        }else{
+                            if(settings.complexityRequired) { //TODO: change complexityRequired to measureComplexityPerLine
+                                return false;
+                            }
+                        }
+                        metricsPassed.add(false);
+                    }
 
                 case 3:
                     if(fvSizeValue >= metricQ2.get(i)){
                         metricsPassed.add(true);
                     }
-                    else{metricsPassed.add(false);}
+                    else{
+                        if(selectedMetrics[i] == 3){
+                            if(settings.complexityRequired) { //TODO: change complexityRequired to measureComplexityByTotal
+                                return false;
+                            }
+                        }else{
+                            if(settings.complexityRequired) { //TODO: change complexityRequired to measureComplexityPerLine
+                                return false;
+                            }
+                        }
+                        metricsPassed.add(false);
+                    }
                 case 4:
                     if(fvSizeValue >= metricQ3.get(i)){
                         metricsPassed.add(true);
                     }
-                    else{metricsPassed.add(false);}
+                    else{
+                        if(selectedMetrics[i] == 3){
+                            if(settings.complexityRequired) { //TODO: change complexityRequired to measureComplexityByTotal
+                                return false;
+                            }
+                        }else{
+                            if(settings.complexityRequired) { //TODO: change complexityRequired to measureComplexityPerLine
+                                return false;
+                            }
+                        }
+                        metricsPassed.add(false);
+                    }
                 default:
+                    if(selectedMetrics[i] == 3){
+                        if(settings.complexityRequired) { //TODO: change complexityRequired to measureComplexityByTotal
+                            return false;
+                        }
+                    }else{
+                        if(settings.complexityRequired) { //TODO: change complexityRequired to measureComplexityPerLine
+                            return false;
+                        }
+                    }
                     metricsPassed.add(false);
             }
         }

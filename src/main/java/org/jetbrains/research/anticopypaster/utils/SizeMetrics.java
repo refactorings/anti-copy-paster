@@ -14,7 +14,7 @@ public class SizeMetrics extends Flag{
 
     public SizeMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList);
-        selectedMetrics = new int[]{0, 1, 2, 3, 4};
+        selectedMetrics = new int[]{0, 1};
         calculateAverageSizeMetrics();
     }
 
@@ -55,7 +55,8 @@ public class SizeMetrics extends Flag{
     public boolean isFlagTriggered(FeaturesVector featuresVector){
         if(featuresVector != null) {
             ArrayList<Boolean> metricsPassed = new ArrayList<>();
-
+            Project project = ProjectManager.getInstance().getOpenProjects()[0];
+            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
             for (int i = 0; i < selectedMetrics.length; i++) {
                 float fvSizeValue = getSizeMetricFromFV(featuresVector, selectedMetrics[i]);
                 int quartile = (int) Math.ceil((sensitivity + 1) / 25.0);
@@ -69,6 +70,15 @@ public class SizeMetrics extends Flag{
                             metricsPassed.add(true);
 
                         } else {
+                            if(selectedMetrics[i] == 0){
+                                if(settings.sizeRequired) { //TODO: change sizeRequired to measureSizeByTotal
+                                    return false;
+                                }
+                            }else{
+                                if(settings.sizeRequired) { //TODO: change sizeRequired to measureSizeByLines
+                                    return false;
+                                }
+                            }
                             metricsPassed.add(false);
 
                         }
@@ -78,6 +88,15 @@ public class SizeMetrics extends Flag{
                             metricsPassed.add(true);
 
                         } else {
+                            if(selectedMetrics[i] == 0){
+                                if(settings.sizeRequired) { //TODO: change sizeRequired to measureSizeByTotal
+                                    return false;
+                                }
+                            }else{
+                                if(settings.sizeRequired) { //TODO: change sizeRequired to measureSizeByLines
+                                    return false;
+                                }
+                            }
                             metricsPassed.add(false);
 
                         }
@@ -87,11 +106,29 @@ public class SizeMetrics extends Flag{
                             metricsPassed.add(true);
 
                         } else {
+                            if(selectedMetrics[i] == 0){
+                                if(settings.sizeRequired) { //TODO: change sizeRequired to measureSizeByTotal
+                                    return false;
+                                }
+                            }else{
+                                if(settings.sizeRequired) { //TODO: change sizeRequired to measureSizeByLines
+                                    return false;
+                                }
+                            }
                             metricsPassed.add(false);
 
                         }
                     }
                     default -> {
+                        if(selectedMetrics[i] == 0){
+                            if(settings.sizeRequired) { //TODO: change sizeRequired to measureSizeByTotal
+                                return false;
+                            }
+                        }else{
+                            if(settings.sizeRequired) { //TODO: change sizeRequired to measureSizeByLines
+                                return false;
+                            }
+                        }
                         metricsPassed.add(false);
                     }
                 }
