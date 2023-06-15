@@ -5,7 +5,6 @@ import com.intellij.openapi.project.Project;
 import kotlinx.html.A;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 
 import javax.swing.*;
 
@@ -13,11 +12,9 @@ public class ProjectSettingsConfigurable implements Configurable {
 
     private final Project project;
     private ProjectSettingsComponent settingsComponent;
-    private AdvancedProjectSettingsDialogWrapper advancedSettingsDialogWrapper;
 
     public ProjectSettingsConfigurable(Project project) {
         this.project = project;
-        advancedSettingsDialogWrapper = new AdvancedProjectSettingsDialogWrapper(project);
     }
 
     @Nls(capitalization = Nls.Capitalization.Title)

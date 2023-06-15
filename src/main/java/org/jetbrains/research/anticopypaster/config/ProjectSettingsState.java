@@ -5,13 +5,11 @@ import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
 import com.intellij.util.xmlb.XmlSerializerUtil;
-import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsComponent.JavaKeywords;
+import org.jetbrains.research.anticopypaster.config.advanced.NewAdvancedProjectSettingsComponent.JavaKeywords;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.AbstractMap;
 import java.util.EnumMap;
-import java.util.Map;
 
 @State(
         name = "org.jetbrains.research.anticopypaster.config.ProjectSettingsState",
@@ -19,20 +17,25 @@ import java.util.Map;
 )
 public class ProjectSettingsState implements PersistentStateComponent<ProjectSettingsState> {
 
+    // PRIMARY SETTINGS STATES
     public boolean useMLModel = false;
     public boolean keywordsRequired = true, couplingRequired = true, sizeRequired = true, complexityRequired = true;
     public int keywordsSensitivity = 50, couplingSensitivity = 50, sizeSensitivity = 50, complexitySensitivity = 50;
 
-    public boolean defineSizeByLines = true;
-    public boolean measureKeywordsByTotal = false, measureComplexityByTotal = false, measureCouplingByTotal = false;
+    // ADVANCED SETTINGS STATES
+    // Each boolean array of two elements follow this scheme {boolean submetric_enabled, boolean submetric_required}
+    public boolean[] measureKeywordsTotal = {false, false}, measureKeywordsDensity = {true, true};
     public EnumMap<JavaKeywords, Boolean> activeKeywords = new EnumMap<>(JavaKeywords.class);
     {
         for (JavaKeywords keyword : JavaKeywords.values()) {
             activeKeywords.put(keyword, true);
         }
     }
+    public boolean[] measureCouplingTotal = {false, false}, measureCouplingDensity = {true, true};
+    public boolean[] measureTotalConnectivity = {true, true}, measureFieldConnectivity = {false, false}, measureMethodConnectivity = {false, false};
+    public boolean[] measureComplexityTotal = {false, false}, measureComplexityDensity = {true, true};
+    public boolean[] measureSizeByLines = {true, true}, measureSizeBySymbols = {false, false};
 
-    public int connectivityType = 0;
 
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);

@@ -29,17 +29,7 @@ public class CouplingMetrics extends Flag{
     @Override
     protected float getMetric(FeaturesVector fv){
         if(fv != null){
-            Project project = ProjectManager.getInstance().getOpenProjects()[0];
-            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-
-            int couplingMetricIndex = 5;
-            if (settings.connectivityType == 1)         { couplingMetricIndex = 7; }
-            else if (settings.connectivityType == 2)    { couplingMetricIndex = 9; }
-
-            // Add one to index if the metric is measured per line.
-            if (!settings.measureCouplingByTotal)       { couplingMetricIndex += 1; }
-
-            lastCalculatedMetric = fv.buildArray()[couplingMetricIndex];
+            lastCalculatedMetric = fv.buildArray()[6];
             return lastCalculatedMetric;
         } else {
             return 0;

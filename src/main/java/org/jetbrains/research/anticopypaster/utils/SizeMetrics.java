@@ -21,14 +21,8 @@ public class SizeMetrics extends Flag{
     @Override
     protected float getMetric(FeaturesVector fv){
         if(fv != null){
-            Project project = ProjectManager.getInstance().getOpenProjects()[0];
-            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-
-            int sizeMetricIndex = 0;
-            if (!settings.defineSizeByLines) { sizeMetricIndex = 1; }
-
             float[] fvArr = fv.buildArray();
-            lastCalculatedMetric = fvArr[sizeMetricIndex];
+            lastCalculatedMetric = fvArr[1];
             return lastCalculatedMetric;
         }
         lastCalculatedMetric = 0;

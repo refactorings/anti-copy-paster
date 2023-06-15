@@ -24,13 +24,7 @@ public class ComplexityMetrics extends Flag{
     @Override
     protected float getMetric(FeaturesVector fv){
         if(fv != null){
-            Project project = ProjectManager.getInstance().getOpenProjects()[0];
-            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-
-            int complexityMetricIndex = 3;
-            if (!settings.measureComplexityByTotal) { complexityMetricIndex = 4; }
-
-            lastCalculatedMetric = fv.buildArray()[complexityMetricIndex];
+            lastCalculatedMetric = fv.buildArray()[4];
             return lastCalculatedMetric;
         } else {
             return 0;

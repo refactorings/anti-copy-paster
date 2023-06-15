@@ -4,7 +4,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
-import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsComponent.JavaKeywords;
+
 import java.util.List;
 
 public class KeywordsMetrics extends Flag{
@@ -16,23 +16,14 @@ public class KeywordsMetrics extends Flag{
     /**
     This is a function that will get the keywords metric out of 
     the FeaturesVector that is passed in
-    Keywords uses half of the metrics from 17 through 78 (depending on user settings), or fewer if
-     the user has deactivated one or more keywords.
      */
     @Override
     protected float getMetric(FeaturesVector fv){
-        if(fv != null){
-            Project project = ProjectManager.getInstance().getOpenProjects()[0];
-            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-
-            int curKeywordsMetricIndex = 16;
-            if (!settings.measureKeywordsByTotal) { curKeywordsMetricIndex += 1; }
-
+        if(fv != null) {
             float[] fvArray = fv.buildArray();
             int totalKeywords = 0;
-            for (JavaKeywords keyword : JavaKeywords.values()){
-                if (settings.activeKeywords.get(keyword)) { totalKeywords += fvArray[curKeywordsMetricIndex]; }
-                curKeywordsMetricIndex += 2;
+            for(int i = 16; i<77; i+=2) {
+                totalKeywords += fvArray[i];
             }
 
             lastCalculatedMetric = totalKeywords;
