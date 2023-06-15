@@ -29,9 +29,9 @@ public class UserSettingsModel extends PredictionModel{
         //The metricsGatherer instantiation calls a function that can't be used
         //outside the context of an installed plugin, so in order to unit test
         //our model, the metrics gatherer is passed in from the constructor
-        this.project = project;
+        this.project = project == null ? ProjectManager.getInstance().getOpenProjects()[0] : project;
+        //this.project = project;
         if(mg != null){
-            mg.setProject(project);
             initMetricsGathererAndMetricsFlags(mg);
         }
     }
@@ -44,12 +44,15 @@ public class UserSettingsModel extends PredictionModel{
      */
     public void initMetricsGathererAndMetricsFlags(MetricsGatherer mg){
         this.metricsGatherer = mg;
+        this.metricsGatherer.setProject(project);
 
         List<FeaturesVector> methodMetrics = mg.getMethodsMetrics();
         this.keywordsMetrics = new KeywordsMetrics(methodMetrics, project);
         this.complexityMetrics = new ComplexityMetrics(methodMetrics, project);
         this.sizeMetrics = new SizeMetrics(methodMetrics, project);
         this.couplingMetrics = new CouplingMetrics(methodMetrics, project);
+
+        System.out.println();
     }
 
     /**
@@ -84,7 +87,8 @@ public class UserSettingsModel extends PredictionModel{
             else if (!couplingTriggered && settings.couplingRequired)
                 shouldNotify = false;
         }
-
+        //System.out.println("Size: " + sizeTriggered + " | Complexity: " + complexityTriggered + " | Keywords: " + keywordsTriggered + " | Coupling: " + couplingTriggered);
+        //System.out.println(complexityMetrics.getMetricQ1() + ", " + complexityMetrics.getMetricQ2() + ", " + complexityMetrics.getMetricQ3());
         return shouldNotify ? 1 : 0;
     }
 

@@ -574,6 +574,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         passedInArray[3] = (float)1;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
+        //System.out.println(model.predict(passedInFv.getMock()));
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 

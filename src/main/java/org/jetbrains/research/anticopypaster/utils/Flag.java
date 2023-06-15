@@ -1,6 +1,7 @@
 package org.jetbrains.research.anticopypaster.utils;
 
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.io.FileWriter;
@@ -31,7 +32,8 @@ public abstract class Flag{
         this.metricQ2=0;
         this.metricQ3=0;
         this.lastCalculatedMetric = -1;
-        this.project = project;
+        // For unit testing when project is null
+        this.project = project == null ? ProjectManager.getInstance().getOpenProjects()[0] : project;
         calculateAverageMetrics();
     }
 
@@ -169,4 +171,8 @@ public abstract class Flag{
      * @param filepath path to the log file
      */
     public abstract void logThresholds(String filepath);
+
+    public void setProject(Project project) {
+        this.project = project;
+    }
 }

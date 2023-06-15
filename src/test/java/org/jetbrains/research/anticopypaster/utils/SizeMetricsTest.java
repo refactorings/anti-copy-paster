@@ -1,7 +1,5 @@
 package org.jetbrains.research.anticopypaster.utils;
 
-import com.intellij.openapi.project.Project;
-import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,7 +16,7 @@ import org.mockito.Mock;
 
 import static org.mockito.Mockito.*;
 
-public class SizeMetricsTest extends LightJavaCodeInsightFixtureTestCase {
+public class SizeMetricsTest {
 
     /**
      * Testing variant of SizeMetrics.
@@ -27,7 +25,7 @@ public class SizeMetricsTest extends LightJavaCodeInsightFixtureTestCase {
     private class TestingSizeMetrics extends SizeMetrics {
 
         public TestingSizeMetrics(List<FeaturesVector> featuresVectorList) {
-            super(featuresVectorList, getProject());
+            super(featuresVectorList, null);
         }
 
         @Override

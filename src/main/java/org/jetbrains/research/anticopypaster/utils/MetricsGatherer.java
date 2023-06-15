@@ -36,7 +36,7 @@ public class MetricsGatherer {
      */
     public MetricsGatherer(Project project){
         this.methodsMetrics = new ArrayList<>();
-        this.project = project;
+        this.project = project == null ? ProjectManager.getInstance().getOpenProjects()[0] : project;
         gatherMetrics();
     }
 
