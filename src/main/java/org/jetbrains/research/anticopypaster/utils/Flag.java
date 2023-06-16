@@ -65,11 +65,11 @@ public abstract class Flag{
             if (getSensitivity() == 100) {
                 threshold = metricValues[metricValues.length - 1];
             } else {
-                double position = (double) getSensitivity() * featuresVectorList.size() / 100;
+                double position = (double) getSensitivity() * (featuresVectorList.size() - 1) / 100;
                 int lowerIndex = (int) Math.floor(position);
                 float proportion = (float) position % 1;
 
-                threshold = proportion * metricValues[lowerIndex] + (1 - proportion) * metricValues[lowerIndex + 1];
+                threshold = (1 - proportion) * metricValues[lowerIndex] + proportion * metricValues[lowerIndex + 1];
             }
         }
     }
