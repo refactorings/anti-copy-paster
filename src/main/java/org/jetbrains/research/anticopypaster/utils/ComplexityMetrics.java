@@ -12,7 +12,7 @@ import java.util.List;
 public class ComplexityMetrics extends Flag{
 
     public ComplexityMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList);
+        super(featuresVectorList, 2);
     }
 
     /**
@@ -22,7 +22,7 @@ public class ComplexityMetrics extends Flag{
     from the fv array gives us the right value
      */
     @Override
-    protected float getMetric(FeaturesVector fv){
+    protected float getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
         if(fv != null){
             lastCalculatedMetric = fv.buildArray()[4];
             return lastCalculatedMetric;

@@ -11,7 +11,7 @@ import java.util.List;
 public class SizeMetrics extends Flag{
 
     public SizeMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList);
+        super(featuresVectorList, 2);
     }
 
     /**
@@ -19,7 +19,7 @@ public class SizeMetrics extends Flag{
      getMetric() returns the relevant metric depending on the user's settings.
      */
     @Override
-    protected float getMetric(FeaturesVector fv){
+    protected float getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
         if(fv != null){
             float[] fvArr = fv.buildArray();
             lastCalculatedMetric = fvArr[1];

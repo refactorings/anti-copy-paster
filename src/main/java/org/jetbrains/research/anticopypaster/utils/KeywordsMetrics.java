@@ -10,7 +10,7 @@ import java.util.List;
 public class KeywordsMetrics extends Flag{
 
     public KeywordsMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList);
+        super(featuresVectorList, 61);
     }
 
     /**
@@ -18,7 +18,7 @@ public class KeywordsMetrics extends Flag{
     the FeaturesVector that is passed in
      */
     @Override
-    protected float getMetric(FeaturesVector fv){
+    protected float getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
         if(fv != null) {
             float[] fvArray = fv.buildArray();
             int totalKeywords = 0;

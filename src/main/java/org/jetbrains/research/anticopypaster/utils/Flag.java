@@ -1,9 +1,11 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -11,20 +13,23 @@ public abstract class Flag{
 
     protected List<FeaturesVector> featuresVectorList;
 
-    protected float threshold;
+    protected float[] thresholds;
 
-    protected float lastCalculatedMetric;
+    protected float[] lastCalculatedMetric;
 
     protected int cachedSensitivity;
 
+    protected final int numFeatures;
+
     protected abstract int getSensitivity();
 
-    protected abstract float getMetric(FeaturesVector featuresVector);
+    protected abstract float[] getMetric(FeaturesVector featuresVector);
 
-    public Flag(List<FeaturesVector> featuresVectorList) {
+    protected Flag(List<FeaturesVector> featuresVectorList, int numFeatures) {
+        this.numFeatures = numFeatures;
         this.featuresVectorList = featuresVectorList;
-        this.threshold = 0;
-        this.lastCalculatedMetric = -1;
+        this.thresholds = null;
+        this.lastCalculatedMetric = null;
         calculateThreshold();
     }
 
@@ -41,35 +46,47 @@ public abstract class Flag{
             calculateThreshold();
         }
         lastCalculatedMetric = getMetric(featuresVector);
-        return lastCalculatedMetric >= threshold;
+
+        for (int i = 0; i < numFeatures; i++)
+            if (lastCalculatedMetric[i] < thresholds[i])
+                return false;
+        return true;
     }
 
     /**
      * Recalculates this Flag's threshold from its current sensitivity value.
-     * This is done by calculating its relevant metric for each of its FVs,
+     * This is done by calculating its relevant metrics for each of its FVs,
      * sorting the resulting list, and grabbing the element of the list at
      * the same relative position in the list as the sensitivity value is
      * within the range of 0 to 100.
      */
     public void calculateThreshold() {
         if (featuresVectorList == null || featuresVectorList.size() == 0) {
-            threshold = 0;
+            thresholds = new float[numFeatures];
         } else if (featuresVectorList.size() == 1) {
-            threshold = getMetric(featuresVectorList.get(0));
+            thresholds = getMetric(featuresVectorList.get(0));
         } else {
-            float[] metricValues = new float[featuresVectorList.size()];
-            for (int i = 0; i < metricValues.length; i++)
-                metricValues[i] = getMetric(featuresVectorList.get(i));
-            Arrays.sort(metricValues);
+            float[][] metricValues = new float[featuresVectorList.size()][numFeatures];
+            for (int i = 0; i < featuresVectorList.size(); i++) {
+                float[] metric = getMetric(featuresVectorList.get(i));
+                for (int j = 0; j < numFeatures; j++)
+                    metricValues[j][i] = metric[j];
+            }
+            for (float[] metricValue : metricValues)
+                Arrays.sort(metricValue);
 
             if (getSensitivity() == 100) {
-                threshold = metricValues[metricValues.length - 1];
+                for (int k = 0; k < numFeatures; k++)
+                    thresholds[k] = metricValues[k][metricValues.length - 1];
             } else {
                 double position = (double) getSensitivity() * (featuresVectorList.size() - 1) / 100;
                 int lowerIndex = (int) Math.floor(position);
                 float proportion = (float) position % 1;
 
-                threshold = (1 - proportion) * metricValues[lowerIndex] + proportion * metricValues[lowerIndex + 1];
+                thresholds = new float[numFeatures];
+                for (int l = 0; l < numFeatures; l++)
+                    thresholds[l] = (1 - proportion) * metricValues[l][lowerIndex]
+                            + proportion * metricValues[l][lowerIndex + 1];
             }
         }
     }
@@ -83,7 +100,7 @@ public abstract class Flag{
         try(FileWriter fr = new FileWriter(filepath, true)){
             fr.write("Current " + metricName +
                     " Threshold, Last Calculated Metric: " +
-                    threshold + ", " + lastCalculatedMetric + "\n");
+                    thresholds + ", " + lastCalculatedMetric + "\n");
         }catch(IOException ioe){
 
         }
@@ -104,7 +121,7 @@ public abstract class Flag{
      */
     protected void logThresholds(String filepath, String metricName){
         try(FileWriter fr = new FileWriter(filepath, true)){
-            fr.write(metricName + " Threshold: " + threshold + "\n");
+            fr.write(metricName + " Threshold: " + thresholds + "\n");
         }catch(IOException ioe){
 
         }

@@ -12,7 +12,7 @@ import java.util.List;
 public class CouplingMetrics extends Flag{
 
     public CouplingMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList);
+        super(featuresVectorList, 6);
     }
 
     /**
@@ -27,7 +27,7 @@ public class CouplingMetrics extends Flag{
         * Metric index 10: Method connectivity per line
      */
     @Override
-    protected float getMetric(FeaturesVector fv){
+    protected float getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
         if(fv != null){
             lastCalculatedMetric = fv.buildArray()[6];
             return lastCalculatedMetric;
