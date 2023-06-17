@@ -9,6 +9,8 @@ import java.util.Collections;
 import java.util.List;
 
 public class SizeMetrics extends Flag{
+    private final int[] selectedMetrics = {0, 1};
+    //TODO: create method to retrieve/change these values from frontend
 
     public SizeMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList, 2);
@@ -19,14 +21,22 @@ public class SizeMetrics extends Flag{
      getMetric() returns the relevant metric depending on the user's settings.
      */
     @Override
-    protected float getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
-        if(fv != null){
+    protected float[] getMetric(FeaturesVector fv){
+        if (fv != null) {
             float[] fvArr = fv.buildArray();
-            lastCalculatedMetric = fvArr[1];
+            for (int i = 0; i < selectedMetrics.length; i++) {
+                int metricIndex = selectedMetrics[i];
+                lastCalculatedMetric[i] = fvArr[metricIndex];
+            }
+            return lastCalculatedMetric;
+        } else {
+            // Initialize lastCalculatedMetric array with zeros
+            for (int i = 0; i < selectedMetrics.length; i++) {
+                int metricIndex = selectedMetrics[i];
+                lastCalculatedMetric[i] = 0;
+            }
             return lastCalculatedMetric;
         }
-        lastCalculatedMetric = 0;
-        return lastCalculatedMetric;
     }
 
     /**

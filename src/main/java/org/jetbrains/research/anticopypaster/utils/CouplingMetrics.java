@@ -10,6 +10,8 @@ import java.util.Collections;
 import java.util.List;
 
 public class CouplingMetrics extends Flag{
+    private final int[] selectedMetrics = {5, 6, 7, 8, 9, 10};
+    //TODO: create method to retrieve/change these values from frontend
 
     public CouplingMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList, 6);
@@ -27,12 +29,21 @@ public class CouplingMetrics extends Flag{
         * Metric index 10: Method connectivity per line
      */
     @Override
-    protected float getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
-        if(fv != null){
-            lastCalculatedMetric = fv.buildArray()[6];
+    protected float[] getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
+        if (fv != null) {
+            float[] fvArr = fv.buildArray();
+            for (int i = 0; i < selectedMetrics.length; i++) {
+                int metricIndex = selectedMetrics[i];
+                lastCalculatedMetric[i] = fvArr[metricIndex];
+            }
             return lastCalculatedMetric;
         } else {
-            return 0;
+            // Initialize lastCalculatedMetric array with zeros
+            for (int i = 0; i < selectedMetrics.length; i++) {
+                int metricIndex = selectedMetrics[i];
+                lastCalculatedMetric[i] = 0;
+            }
+            return lastCalculatedMetric;
         }
     }
 

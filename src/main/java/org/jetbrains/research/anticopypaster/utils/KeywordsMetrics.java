@@ -8,7 +8,7 @@ import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.List;
 
 public class KeywordsMetrics extends Flag{
-
+    private final int[] selectedMetrics;
     public KeywordsMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList, 61);
     }
@@ -18,18 +18,21 @@ public class KeywordsMetrics extends Flag{
     the FeaturesVector that is passed in
      */
     @Override
-    protected float getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
-        if(fv != null) {
-            float[] fvArray = fv.buildArray();
-            int totalKeywords = 0;
-            for(int i = 16; i<77; i+=2) {
-                totalKeywords += fvArray[i];
+    protected float[] getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
+        if (fv != null) {
+            float[] fvArr = fv.buildArray();
+            for (int i = 0; i < selectedMetrics.length; i++) {
+                int metricIndex = selectedMetrics[i];
+                lastCalculatedMetric[i] = fvArr[metricIndex];
             }
-
-            lastCalculatedMetric = totalKeywords;
             return lastCalculatedMetric;
         } else {
-            return 0;
+            // Initialize lastCalculatedMetric array with zeros
+            for (int i = 0; i < selectedMetrics.length; i++) {
+                int metricIndex = selectedMetrics[i];
+                lastCalculatedMetric[i] = 0;
+            }
+            return lastCalculatedMetric;
         }
     }
 

@@ -10,7 +10,7 @@ import java.util.Collections;
 import java.util.List;
 
 public class ComplexityMetrics extends Flag{
-
+    private final int[] selectedMetrics = {3, 4};
     public ComplexityMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList, 2);
     }
@@ -22,12 +22,21 @@ public class ComplexityMetrics extends Flag{
     from the fv array gives us the right value
      */
     @Override
-    protected float getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
-        if(fv != null){
-            lastCalculatedMetric = fv.buildArray()[4];
+    protected float[] getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
+        if (fv != null) {
+            float[] fvArr = fv.buildArray();
+            for (int i = 0; i < selectedMetrics.length; i++) {
+                int metricIndex = selectedMetrics[i];
+                lastCalculatedMetric[i] = fvArr[metricIndex];
+            }
             return lastCalculatedMetric;
         } else {
-            return 0;
+            // Initialize lastCalculatedMetric array with zeros
+            for (int i = 0; i < selectedMetrics.length; i++) {
+                int metricIndex = selectedMetrics[i];
+                lastCalculatedMetric[i] = 0;
+            }
+            return lastCalculatedMetric;
         }
     }
 
