@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.config;
 
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
+import kotlinx.html.A;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
 
@@ -30,7 +31,7 @@ public class ProjectSettingsConfigurable implements Configurable {
     @Nullable
     @Override
     public JComponent createComponent() {
-        settingsComponent = new ProjectSettingsComponent();
+        settingsComponent = new ProjectSettingsComponent(this.project);
         return settingsComponent.getPanel();
     }
 

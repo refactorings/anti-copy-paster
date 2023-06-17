@@ -1,100 +1,94 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+
 public abstract class Flag{
-
-    protected int sensitivity;
-
-    protected boolean required;
 
     protected List<FeaturesVector> featuresVectorList;
 
-    protected ArrayList<Float> metricQ1;
-    protected ArrayList<Float> metricQ2;
-    protected ArrayList<Float> metricQ3;
-    protected float lastCalculatedMetric;
+    protected float[] thresholds;
 
+    protected float[] lastCalculatedMetric;
 
-    public abstract boolean isFlagTriggered(FeaturesVector featuresVector);
+    protected int cachedSensitivity;
 
-    public Flag(List<FeaturesVector> featuresVectorList){
+    protected final int numFeatures;
+
+    protected abstract int getSensitivity();
+
+    protected abstract float[] getMetric(FeaturesVector featuresVector);
+
+    protected Flag(List<FeaturesVector> featuresVectorList, int numFeatures) {
+        this.numFeatures = numFeatures;
         this.featuresVectorList = featuresVectorList;
-        metricQ1 = new ArrayList<>();
-        metricQ2 = new ArrayList<>();
-        metricQ3 = new ArrayList<>();
-        this.lastCalculatedMetric = -1;
+        this.thresholds = null;
+        this.lastCalculatedMetric = null;
+        calculateThreshold();
     }
 
     /**
-     Takes a SORTED list and generates/sets the Q1-3 values based on a box plot
-     of those metric values
+     * Returns whether the given feature vector should 'trigger' this flag
+     * based on whether the metric calculated from this feature vector
+     * exceeds the given threshold.
+     * (Recalculates the threshold value if the sensitivity has changed.)
      */
-    protected void boxPlotCalculations(ArrayList<Float> data){
-
-        if(data == null || data.size() == 0){
-            metricQ1.add(0f);
-            metricQ2.add(0f);
-            metricQ3.add(0f);
-            return;
+    public boolean isFlagTriggered(FeaturesVector featuresVector) {
+        int sensitivity = getSensitivity();
+        if (sensitivity != cachedSensitivity) {
+            cachedSensitivity = sensitivity;
+            calculateThreshold();
         }
+        lastCalculatedMetric = getMetric(featuresVector);
 
-        float q1;
-        float q2;
-        float q3;
-
-        // Box plot logic, for even length lists get the average between middle values
-        // For odd length lists just get the middle index
-        if (data.size() % 2 == 0) {
-            q1 = (data.get(data.size()/4 - 1) + data.get(data.size()/4)) / 2;
-            q2 = (data.get(data.size()/2 - 1) + data.get(data.size()/2)) / 2;
-            q3 = (data.get(data.size()*3/4 - 1) + data.get(data.size()*3/4)) / 2;
-        } else {
-            q1 = data.get(data.size()/4);
-            q2 = data.get(data.size()/2);
-            q3 = data.get(data.size()*3/4);
-        }
-
-        metricQ1.add(q1);
-        metricQ2.add(q2);
-        metricQ3.add(q3);
+        for (int i = 0; i < numFeatures; i++)
+            if (lastCalculatedMetric[i] < thresholds[i])
+                return false;
+        return true;
     }
-
-    public ArrayList<Float> getMetricQ1(){
-        return this.metricQ1;
-    }
-
-    public ArrayList<Float> getMetricQ2(){
-        return this.metricQ2;
-    }
-
-    public ArrayList<Float> getMetricQ3(){
-        return this.metricQ3;
-    }
-
-    public int getSensitivity(){ return this.sensitivity;}
-
 
     /**
-     Change the sensitivity of the flag.
-     Any sensitivities apart from 0, 1, 2, or 3 will be set to 0 (off)
+     * Recalculates this Flag's threshold from its current sensitivity value.
+     * This is done by calculating its relevant metrics for each of its FVs,
+     * sorting the resulting list, and grabbing the element of the list at
+     * the same relative position in the list as the sensitivity value is
+     * within the range of 0 to 100.
      */
-    public int changeSensitivity(int sensitivity){
-        if(sensitivity > 100 || sensitivity < 0){
-            this.sensitivity = 0;
+    public void calculateThreshold() {
+        if (featuresVectorList == null || featuresVectorList.size() == 0) {
+            thresholds = new float[numFeatures];
+        } else if (featuresVectorList.size() == 1) {
+            thresholds = getMetric(featuresVectorList.get(0));
         } else {
-            this.sensitivity = sensitivity;
-        }
-        return this.sensitivity;
-    }
+            float[][] metricValues = new float[featuresVectorList.size()][numFeatures];
+            for (int i = 0; i < featuresVectorList.size(); i++) {
+                float[] metric = getMetric(featuresVectorList.get(i));
+                for (int j = 0; j < numFeatures; j++)
+                    metricValues[j][i] = metric[j];
+            }
+            for (float[] metricValue : metricValues)
+                Arrays.sort(metricValue);
 
-    public boolean changeRequired(boolean required) {
-        this.required = required;
-        return required;
+            if (getSensitivity() == 100) {
+                for (int k = 0; k < numFeatures; k++)
+                    thresholds[k] = metricValues[k][metricValues.length - 1];
+            } else {
+                double position = (double) getSensitivity() * (featuresVectorList.size() - 1) / 100;
+                int lowerIndex = (int) Math.floor(position);
+                float proportion = (float) position % 1;
+
+                thresholds = new float[numFeatures];
+                for (int l = 0; l < numFeatures; l++)
+                    thresholds[l] = (1 - proportion) * metricValues[l][lowerIndex]
+                            + proportion * metricValues[l][lowerIndex + 1];
+            }
+        }
     }
 
     /**
@@ -103,19 +97,10 @@ public abstract class Flag{
      * @param metricName name of the metric
      */
     protected void logMetric(String filepath, String metricName){
-        int quartile = (int) Math.ceil(getSensitivity() / 25.0);
-        String threshold = switch (quartile) {
-            case (1) -> Float.toString(0);
-            case (2) -> metricQ1.toString();
-            case (3) -> metricQ2.toString();
-            case (4) -> metricQ3.toString();
-            default -> "INVALID SENSITIVITY";
-        };
-
         try(FileWriter fr = new FileWriter(filepath, true)){
             fr.write("Current " + metricName +
                     " Threshold, Last Calculated Metric: " +
-                    threshold + ", " + lastCalculatedMetric + "\n");
+                    thresholds + ", " + lastCalculatedMetric + "\n");
         }catch(IOException ioe){
 
         }
@@ -136,8 +121,7 @@ public abstract class Flag{
      */
     protected void logThresholds(String filepath, String metricName){
         try(FileWriter fr = new FileWriter(filepath, true)){
-            fr.write(metricName + " Thresholds: " + metricQ1 + ", " +
-                    metricQ2 + ", " + metricQ3 + "\n");
+            fr.write(metricName + " Threshold: " + thresholds + "\n");
         }catch(IOException ioe){
 
         }
