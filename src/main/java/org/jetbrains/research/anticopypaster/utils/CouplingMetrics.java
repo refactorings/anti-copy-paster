@@ -11,6 +11,7 @@ import java.util.List;
 
 public class CouplingMetrics extends Flag{
     private ArrayList<Integer> selectedMetrics = new ArrayList<>();
+    private ArrayList<Integer> requiredMetrics = new ArrayList<>();
     //TODO: create method to retrieve/change these values from frontend
 
     public CouplingMetrics(List<FeaturesVector> featuresVectorList){
@@ -24,23 +25,41 @@ public class CouplingMetrics extends Flag{
             if(settings.measureCouplingTotal[0]){
                 if(settings.measureTotalConnectivity[0]){
                     selectedMetrics.add(5);
+                    if(settings.measureTotalConnectivity[1]){
+                        requiredMetrics.add(5);
+                    }
                 }
                 if(settings.measureFieldConnectivity[0]){
                     selectedMetrics.add(7);
+                    if(settings.measureFieldConnectivity[1]){
+                        requiredMetrics.add(7);
+                    }
                 }
                 if(settings.measureMethodConnectivity[0]){
                     selectedMetrics.add(9);
+                    if(settings.measureMethodConnectivity[1]){
+                        requiredMetrics.add(9);
+                    }
                 }
             }
             if(settings.measureCouplingDensity[0]){
                 if(settings.measureTotalConnectivity[0]){
                     selectedMetrics.add(6);
+                    if(settings.measureTotalConnectivity[1]){
+                        requiredMetrics.add(6);
+                    }
                 }
                 if(settings.measureFieldConnectivity[0]){
                     selectedMetrics.add(8);
+                    if(settings.measureFieldConnectivity[1]){
+                        requiredMetrics.add(8);
+                    }
                 }
                 if(settings.measureMethodConnectivity[0]){
                     selectedMetrics.add(10);
+                    if(settings.measureMethodConnectivity[1]){
+                        selectedMetrics.add(10);
+                    }
                 }
             }
             numFeatures = selectedMetrics.size();
@@ -72,6 +91,40 @@ public class CouplingMetrics extends Flag{
             }
         }
         return lastCalculatedMetric;
+    }
+    /**
+     * Returns whether the given feature vector should 'trigger' this flag
+     * based on whether the metric calculated from this feature vector
+     * exceeds the given threshold.
+     * (Recalculates the threshold value if the sensitivity has changed.)
+     */
+    @Override
+    public boolean isFlagTriggered(FeaturesVector featuresVector) {
+        int sensitivity = getSensitivity();
+        if (sensitivity != cachedSensitivity) {
+            cachedSensitivity = sensitivity;
+            calculateThreshold();
+        }
+        lastCalculatedMetric = getMetric(featuresVector);
+
+        ArrayList<Boolean> metricsPassed = new ArrayList<>();
+        for (int i = 0; i < numFeatures; i++) {
+            if (lastCalculatedMetric[i] > thresholds[i]) {
+                metricsPassed.add(true);
+            } else {
+                metricsPassed.add(false);
+                // Check if the metric is required when it doesn't exceed the threshold
+                if (requiredMetrics.size() != 0) {
+                    for (Integer requiredMetric : requiredMetrics) {
+                        if (requiredMetric == selectedMetrics.get(i)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        // Check if there is at least one 'true' in metricsPassed
+        return (metricsPassed.contains(true));
     }
 
     /**

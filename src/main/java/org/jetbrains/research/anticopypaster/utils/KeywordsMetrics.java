@@ -56,6 +56,33 @@ public class KeywordsMetrics extends Flag{
             return lastCalculatedMetric;
         }
     }
+    /**
+     * Returns whether the given feature vector should 'trigger' this flag
+     * based on whether the metric calculated from this feature vector
+     * exceeds the given threshold.
+     * (Recalculates the threshold value if the sensitivity has changed.)
+     */
+    @Override
+    public boolean isFlagTriggered(FeaturesVector featuresVector) {
+        int sensitivity = getSensitivity();
+        if (sensitivity != cachedSensitivity) {
+            cachedSensitivity = sensitivity;
+            calculateThreshold();
+        }
+        lastCalculatedMetric = getMetric(featuresVector);
+
+        ArrayList<Boolean> metricsPassed = new ArrayList<>();
+        for (int i = 0; i < numFeatures; i++) {
+            if (lastCalculatedMetric[i] > thresholds[i]) {
+                metricsPassed.add(true);
+            } else {
+                metricsPassed.add(false);
+            }
+        }
+        // Check if there is at least one 'true' in metricsPassed
+        return (metricsPassed.contains(true));
+    }
+
 
     /**
      * Required override function from Flag. Gets the sensitivity for this metric

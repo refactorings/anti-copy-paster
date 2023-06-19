@@ -9,7 +9,8 @@ import java.util.Collections;
 import java.util.List;
 
 public class SizeMetrics extends Flag{
-    private  ArrayList<Integer> selectedMetrics = new ArrayList<>(List.of(0 , 1));
+    private ArrayList<Integer> selectedMetrics = new ArrayList<>();
+    private ArrayList<Integer> requiredMetrics = new ArrayList<>();
     //TODO: create method to retrieve/change these values from frontend
 
     public SizeMetrics(List<FeaturesVector> featuresVectorList){
@@ -23,9 +24,15 @@ public class SizeMetrics extends Flag{
 
         if(settings.measureSizeByLines[0]){
             selectedMetrics.add(0);
+            if(settings.measureSizeByLines[1]){
+                requiredMetrics.add(0);
+            }
         }
         if(settings.measureSizeBySymbols[0]){
             selectedMetrics.add(1);
+            if(settings.measureSizeBySymbols[1]){
+                requiredMetrics.add(1);
+            }
         } // TODO: Add MethodDeclarationLines, MethodDeclarationSymbols, MethodDeclarationSymbolsPerLine, SymbolsPerLine
         numFeatures = selectedMetrics.size();
     }
@@ -42,14 +49,47 @@ public class SizeMetrics extends Flag{
                 int metricIndex = selectedMetrics.get(i);
                 lastCalculatedMetric[i] = fvArr[metricIndex];
             }
-            return lastCalculatedMetric;
         } else {
             // Initialize lastCalculatedMetric array with zeros
             for (int i = 0; i < selectedMetrics.size(); i++) {
                 lastCalculatedMetric[i] = 0;
             }
-            return lastCalculatedMetric;
         }
+        return lastCalculatedMetric;
+    }
+    /**
+     * Returns whether the given feature vector should 'trigger' this flag
+     * based on whether the metric calculated from this feature vector
+     * exceeds the given threshold.
+     * (Recalculates the threshold value if the sensitivity has changed.)
+     */
+    @Override
+    public boolean isFlagTriggered(FeaturesVector featuresVector) {
+        int sensitivity = getSensitivity();
+        if (sensitivity != cachedSensitivity) {
+            cachedSensitivity = sensitivity;
+            calculateThreshold();
+        }
+        lastCalculatedMetric = getMetric(featuresVector);
+
+        ArrayList<Boolean> metricsPassed = new ArrayList<>();
+        for (int i = 0; i < numFeatures; i++) {
+            if (lastCalculatedMetric[i] > thresholds[i]) {
+                metricsPassed.add(true);
+            } else {
+                metricsPassed.add(false);
+                // Check if the metric is required when it doesn't exceed the threshold
+                if (requiredMetrics.size() != 0) {
+                    for (Integer requiredMetric : requiredMetrics) {
+                        if (requiredMetric == selectedMetrics.get(i)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        // Check if there is at least one 'true' in metricsPassed
+        return (metricsPassed.contains(true));
     }
 
     /**

@@ -26,6 +26,8 @@ public abstract class Flag{
 
     protected abstract float[] getMetric(FeaturesVector featuresVector);
 
+    public abstract boolean isFlagTriggered(FeaturesVector featuresVector);
+
     protected Flag(List<FeaturesVector> featuresVectorList, int numFeatures) {
         this.numFeatures = numFeatures;
         this.featuresVectorList = featuresVectorList;
@@ -35,25 +37,7 @@ public abstract class Flag{
         calculateThreshold();
     }
 
-    /**
-     * Returns whether the given feature vector should 'trigger' this flag
-     * based on whether the metric calculated from this feature vector
-     * exceeds the given threshold.
-     * (Recalculates the threshold value if the sensitivity has changed.)
-     */
-    public boolean isFlagTriggered(FeaturesVector featuresVector) {
-        int sensitivity = getSensitivity();
-        if (sensitivity != cachedSensitivity) {
-            cachedSensitivity = sensitivity;
-            calculateThreshold();
-        }
-        lastCalculatedMetric = getMetric(featuresVector);
 
-        for (int i = 0; i < numFeatures; i++)
-            if (lastCalculatedMetric[i] < thresholds[i])
-                return false;
-        return true;
-    }
 
     /**
      * Recalculates this Flag's threshold from its current sensitivity value.
@@ -92,6 +76,7 @@ public abstract class Flag{
             }
         }
     }
+
 
     /**
      * This function logs the last known metric and the current threshold
