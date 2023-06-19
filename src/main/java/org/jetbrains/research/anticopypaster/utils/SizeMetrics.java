@@ -26,7 +26,7 @@ public class SizeMetrics extends Flag{
         }
         if(settings.measureSizeBySymbols[0]){
             selectedMetrics.add(1);
-        }
+        } // TODO: Add MethodDeclarationLines, MethodDeclarationSymbols, MethodDeclarationSymbolsPerLine, SymbolsPerLine
         numFeatures = selectedMetrics.size();
     }
 
