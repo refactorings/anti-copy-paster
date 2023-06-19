@@ -10,7 +10,7 @@ import java.util.Collections;
 import java.util.List;
 
 public class ComplexityMetrics extends Flag{
-    private final int[] selectedMetrics = {3, 4};
+    private ArrayList<Integer> selectedMetrics = new ArrayList<>();
     public ComplexityMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList, 2);
     }
@@ -21,23 +21,35 @@ public class ComplexityMetrics extends Flag{
     Complexity only uses Metrics #4 and #5, so getting the value at index 3 or 4 (depending on user settings)
     from the fv array gives us the right value
      */
+
+    @Override
+    protected void setSelectedMetrics(){
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+
+        if(settings.measureComplexityTotal[0]){
+            selectedMetrics.add(3);
+        }
+        if(settings.measureComplexityDensity[0]){
+            selectedMetrics.add(4);
+        }
+        numFeatures = selectedMetrics.size();
+    }
     @Override
     protected float[] getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
         if (fv != null) {
             float[] fvArr = fv.buildArray();
-            for (int i = 0; i < selectedMetrics.length; i++) {
-                int metricIndex = selectedMetrics[i];
+            for (int i = 0; i < selectedMetrics.size(); i++) {
+                int metricIndex = selectedMetrics.get(i);
                 lastCalculatedMetric[i] = fvArr[metricIndex];
             }
-            return lastCalculatedMetric;
         } else {
             // Initialize lastCalculatedMetric array with zeros
-            for (int i = 0; i < selectedMetrics.length; i++) {
-                int metricIndex = selectedMetrics[i];
+            for (int i = 0; i < selectedMetrics.size(); i++) {
                 lastCalculatedMetric[i] = 0;
             }
-            return lastCalculatedMetric;
         }
+        return lastCalculatedMetric;
     }
 
     /**

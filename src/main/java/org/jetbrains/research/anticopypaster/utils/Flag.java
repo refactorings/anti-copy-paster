@@ -19,9 +19,10 @@ public abstract class Flag{
 
     protected int cachedSensitivity;
 
-    protected final int numFeatures;
+    protected int numFeatures;
 
     protected abstract int getSensitivity();
+    protected abstract void setSelectedMetrics();
 
     protected abstract float[] getMetric(FeaturesVector featuresVector);
 
@@ -30,6 +31,7 @@ public abstract class Flag{
         this.featuresVectorList = featuresVectorList;
         this.thresholds = null;
         this.lastCalculatedMetric = null;
+        setSelectedMetrics();
         calculateThreshold();
     }
 

@@ -10,12 +10,41 @@ import java.util.Collections;
 import java.util.List;
 
 public class CouplingMetrics extends Flag{
-    private final int[] selectedMetrics = {5, 6, 7, 8, 9, 10};
+    private ArrayList<Integer> selectedMetrics = new ArrayList<>();
     //TODO: create method to retrieve/change these values from frontend
 
     public CouplingMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList, 6);
     }
+    @Override
+        protected void setSelectedMetrics(){
+            Project project = ProjectManager.getInstance().getOpenProjects()[0];
+            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+
+            if(settings.measureCouplingTotal[0]){
+                if(settings.measureTotalConnectivity[0]){
+                    selectedMetrics.add(5);
+                }
+                if(settings.measureFieldConnectivity[0]){
+                    selectedMetrics.add(7);
+                }
+                if(settings.measureMethodConnectivity[0]){
+                    selectedMetrics.add(9);
+                }
+            }
+            if(settings.measureCouplingDensity[0]){
+                if(settings.measureTotalConnectivity[0]){
+                    selectedMetrics.add(6);
+                }
+                if(settings.measureFieldConnectivity[0]){
+                    selectedMetrics.add(8);
+                }
+                if(settings.measureMethodConnectivity[0]){
+                    selectedMetrics.add(10);
+                }
+            }
+            numFeatures = selectedMetrics.size();
+        }
 
     /**
     This is a function that will get the coupling metric out of
@@ -32,19 +61,17 @@ public class CouplingMetrics extends Flag{
     protected float[] getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
         if (fv != null) {
             float[] fvArr = fv.buildArray();
-            for (int i = 0; i < selectedMetrics.length; i++) {
-                int metricIndex = selectedMetrics[i];
+            for (int i = 0; i < selectedMetrics.size(); i++) {
+                int metricIndex = selectedMetrics.get(i);
                 lastCalculatedMetric[i] = fvArr[metricIndex];
             }
-            return lastCalculatedMetric;
         } else {
             // Initialize lastCalculatedMetric array with zeros
-            for (int i = 0; i < selectedMetrics.length; i++) {
-                int metricIndex = selectedMetrics[i];
+            for (int i = 0; i < selectedMetrics.size(); i++) {
                 lastCalculatedMetric[i] = 0;
             }
-            return lastCalculatedMetric;
         }
+        return lastCalculatedMetric;
     }
 
     /**
