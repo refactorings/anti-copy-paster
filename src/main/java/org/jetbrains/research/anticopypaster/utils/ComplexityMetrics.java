@@ -6,12 +6,10 @@ import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class ComplexityMetrics extends Flag{
-    private ArrayList<Integer> selectedMetrics = new ArrayList<>();
-    private ArrayList<Integer> requiredMetrics = new ArrayList<>();
+
     public ComplexityMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList, 2);
     }
@@ -33,8 +31,8 @@ public class ComplexityMetrics extends Flag{
             if(settings.measureComplexityTotal[1]){
                 requiredMetrics.add(3);
             }
-
         }
+
         if(settings.measureComplexityDensity[0]){
             selectedMetrics.add(4);
             if(settings.measureComplexityDensity[1]){
@@ -58,41 +56,6 @@ public class ComplexityMetrics extends Flag{
             }
         }
         return lastCalculatedMetric;
-    }
-
-    /**
-     * Returns whether the given feature vector should 'trigger' this flag
-     * based on whether the metric calculated from this feature vector
-     * exceeds the given threshold.
-     * (Recalculates the threshold value if the sensitivity has changed.)
-     */
-    @Override
-    public boolean isFlagTriggered(FeaturesVector featuresVector) {
-        int sensitivity = getSensitivity();
-        if (sensitivity != cachedSensitivity) {
-            cachedSensitivity = sensitivity;
-            calculateThreshold();
-        }
-        lastCalculatedMetric = getMetric(featuresVector);
-
-        ArrayList<Boolean> metricsPassed = new ArrayList<>();
-        for (int i = 0; i < numFeatures; i++) {
-            if (lastCalculatedMetric[i] > thresholds[i]) {
-                metricsPassed.add(true);
-            } else {
-                metricsPassed.add(false);
-                // Check if the metric is required when it doesn't exceed the threshold
-                if (requiredMetrics.size() != 0) {
-                    for (Integer requiredMetric : requiredMetrics) {
-                        if (requiredMetric == selectedMetrics.get(i)) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        // Check if there is at least one 'true' in metricsPassed
-        return (metricsPassed.contains(true));
     }
 
     /**

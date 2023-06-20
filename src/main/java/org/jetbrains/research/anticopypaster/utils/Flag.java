@@ -1,6 +1,5 @@
 package org.jetbrains.research.anticopypaster.utils;
 
-import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.io.FileWriter;
@@ -19,14 +18,14 @@ public abstract class Flag{
 
     protected int cachedSensitivity;
 
+    protected ArrayList<Integer> selectedMetrics = new ArrayList<>();
+    protected ArrayList<Integer> requiredMetrics = new ArrayList<>();
     protected int numFeatures;
 
     protected abstract int getSensitivity();
     protected abstract void setSelectedMetrics();
 
     protected abstract float[] getMetric(FeaturesVector featuresVector);
-
-    public abstract boolean isFlagTriggered(FeaturesVector featuresVector);
 
     protected Flag(List<FeaturesVector> featuresVectorList, int numFeatures) {
         this.numFeatures = numFeatures;
@@ -75,6 +74,37 @@ public abstract class Flag{
                             + proportion * metricValues[l][lowerIndex + 1];
             }
         }
+    }
+
+    /**
+     * Returns whether the given feature vector should 'trigger' this flag
+     * based on whether the metric calculated from this feature vector
+     * exceeds the given threshold.
+     * (Recalculates the threshold value if the sensitivity has changed.)
+     */
+    public boolean isFlagTriggered(FeaturesVector featuresVector) {
+        int sensitivity = getSensitivity();
+        if (sensitivity != cachedSensitivity) {
+            cachedSensitivity = sensitivity;
+            calculateThreshold();
+        }
+        lastCalculatedMetric = getMetric(featuresVector);
+
+        boolean flagTripped = false;
+        for (int i = 0; i < numFeatures; i++) {
+            if (lastCalculatedMetric[i] > thresholds[i]) {
+                flagTripped = true;
+            } else {
+                for (Integer requiredMetric : requiredMetrics) {
+                    if (requiredMetric == selectedMetrics.get(i)) {
+                        // Required metric does not pass.
+                        return false;
+                    }
+                }
+            }
+        }
+        // Return true only if at least one metric has passed.
+        return flagTripped;
     }
 
 

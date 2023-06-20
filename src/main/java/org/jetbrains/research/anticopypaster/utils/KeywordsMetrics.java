@@ -5,12 +5,10 @@ import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
-import java.util.ArrayList;
 import java.util.List;
 import org.jetbrains.research.anticopypaster.config.advanced.NewAdvancedProjectSettingsComponent.JavaKeywords;
 public class KeywordsMetrics extends Flag{
-    private ArrayList<Integer> selectedMetrics = new ArrayList<Integer>();
-    private ArrayList<Integer> requiredMetrics = new ArrayList<Integer>();
+
     public KeywordsMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList, 61);
     }
@@ -22,26 +20,22 @@ public class KeywordsMetrics extends Flag{
     protected void setSelectedMetrics(){
         Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        int count = 16;
+        int metricNum = 16;
         for(JavaKeywords keyword : JavaKeywords.values()) {
-            if(settings.measureKeywordsTotal[0]){
-                if (settings.activeKeywords.get(keyword)) {
-                    selectedMetrics.add(count);
-                    if(settings.measureKeywordsTotal[1]){
-                        requiredMetrics.add(count);
-                    }
+            if (settings.activeKeywords.get(keyword)) {
+                if (settings.measureKeywordsTotal[0]) {
+                    selectedMetrics.add(metricNum);
+                    if (settings.measureKeywordsTotal[1])
+                        requiredMetrics.add(metricNum);
                 }
-            }count++;
-            if(settings.measureKeywordsDensity[0]){
-                if (settings.activeKeywords.get(keyword)) {
-                    selectedMetrics.add(count);
-                    if(settings.measureKeywordsDensity[1]){
-                        requiredMetrics.add(count);
-                    }
+                metricNum++;
+                if (settings.measureKeywordsDensity[0]) {
+                    selectedMetrics.add(metricNum);
+                    if (settings.measureKeywordsDensity[1])
+                        requiredMetrics.add(metricNum);
                 }
-            }
-
-            count++;
+                metricNum++;
+            } else metricNum += 2;
         }
         numFeatures = selectedMetrics.size();
     }
@@ -62,39 +56,6 @@ public class KeywordsMetrics extends Flag{
             }
             return lastCalculatedMetric;
         }
-    }
-    /**
-     * Returns whether the given feature vector should 'trigger' this flag
-     * based on whether the metric calculated from this feature vector
-     * exceeds the given threshold.
-     * (Recalculates the threshold value if the sensitivity has changed.)
-     */
-    @Override
-    public boolean isFlagTriggered(FeaturesVector featuresVector) {
-        int sensitivity = getSensitivity();
-        if (sensitivity != cachedSensitivity) {
-            cachedSensitivity = sensitivity;
-            calculateThreshold();
-        }
-        lastCalculatedMetric = getMetric(featuresVector);
-
-        ArrayList<Boolean> metricsPassed = new ArrayList<>();
-        for (int i = 0; i < numFeatures; i++) {
-            if (lastCalculatedMetric[i] > thresholds[i]) {
-                metricsPassed.add(true);
-            } else {
-                metricsPassed.add(false);
-                if (requiredMetrics.size() != 0) {
-                    for (Integer requiredMetric : requiredMetrics) {
-                        if (requiredMetric == selectedMetrics.get(i)) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        // Check if there is at least one 'true' in metricsPassed
-        return (metricsPassed.contains(true));
     }
 
 
