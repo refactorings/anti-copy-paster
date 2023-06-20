@@ -40,7 +40,7 @@ public class ComplexityMetrics extends Flag{
             if(settings.measureComplexityDensity[1]){
                 requiredMetrics.add(4);
             }
-        }
+        }// TODO: add MethodDeclarationArea, MethodDeclarationDepthPerLine
         numFeatures = selectedMetrics.size();
     }
     @Override
