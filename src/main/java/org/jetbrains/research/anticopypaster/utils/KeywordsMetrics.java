@@ -10,6 +10,7 @@ import java.util.List;
 import org.jetbrains.research.anticopypaster.config.advanced.NewAdvancedProjectSettingsComponent.JavaKeywords;
 public class KeywordsMetrics extends Flag{
     private ArrayList<Integer> selectedMetrics = new ArrayList<Integer>();
+    private ArrayList<Integer> requiredMetrics = new ArrayList<Integer>();
     public KeywordsMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList, 61);
     }
@@ -26,11 +27,17 @@ public class KeywordsMetrics extends Flag{
             if(settings.measureKeywordsTotal[0]){
                 if (settings.activeKeywords.get(keyword)) {
                     selectedMetrics.add(count);
+                    if(settings.measureKeywordsTotal[1]){
+                        requiredMetrics.add(count);
+                    }
                 }
             }count++;
             if(settings.measureKeywordsDensity[0]){
                 if (settings.activeKeywords.get(keyword)) {
                     selectedMetrics.add(count);
+                    if(settings.measureKeywordsDensity[1]){
+                        requiredMetrics.add(count);
+                    }
                 }
             }
 
@@ -77,6 +84,13 @@ public class KeywordsMetrics extends Flag{
                 metricsPassed.add(true);
             } else {
                 metricsPassed.add(false);
+                if (requiredMetrics.size() != 0) {
+                    for (Integer requiredMetric : requiredMetrics) {
+                        if (requiredMetric == selectedMetrics.get(i)) {
+                            return false;
+                        }
+                    }
+                }
             }
         }
         // Check if there is at least one 'true' in metricsPassed
