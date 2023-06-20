@@ -18,18 +18,43 @@ public class SizeMetrics extends Flag{
         Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
-        if(settings.measureSizeByLines[0]){
-            selectedMetrics.add(0);
-            if(settings.measureSizeByLines[1]){
-                requiredMetrics.add(0);
+        if (settings.measureSizeByLines[0]) {
+            if (settings.measureTotalSize[0]) {
+                selectedMetrics.add(0);
+                if (settings.measureSizeByLines[1] && settings.measureTotalSize[1])
+                    requiredMetrics.add(0);
+            }
+            if (settings.measureMethodDeclarationSize[0]) {
+                selectedMetrics.add(11);
+                if (settings.measureSizeByLines[1] && settings.measureMethodDeclarationSize[1])
+                    requiredMetrics.add(11);
             }
         }
-        if(settings.measureSizeBySymbols[0]){
-            selectedMetrics.add(1);
-            if(settings.measureSizeBySymbols[1]){
-                requiredMetrics.add(1);
+        if (settings.measureSizeBySymbols[0]) {
+            if (settings.measureTotalSize[0]) {
+                selectedMetrics.add(1);
+                if (settings.measureSizeBySymbols[1] && settings.measureTotalSize[1])
+                    requiredMetrics.add(1);
             }
-        } // TODO: Add MethodDeclarationLines, MethodDeclarationSymbols, MethodDeclarationSymbolsPerLine, SymbolsPerLine
+            if (settings.measureMethodDeclarationSize[0]) {
+                selectedMetrics.add(12);
+                if (settings.measureSizeBySymbols[1] && settings.measureMethodDeclarationSize[1])
+                    requiredMetrics.add(12);
+            }
+        }
+        if (settings.measureSizeBySymbolsPerLine[0]) {
+            if (settings.measureTotalSize[0]) {
+                selectedMetrics.add(2);
+                if (settings.measureSizeBySymbolsPerLine[1] && settings.measureTotalSize[1])
+                    requiredMetrics.add(2);
+            }
+            if (settings.measureMethodDeclarationSize[0]) {
+                selectedMetrics.add(13);
+                if (settings.measureSizeBySymbolsPerLine[1] && settings.measureMethodDeclarationSize[1])
+                    requiredMetrics.add(13);
+            }
+        }
+
         numFeatures = selectedMetrics.size();
     }
 

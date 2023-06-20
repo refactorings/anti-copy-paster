@@ -45,15 +45,23 @@ public class NewAdvancedProjectSettingsDialogWrapper extends DialogWrapper {
             settings.measureKeywordsTotal = settingsComponent.getKeywordTotalSubmetricInfo();
             settings.measureKeywordsDensity = settingsComponent.getKeywordDensitySubmetricInfo();
             settings.activeKeywords = new EnumMap<>(settingsComponent.getActiveKeywords());
+
             settings.measureCouplingTotal = settingsComponent.getCouplingTotalSubmetricInfo();
             settings.measureCouplingDensity = settingsComponent.getCouplingDensitySubmetricInfo();
             settings.measureTotalConnectivity = settingsComponent.getTotalConnectivityInfo();
             settings.measureFieldConnectivity = settingsComponent.getFieldConnectivityInfo();
             settings.measureMethodConnectivity = settingsComponent.getMethodConnectivityInfo();
+
             settings.measureComplexityTotal = settingsComponent.getComplexityTotalSubmetricInfo();
             settings.measureComplexityDensity = settingsComponent.getComplexityDensitySubmetricInfo();
+            settings.measureMethodDeclarationArea = settingsComponent.getComplexityMethodAreaInfo();
+            settings.measureMethodDeclarationDepthPerLine = settingsComponent.getComplexityMethodDensityInfo();
+
             settings.measureSizeByLines = settingsComponent.getSizeByLinesSubmetricInfo();
             settings.measureSizeBySymbols = settingsComponent.getSizeBySymbolsSubmetricInfo();
+            settings.measureSizeBySymbolsPerLine = settingsComponent.getSizeBySymbolDensitySubmetricInfo();
+            settings.measureTotalSize = settingsComponent.getMeasureSizeOfSegmentInfo();
+            settings.measureMethodDeclarationSize = settingsComponent.getMeasureSizeOfMethodInfo();
         }
     }
 
@@ -72,9 +80,14 @@ public class NewAdvancedProjectSettingsDialogWrapper extends DialogWrapper {
 
         settingsComponent.setComplexityTotalSubmetric(settings.measureComplexityTotal[0], settings.measureComplexityTotal[1]);
         settingsComponent.setComplexityDensitySubmetric(settings.measureComplexityDensity[0], settings.measureComplexityDensity[1]);
+        settingsComponent.setMethodDeclarationArea(settings.measureMethodDeclarationArea[0], settings.measureMethodDeclarationArea[1]);
+        settingsComponent.setMethodDeclarationDepthDensity(settings.measureMethodDeclarationDepthPerLine[0], settings.measureMethodDeclarationDepthPerLine[1]);
 
         settingsComponent.setSizeByLinesSubmetric(settings.measureSizeByLines[0], settings.measureSizeByLines[1]);
         settingsComponent.setSizeBySymbolsSubmetric(settings.measureSizeBySymbols[0], settings.measureSizeBySymbols[1]);
+        settingsComponent.setSizeByDensityOfSymbolsSubmetric(settings.measureSizeBySymbolsPerLine[0], settings.measureSizeBySymbolsPerLine[1]);
+        settingsComponent.setMeasureSizeOfSegment(settings.measureTotalSize[0], settings.measureTotalSize[1]);
+        settingsComponent.setMeasureSizeOfMethod(settings.measureMethodDeclarationSize[0], settings.measureMethodDeclarationSize[1]);
     }
 
 }

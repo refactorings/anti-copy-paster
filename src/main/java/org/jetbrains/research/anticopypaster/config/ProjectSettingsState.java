@@ -24,6 +24,8 @@ public class ProjectSettingsState implements PersistentStateComponent<ProjectSet
 
     // ADVANCED SETTINGS STATES
     // Each boolean array of two elements follow this scheme {boolean submetric_enabled, boolean submetric_required}
+
+    // Keyword Metric
     public boolean[] measureKeywordsTotal = {false, false}, measureKeywordsDensity = {true, true};
     public EnumMap<JavaKeywords, Boolean> activeKeywords = new EnumMap<>(JavaKeywords.class);
     {
@@ -31,10 +33,18 @@ public class ProjectSettingsState implements PersistentStateComponent<ProjectSet
             activeKeywords.put(keyword, true);
         }
     }
+
+    // Coupling Metric
     public boolean[] measureCouplingTotal = {false, false}, measureCouplingDensity = {true, true};
     public boolean[] measureTotalConnectivity = {true, true}, measureFieldConnectivity = {false, false}, measureMethodConnectivity = {false, false};
-    public boolean[] measureComplexityTotal = {false, false}, measureComplexityDensity = {true, true};
-    public boolean[] measureSizeByLines = {true, true}, measureSizeBySymbols = {false, false};
+
+    // Complexity Metric
+    public boolean[] measureComplexityTotal = {false, false}, measureComplexityDensity = {true, true},
+            measureMethodDeclarationArea = {false, false}, measureMethodDeclarationDepthPerLine = {true, false};
+
+    // Size Metric
+    public boolean[] measureSizeByLines = {true, true}, measureSizeBySymbols = {false, false}, measureSizeBySymbolsPerLine = {false, false};
+    public boolean[] measureTotalSize = {true, true}, measureMethodDeclarationSize = {false, false};
 
 
     public static ProjectSettingsState getInstance(Project project) {

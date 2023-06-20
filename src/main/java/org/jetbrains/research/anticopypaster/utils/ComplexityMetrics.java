@@ -26,19 +26,34 @@ public class ComplexityMetrics extends Flag{
         Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
-        if(settings.measureComplexityTotal[0]){
+        if (settings.measureComplexityTotal[0]) {
             selectedMetrics.add(3);
-            if(settings.measureComplexityTotal[1]){
+            if (settings.measureComplexityTotal[1]) {
                 requiredMetrics.add(3);
             }
         }
 
-        if(settings.measureComplexityDensity[0]){
+        if (settings.measureComplexityDensity[0]) {
             selectedMetrics.add(4);
-            if(settings.measureComplexityDensity[1]){
+            if (settings.measureComplexityDensity[1]) {
                 requiredMetrics.add(4);
             }
-        }// TODO: add MethodDeclarationArea, MethodDeclarationDepthPerLine
+        }
+
+        if (settings.measureMethodDeclarationArea[0]) {
+            selectedMetrics.add(14);
+            if (settings.measureMethodDeclarationArea[1]) {
+                requiredMetrics.add(14);
+            }
+        }
+
+        if (settings.measureMethodDeclarationDepthPerLine[0]) {
+            selectedMetrics.add(15);
+            if (settings.measureMethodDeclarationDepthPerLine[1]) {
+                requiredMetrics.add(15);
+            }
+        }
+
         numFeatures = selectedMetrics.size();
     }
     @Override

@@ -1,8 +1,6 @@
 package org.jetbrains.research.anticopypaster.config.advanced;
 
 import javax.swing.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.util.EnumMap;
 
 public class NewAdvancedProjectSettingsComponent {
@@ -60,6 +58,16 @@ public class NewAdvancedProjectSettingsComponent {
     private JCheckBox numberOfSymbolsInCheckBox;
     private JCheckBox requiredSubmetricCheckBox10;
     private JPanel mainPanel;
+    private JCheckBox methodDeclarationAreaCheckBox;
+    private JCheckBox methodDeclarationDepthDensityCheckBox;
+    private JCheckBox requiredSubmetricCheckBox11;
+    private JCheckBox requiredSubmetricCheckBox12;
+    private JCheckBox densityOfSymbolsInCheckBox;
+    private JCheckBox requiredSubmetricCheckBox13;
+    private JCheckBox measureSizeOfSegmentCheckBox;
+    private JCheckBox requiredSubmetricCheckBox14;
+    private JCheckBox measureSizeOfMethodCheckBox;
+    private JCheckBox requiredSubmetricCheckBox15;
 
     public JPanel getPanel() {
         return mainPanel;
@@ -96,9 +104,14 @@ public class NewAdvancedProjectSettingsComponent {
 
         addConditionallyEnabledCheckboxGroup(totalComplexityOfSegmentCheckBox, requiredSubmetricCheckBox7);
         addConditionallyEnabledCheckboxGroup(complexityDensityPerLineCheckBox, requiredSubmetricCheckBox8);
+        addConditionallyEnabledCheckboxGroup(methodDeclarationAreaCheckBox, requiredSubmetricCheckBox11);
+        addConditionallyEnabledCheckboxGroup(methodDeclarationDepthDensityCheckBox, requiredSubmetricCheckBox12);
 
         addConditionallyEnabledCheckboxGroup(numberOfLinesInCheckBox, requiredSubmetricCheckBox9);
         addConditionallyEnabledCheckboxGroup(numberOfSymbolsInCheckBox, requiredSubmetricCheckBox10);
+        addConditionallyEnabledCheckboxGroup(densityOfSymbolsInCheckBox, requiredSubmetricCheckBox13);
+        addConditionallyEnabledCheckboxGroup(measureSizeOfSegmentCheckBox, requiredSubmetricCheckBox14);
+        addConditionallyEnabledCheckboxGroup(measureSizeOfMethodCheckBox, requiredSubmetricCheckBox15);
 
     }
 
@@ -188,6 +201,16 @@ public class NewAdvancedProjectSettingsComponent {
         requiredSubmetricCheckBox8.setEnabled(enabled);
         requiredSubmetricCheckBox8.setSelected(required);
     }
+    public void setMethodDeclarationArea(boolean enabled, boolean required) {
+        methodDeclarationAreaCheckBox.setSelected(enabled);
+        requiredSubmetricCheckBox11.setEnabled(enabled);
+        requiredSubmetricCheckBox11.setSelected(required);
+    }
+    public void setMethodDeclarationDepthDensity(boolean enabled, boolean required) {
+        methodDeclarationDepthDensityCheckBox.setSelected(enabled);
+        requiredSubmetricCheckBox12.setEnabled(enabled);
+        requiredSubmetricCheckBox12.setSelected(required);
+    }
 
     public void setSizeByLinesSubmetric(boolean enabled, boolean required) {
         numberOfLinesInCheckBox.setSelected(enabled);
@@ -198,6 +221,21 @@ public class NewAdvancedProjectSettingsComponent {
         numberOfSymbolsInCheckBox.setSelected(enabled);
         requiredSubmetricCheckBox10.setEnabled(enabled);
         requiredSubmetricCheckBox10.setSelected(required);
+    }
+    public void setSizeByDensityOfSymbolsSubmetric(boolean enabled, boolean required) {
+        densityOfSymbolsInCheckBox.setSelected(enabled);
+        requiredSubmetricCheckBox13.setEnabled(enabled);
+        requiredSubmetricCheckBox13.setSelected(required);
+    }
+    public void setMeasureSizeOfSegment(boolean enabled, boolean required) {
+        measureSizeOfSegmentCheckBox.setSelected(enabled);
+        requiredSubmetricCheckBox14.setEnabled(enabled);
+        requiredSubmetricCheckBox14.setSelected(required);
+    }
+    public void setMeasureSizeOfMethod(boolean enabled, boolean required) {
+        measureSizeOfMethodCheckBox.setSelected(enabled);
+        requiredSubmetricCheckBox15.setEnabled(enabled);
+        requiredSubmetricCheckBox15.setSelected(required);
     }
 
 
@@ -249,8 +287,13 @@ public class NewAdvancedProjectSettingsComponent {
 
     public boolean[] getComplexityTotalSubmetricInfo() { return new boolean[] {totalComplexityOfSegmentCheckBox.isSelected(), requiredSubmetricCheckBox7.isSelected()}; }
     public boolean[] getComplexityDensitySubmetricInfo() { return new boolean[] {complexityDensityPerLineCheckBox.isSelected(), requiredSubmetricCheckBox8.isSelected()}; }
+    public boolean[] getComplexityMethodAreaInfo() { return new boolean[] {methodDeclarationAreaCheckBox.isSelected(), requiredSubmetricCheckBox11.isSelected()}; }
+    public boolean[] getComplexityMethodDensityInfo() { return new boolean[] {methodDeclarationDepthDensityCheckBox.isSelected(), requiredSubmetricCheckBox12.isSelected()}; }
 
     public boolean[] getSizeByLinesSubmetricInfo() { return new boolean[] {numberOfLinesInCheckBox.isSelected(), requiredSubmetricCheckBox9.isSelected()}; }
     public boolean[] getSizeBySymbolsSubmetricInfo() { return new boolean[] {numberOfSymbolsInCheckBox.isSelected(), requiredSubmetricCheckBox10.isSelected()}; }
+    public boolean[] getSizeBySymbolDensitySubmetricInfo() { return new boolean[] {densityOfSymbolsInCheckBox.isSelected(), requiredSubmetricCheckBox13.isSelected()}; }
+    public boolean[] getMeasureSizeOfSegmentInfo() { return new boolean[] {measureSizeOfSegmentCheckBox.isSelected(), requiredSubmetricCheckBox14.isSelected()}; }
+    public boolean[] getMeasureSizeOfMethodInfo() { return new boolean[] {measureSizeOfMethodCheckBox.isSelected(), requiredSubmetricCheckBox15.isSelected()}; }
 
 }
