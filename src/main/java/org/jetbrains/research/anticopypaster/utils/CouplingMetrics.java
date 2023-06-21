@@ -24,52 +24,52 @@ public class CouplingMetrics extends Flag{
      * Metric index 10: Method connectivity per line
      */
     @Override
-        protected void setSelectedMetrics(){
-            Project project = ProjectManager.getInstance().getOpenProjects()[0];
-            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+    protected void setSelectedMetrics(){
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
-            if(settings.measureCouplingTotal[0]){
-                if(settings.measureTotalConnectivity[0]){
-                    selectedMetrics.add(5);
-                    if(settings.measureTotalConnectivity[1]){
-                        requiredMetrics.add(5);
-                    }
-                }
-                if(settings.measureFieldConnectivity[0]){
-                    selectedMetrics.add(7);
-                    if(settings.measureFieldConnectivity[1]){
-                        requiredMetrics.add(7);
-                    }
-                }
-                if(settings.measureMethodConnectivity[0]){
-                    selectedMetrics.add(9);
-                    if(settings.measureMethodConnectivity[1]){
-                        requiredMetrics.add(9);
-                    }
+        if(settings.measureCouplingTotal[0]){
+            if(settings.measureTotalConnectivity[0]){
+                selectedMetrics.add(5);
+                if(settings.measureTotalConnectivity[1]){
+                    requiredMetrics.add(5);
                 }
             }
-            if(settings.measureCouplingDensity[0]){
-                if(settings.measureTotalConnectivity[0]){
-                    selectedMetrics.add(6);
-                    if(settings.measureTotalConnectivity[1]){
-                        requiredMetrics.add(6);
-                    }
-                }
-                if(settings.measureFieldConnectivity[0]){
-                    selectedMetrics.add(8);
-                    if(settings.measureFieldConnectivity[1]){
-                        requiredMetrics.add(8);
-                    }
-                }
-                if(settings.measureMethodConnectivity[0]){
-                    selectedMetrics.add(10);
-                    if(settings.measureMethodConnectivity[1]){
-                        selectedMetrics.add(10);
-                    }
+            if(settings.measureFieldConnectivity[0]){
+                selectedMetrics.add(7);
+                if(settings.measureFieldConnectivity[1]){
+                    requiredMetrics.add(7);
                 }
             }
-            numFeatures = selectedMetrics.size();
+            if(settings.measureMethodConnectivity[0]){
+                selectedMetrics.add(9);
+                if(settings.measureMethodConnectivity[1]){
+                    requiredMetrics.add(9);
+                }
+            }
         }
+        if(settings.measureCouplingDensity[0]){
+            if(settings.measureTotalConnectivity[0]){
+                selectedMetrics.add(6);
+                if(settings.measureTotalConnectivity[1]){
+                    requiredMetrics.add(6);
+                }
+            }
+            if(settings.measureFieldConnectivity[0]){
+                selectedMetrics.add(8);
+                if(settings.measureFieldConnectivity[1]){
+                    requiredMetrics.add(8);
+                }
+            }
+            if(settings.measureMethodConnectivity[0]){
+                selectedMetrics.add(10);
+                if(settings.measureMethodConnectivity[1]){
+                    selectedMetrics.add(10);
+                }
+            }
+        }
+        numFeatures = selectedMetrics.size();
+    }
 
     /**
      * Required override function from Flag. Gets the sensitivity for this metric
