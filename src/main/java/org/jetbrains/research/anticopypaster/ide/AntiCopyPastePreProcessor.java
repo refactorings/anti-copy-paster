@@ -8,6 +8,7 @@ import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.RawText;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
 import org.jetbrains.annotations.NotNull;
@@ -15,6 +16,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.checkers.FragmentCorrectnessChecker;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Timer;
@@ -28,12 +30,15 @@ import static org.jetbrains.research.anticopypaster.utils.PsiUtil.getCountOfCode
 public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     private final DuplicatesInspection inspection = new DuplicatesInspection();
     private final Timer timer = new Timer(true);
-    private final RefactoringNotificationTask refactoringNotificationTask = new RefactoringNotificationTask(inspection, timer);
+    //private final RefactoringNotificationTask refactoringNotificationTask = new RefactoringNotificationTask(inspection, timer);
+    private final ArrayList<RefactoringNotificationTask> refactoringNotificationTask = new ArrayList<>();
 
     private static final Logger LOG = Logger.getInstance(AntiCopyPastePreProcessor.class);
+    private int task = 0;
 
     public AntiCopyPastePreProcessor() {
-        setCheckingForRefactoringOpportunities();
+        refactoringNotificationTask.add(new RefactoringNotificationTask(inspection, timer, ProjectManager.getInstance().getOpenProjects()[0]));
+        setCheckingForRefactoringOpportunities(task++);
     }
 
     /**
@@ -56,7 +61,11 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         HashSet<String> variablesInCodeFragment = new HashSet<>();
         HashMap<String, Integer> variablesCountsInCodeFragment = new HashMap<>();
 
-        refactoringNotificationTask.setProject(project);
+        if (!checkForProject(project)) {
+            refactoringNotificationTask.add(new RefactoringNotificationTask(inspection, timer, project));
+            setCheckingForRefactoringOpportunities(task++);
+        }
+
         AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
 
         if (editor == null || file == null || !FragmentCorrectnessChecker.isCorrect(project, file,
@@ -79,19 +88,28 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         //number of lines in fragment
         int linesOfCode = getCountOfCodeLines(text);
 
-        refactoringNotificationTask.addEvent(
+        refactoringNotificationTask.get(task-1).addEvent(
                 new RefactoringEvent(file, destinationMethod, text, result.getDuplicatesCount(),
                         project, editor, linesOfCode));
 
         return text;
     }
 
+    private boolean checkForProject(Project project) {
+        for (RefactoringNotificationTask t:refactoringNotificationTask) {
+            if (t.getProject() == project) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Sets the regular checking for Extract Method refactoring opportunities.
      */
-    private void setCheckingForRefactoringOpportunities() {
+    private void setCheckingForRefactoringOpportunities(int task) {
         try {
-            timer.schedule(refactoringNotificationTask, 15000, 15000);
+            timer.schedule(refactoringNotificationTask.get(task), 15000, 15000);
         } catch (Exception ex) {
             LOG.error("[ACP] Failed to schedule the checking for refactorings.", ex.getMessage());
         }
