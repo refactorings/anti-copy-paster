@@ -1,5 +1,6 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.io.FileWriter;
@@ -18,8 +19,8 @@ public abstract class Flag{
 
     protected int cachedSensitivity;
 
-    protected ArrayList<Integer> selectedMetrics = new ArrayList<>();
-    protected ArrayList<Integer> requiredMetrics = new ArrayList<>();
+    protected ArrayList<Feature> selectedMetrics = new ArrayList<>();
+    protected ArrayList<Feature> requiredMetrics = new ArrayList<>();
     protected int numFeatures;
 
     protected abstract int getSensitivity();
@@ -27,10 +28,9 @@ public abstract class Flag{
 
     protected float[] getMetric(FeaturesVector fv){
         if (fv != null) {
-            float[] fvArr = fv.buildArray();
             for (int i = 0; i < selectedMetrics.size(); i++) {
-                int metricIndex = selectedMetrics.get(i);
-                lastCalculatedMetric[i] = fvArr[metricIndex];
+                Feature feature = selectedMetrics.get(i);
+                lastCalculatedMetric[i] = (float) fv.getFeatureValue(feature);
             }
         } else {
             // Initialize lastCalculatedMetric array with zeros
@@ -108,8 +108,8 @@ public abstract class Flag{
             if (lastCalculatedMetric[i] > thresholds[i]) {
                 flagTripped = true;
             } else {
-                for (Integer requiredMetric : requiredMetrics) {
-                    if (requiredMetric.equals(selectedMetrics.get(i))) {
+                for (Feature requiredMetric : requiredMetrics) {
+                    if (requiredMetric == selectedMetrics.get(i)) {
                         // Required metric does not pass.
                         return false;
                     }

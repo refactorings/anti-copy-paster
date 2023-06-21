@@ -3,6 +3,7 @@ package org.jetbrains.research.anticopypaster.utils;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.util.ArrayList;
@@ -30,41 +31,41 @@ public class CouplingMetrics extends Flag{
 
         if(settings.measureCouplingTotal[0]){
             if(settings.measureTotalConnectivity[0]){
-                selectedMetrics.add(5);
+                selectedMetrics.add(Feature.TotalConnectivity);
                 if(settings.measureTotalConnectivity[1]){
-                    requiredMetrics.add(5);
+                    requiredMetrics.add(Feature.TotalConnectivity);
                 }
             }
             if(settings.measureFieldConnectivity[0]){
-                selectedMetrics.add(7);
+                selectedMetrics.add(Feature.FieldConnectivity);
                 if(settings.measureFieldConnectivity[1]){
-                    requiredMetrics.add(7);
+                    requiredMetrics.add(Feature.FieldConnectivity);
                 }
             }
             if(settings.measureMethodConnectivity[0]){
-                selectedMetrics.add(9);
+                selectedMetrics.add(Feature.MethodConnectivity);
                 if(settings.measureMethodConnectivity[1]){
-                    requiredMetrics.add(9);
+                    requiredMetrics.add(Feature.MethodConnectivity);
                 }
             }
         }
         if(settings.measureCouplingDensity[0]){
             if(settings.measureTotalConnectivity[0]){
-                selectedMetrics.add(6);
+                selectedMetrics.add(Feature.TotalConnectivityPerLine);
                 if(settings.measureTotalConnectivity[1]){
-                    requiredMetrics.add(6);
+                    requiredMetrics.add(Feature.TotalConnectivityPerLine);
                 }
             }
             if(settings.measureFieldConnectivity[0]){
-                selectedMetrics.add(8);
+                selectedMetrics.add(Feature.FieldConnectivityPerLine);
                 if(settings.measureFieldConnectivity[1]){
-                    requiredMetrics.add(8);
+                    requiredMetrics.add(Feature.FieldConnectivityPerLine);
                 }
             }
             if(settings.measureMethodConnectivity[0]){
-                selectedMetrics.add(10);
+                selectedMetrics.add(Feature.MethodConnectivityPerLine);
                 if(settings.measureMethodConnectivity[1]){
-                    selectedMetrics.add(10);
+                    selectedMetrics.add(Feature.MethodConnectivityPerLine);
                 }
             }
         }

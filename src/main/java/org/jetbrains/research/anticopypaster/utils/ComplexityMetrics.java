@@ -3,6 +3,7 @@ package org.jetbrains.research.anticopypaster.utils;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.util.ArrayList;
@@ -27,30 +28,30 @@ public class ComplexityMetrics extends Flag{
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
         if (settings.measureComplexityTotal[0]) {
-            selectedMetrics.add(3);
+            selectedMetrics.add(Feature.Area);
             if (settings.measureComplexityTotal[1]) {
-                requiredMetrics.add(3);
+                requiredMetrics.add(Feature.Area);
             }
         }
 
         if (settings.measureComplexityDensity[0]) {
-            selectedMetrics.add(4);
+            selectedMetrics.add(Feature.AreaPerLine);
             if (settings.measureComplexityDensity[1]) {
-                requiredMetrics.add(4);
+                requiredMetrics.add(Feature.AreaPerLine);
             }
         }
 
         if (settings.measureMethodDeclarationArea[0]) {
-            selectedMetrics.add(14);
+            selectedMetrics.add(Feature.MethodDeclarationArea);
             if (settings.measureMethodDeclarationArea[1]) {
-                requiredMetrics.add(14);
+                requiredMetrics.add(Feature.MethodDeclarationArea);
             }
         }
 
         if (settings.measureMethodDeclarationDepthPerLine[0]) {
-            selectedMetrics.add(15);
+            selectedMetrics.add(Feature.MethodDeclarationAreaPerLine);
             if (settings.measureMethodDeclarationDepthPerLine[1]) {
-                requiredMetrics.add(15);
+                requiredMetrics.add(Feature.MethodDeclarationAreaPerLine);
             }
         }
 

@@ -3,6 +3,7 @@ package org.jetbrains.research.anticopypaster.utils;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.util.List;
@@ -24,15 +25,15 @@ public class KeywordsMetrics extends Flag{
         for(JavaKeywords keyword : JavaKeywords.values()) {
             if (settings.activeKeywords.get(keyword)) {
                 if (settings.measureKeywordsTotal[0]) {
-                    selectedMetrics.add(metricNum);
+                    selectedMetrics.add(Feature.fromId(metricNum));
                     if (settings.measureKeywordsTotal[1])
-                        requiredMetrics.add(metricNum);
+                        requiredMetrics.add(Feature.fromId(metricNum));
                 }
                 metricNum++;
                 if (settings.measureKeywordsDensity[0]) {
-                    selectedMetrics.add(metricNum);
+                    selectedMetrics.add(Feature.fromId(metricNum));
                     if (settings.measureKeywordsDensity[1])
-                        requiredMetrics.add(metricNum);
+                        requiredMetrics.add(Feature.fromId(metricNum));
                 }
                 metricNum++;
             } else metricNum += 2;
