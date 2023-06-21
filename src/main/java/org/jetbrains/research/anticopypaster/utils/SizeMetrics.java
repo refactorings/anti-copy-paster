@@ -59,27 +59,6 @@ public class SizeMetrics extends Flag{
     }
 
     /**
-    Size can be defined as either the number of lines or number of symbols in a code body.
-     getMetric() returns the relevant metric depending on the user's settings.
-     */
-    @Override
-    protected float[] getMetric(FeaturesVector fv){
-        if (fv != null) {
-            float[] fvArr = fv.buildArray();
-            for (int i = 0; i < selectedMetrics.size(); i++) {
-                int metricIndex = selectedMetrics.get(i);
-                lastCalculatedMetric[i] = fvArr[metricIndex];
-            }
-        } else {
-            // Initialize lastCalculatedMetric array with zeros
-            for (int i = 0; i < selectedMetrics.size(); i++) {
-                lastCalculatedMetric[i] = 0;
-            }
-        }
-        return lastCalculatedMetric;
-    }
-
-    /**
      * Required override function from Flag. Gets the sensitivity for this metric
      * by grabbing its appropriate settings from this project's ProjectSettingsState.
      */

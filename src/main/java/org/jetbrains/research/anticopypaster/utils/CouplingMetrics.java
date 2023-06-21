@@ -13,6 +13,16 @@ public class CouplingMetrics extends Flag{
     public CouplingMetrics(List<FeaturesVector> featuresVectorList){
         super(featuresVectorList);
     }
+
+    /**
+     * Coupling uses one of Metrics 6 through 11, according to this scheme:
+     * Metric index 5: Total connectivity
+     * Metric index 6: Total connectivity per line
+     * Metric index 7: Field connectivity
+     * Metric index 8: Field connectivity per line
+     * Metric index 9: Method connectivity
+     * Metric index 10: Method connectivity per line
+     */
     @Override
         protected void setSelectedMetrics(){
             Project project = ProjectManager.getInstance().getOpenProjects()[0];
@@ -60,34 +70,6 @@ public class CouplingMetrics extends Flag{
             }
             numFeatures = selectedMetrics.size();
         }
-
-    /**
-    This is a function that will get the coupling metric out of
-    the FeaturesVector that is passed in
-    Coupling uses one of Metrics 6 through 11, according to this scheme:
-        * Metric index 5: Total connectivity
-        * Metric index 6: Total connectivity per line
-        * Metric index 7: Field connectivity
-        * Metric index 8: Field connectivity per line
-        * Metric index 9: Method connectivity
-        * Metric index 10: Method connectivity per line
-     */
-    @Override
-    protected float[] getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
-        if (fv != null) {
-            float[] fvArr = fv.buildArray();
-            for (int i = 0; i < selectedMetrics.size(); i++) {
-                int metricIndex = selectedMetrics.get(i);
-                lastCalculatedMetric[i] = fvArr[metricIndex];
-            }
-        } else {
-            // Initialize lastCalculatedMetric array with zeros
-            for (int i = 0; i < selectedMetrics.size(); i++) {
-                lastCalculatedMetric[i] = 0;
-            }
-        }
-        return lastCalculatedMetric;
-    }
 
     /**
      * Required override function from Flag. Gets the sensitivity for this metric

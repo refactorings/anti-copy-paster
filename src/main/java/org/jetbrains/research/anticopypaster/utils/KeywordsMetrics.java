@@ -39,24 +39,6 @@ public class KeywordsMetrics extends Flag{
         }
         numFeatures = selectedMetrics.size();
     }
-    @Override
-    protected float[] getMetric(FeaturesVector fv){ // TODO: Reconcile changed Flag definitions
-        if (fv != null) {
-            float[] fvArr = fv.buildArray();
-            for (int i = 0; i < selectedMetrics.size(); i++) {
-                int metricIndex = selectedMetrics.get(i);
-                lastCalculatedMetric[i] = fvArr[metricIndex];
-            }
-            return lastCalculatedMetric;
-        } else {
-            // Initialize lastCalculatedMetric array with zeros
-            for (int i = 0; i < selectedMetrics.size(); i++) {
-                int metricIndex = selectedMetrics.get(i);
-                lastCalculatedMetric[i] = 0;
-            }
-            return lastCalculatedMetric;
-        }
-    }
 
 
     /**

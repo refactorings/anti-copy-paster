@@ -25,7 +25,21 @@ public abstract class Flag{
     protected abstract int getSensitivity();
     protected abstract void setSelectedMetrics();
 
-    protected abstract float[] getMetric(FeaturesVector featuresVector);
+    protected float[] getMetric(FeaturesVector fv){
+        if (fv != null) {
+            float[] fvArr = fv.buildArray();
+            for (int i = 0; i < selectedMetrics.size(); i++) {
+                int metricIndex = selectedMetrics.get(i);
+                lastCalculatedMetric[i] = fvArr[metricIndex];
+            }
+        } else {
+            // Initialize lastCalculatedMetric array with zeros
+            for (int i = 0; i < selectedMetrics.size(); i++) {
+                lastCalculatedMetric[i] = 0;
+            }
+        }
+        return lastCalculatedMetric;
+    }
 
     protected Flag(List<FeaturesVector> featuresVectorList) {
         this.featuresVectorList = featuresVectorList;
