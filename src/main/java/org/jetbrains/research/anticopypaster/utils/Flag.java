@@ -27,8 +27,7 @@ public abstract class Flag{
 
     protected abstract float[] getMetric(FeaturesVector featuresVector);
 
-    protected Flag(List<FeaturesVector> featuresVectorList, int numFeatures) {
-        this.numFeatures = numFeatures;
+    protected Flag(List<FeaturesVector> featuresVectorList) {
         this.featuresVectorList = featuresVectorList;
         this.thresholds = null;
         this.lastCalculatedMetric = null;
@@ -96,7 +95,7 @@ public abstract class Flag{
                 flagTripped = true;
             } else {
                 for (Integer requiredMetric : requiredMetrics) {
-                    if (requiredMetric == selectedMetrics.get(i)) {
+                    if (requiredMetric.equals(selectedMetrics.get(i))) {
                         // Required metric does not pass.
                         return false;
                     }
@@ -117,7 +116,7 @@ public abstract class Flag{
         try(FileWriter fr = new FileWriter(filepath, true)){
             fr.write("Current " + metricName +
                     " Threshold, Last Calculated Metric: " +
-                    thresholds + ", " + lastCalculatedMetric + "\n");
+                    thresholds.toString() + ", " + lastCalculatedMetric.toString() + "\n");
         }catch(IOException ioe){
 
         }
@@ -138,7 +137,7 @@ public abstract class Flag{
      */
     protected void logThresholds(String filepath, String metricName){
         try(FileWriter fr = new FileWriter(filepath, true)){
-            fr.write(metricName + " Threshold: " + thresholds + "\n");
+            fr.write(metricName + " Threshold: " + thresholds.toString() + "\n");
         }catch(IOException ioe){
 
         }

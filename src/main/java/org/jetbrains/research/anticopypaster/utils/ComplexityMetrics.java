@@ -11,7 +11,7 @@ import java.util.List;
 public class ComplexityMetrics extends Flag{
 
     public ComplexityMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList, 2);
+        super(featuresVectorList);
     }
 
     /**

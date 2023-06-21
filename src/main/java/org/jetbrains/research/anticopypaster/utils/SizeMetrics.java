@@ -10,7 +10,7 @@ import java.util.List;
 public class SizeMetrics extends Flag{
 
     public SizeMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList, 2);
+        super(featuresVectorList);
 
     }
     @Override

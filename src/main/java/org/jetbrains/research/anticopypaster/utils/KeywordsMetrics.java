@@ -10,7 +10,7 @@ import org.jetbrains.research.anticopypaster.config.advanced.NewAdvancedProjectS
 public class KeywordsMetrics extends Flag{
 
     public KeywordsMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList, 61);
+        super(featuresVectorList);
     }
 
     /**
