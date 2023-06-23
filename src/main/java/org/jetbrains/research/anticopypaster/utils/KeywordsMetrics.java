@@ -7,7 +7,7 @@ import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.util.List;
-import org.jetbrains.research.anticopypaster.config.advanced.NewAdvancedProjectSettingsComponent.JavaKeywords;
+import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsComponent.JavaKeywords;
 public class KeywordsMetrics extends Flag{
 
     public KeywordsMetrics(List<FeaturesVector> featuresVectorList){
