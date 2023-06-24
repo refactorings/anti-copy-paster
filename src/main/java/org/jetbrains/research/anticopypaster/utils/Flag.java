@@ -1,6 +1,5 @@
 package org.jetbrains.research.anticopypaster.utils;
 
-import com.intellij.openapi.wm.impl.status.FatalErrorWidgetFactory;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
@@ -70,7 +69,6 @@ public abstract class Flag{
                 float[] metric = getMetric(featuresVectorList.get(i));
                 for (int j = 0; j < numFeatures; j++) {
                     metricValues[j][i] = metric[j];
-                    //printTwoDArray(metricValues);
                 }
             }
             for (float[] metricValue : metricValues)
@@ -119,14 +117,10 @@ public abstract class Flag{
                     }
                 }
             }
-            System.out.print("Loop");
         }
         // Return true only if at least one metric has passed.
         return flagTripped;
     }
-    protected ArrayList<Feature> getSelectedMetrics(){ return this.selectedMetrics;}
-    protected ArrayList<Feature> getRequiredMetrics(){ return this.requiredMetrics;}
-
 
     /**
      * This function logs the last known metric and the current threshold
