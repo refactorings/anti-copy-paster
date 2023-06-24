@@ -31,10 +31,6 @@ public class FlagTest {
             return sensitivity;
         }
         @Override
-        public ArrayList<Feature> getSelectedMetrics(){ return selectedMetrics;}
-        @Override
-        public ArrayList<Feature> getRequiredMetrics(){ return requiredMetrics;}
-        @Override
         public void setSelectedMetrics(){
             selectedMetrics.add(Feature.TotalLinesOfCode);
             selectedMetrics.add(Feature.TotalSymbols);
@@ -53,8 +49,6 @@ public class FlagTest {
     }
     private TestingFlag testFlag;
     private int sensitivity;
-    private ArrayList<Feature> selectedMetrics = new ArrayList<>();
-    private ArrayList<Feature> requiredMetrics = new ArrayList<>();
     public class FeaturesVectorMock {
         @Mock
         private FeaturesVector mockFeaturesVector;
@@ -89,8 +83,6 @@ public class FlagTest {
     @BeforeEach
     public void beforeTest(){
         this.fvList = new ArrayList<FeaturesVector>();
-        this.selectedMetrics = new ArrayList<Feature>();
-        this.requiredMetrics = new ArrayList<Feature>();
         this.testFlag = null;
     }
     @Test
@@ -148,6 +140,48 @@ public class FlagTest {
         testFlag = new TestingFlag(fvList);
         assertEquals(4, testFlag.thresholds.length);
         assertArrayEquals(new float[]{1f, 1f, 3f, 4f}, testFlag.thresholds, 0f);
+    }
+    @Test
+    public void testCalculateThreshold_10Sens(){
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{4f, 1f, 7f, 5f}).getMock());
+
+        testFlag = new TestingFlag(fvList);
+        testFlag.cachedSensitivity = 10;
+        this.sensitivity = 10;
+        testFlag.calculateThreshold();
+
+        assertEquals(4, testFlag.thresholds.length);
+        assertArrayEquals(new float[]{1f, 1.2f, 3f, 4f}, testFlag.thresholds, 0f);
+    }
+    @Test
+    public void testCalculateThreshold_75Sens(){
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{4f, 1f, 7f, 5f}).getMock());
+
+        testFlag = new TestingFlag(fvList);
+        testFlag.cachedSensitivity = 75;
+        this.sensitivity = 75;
+        testFlag.calculateThreshold();
+
+        assertEquals(4, testFlag.thresholds.length);
+        assertArrayEquals(new float[]{2.5f, 2.0f, 5.0f, 4.5f}, testFlag.thresholds, 0f);
+    }
+    @Test
+    public void testCalculateThreshold_100Sens(){
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{4f, 1f, 7f, 5f}).getMock());
+
+        testFlag = new TestingFlag(fvList);
+        testFlag.cachedSensitivity = 100;
+        this.sensitivity = 100;
+        testFlag.calculateThreshold();
+
+        assertEquals(4, testFlag.thresholds.length);
+        assertArrayEquals(new float[]{4f, 2f, 7f, 5f}, testFlag.thresholds, 0f);
     }
     @Test
     public void testIsFlagTriggered_OneFV(){

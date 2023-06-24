@@ -96,15 +96,12 @@ public abstract class Flag{
      * (Recalculates the threshold value if the sensitivity has changed.)
      */
     public boolean isFlagTriggered(FeaturesVector featuresVector) {
-        System.out.println("Start of method");
         int sensitivity = getSensitivity();
         if (sensitivity != cachedSensitivity) {
-            System.out.println("If triggered");
             cachedSensitivity = sensitivity;
             calculateThreshold();
         }
         lastCalculatedMetric = getMetric(featuresVector);
-        System.out.println("Lastcalcmetric: " + Arrays.toString(lastCalculatedMetric));
         boolean flagTripped = false;
         for (int i = 0; i < numFeatures; i++) {
             if (lastCalculatedMetric[i] > thresholds[i]) {
