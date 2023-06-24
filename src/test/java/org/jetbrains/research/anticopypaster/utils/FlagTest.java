@@ -1,5 +1,6 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -9,8 +10,7 @@ import java.util.List;
 import org.junit.Before;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 import org.mockito.Mock;
 
@@ -26,21 +26,22 @@ public class FlagTest {
         public TestingFlag(List<FeaturesVector> featuresVectorList){
             super(featuresVectorList);
         }
-
         @Override
         public int getSensitivity() {
             return sensitivity;
         }
-
-
-
         @Override
-        public boolean isFlagTriggered(FeaturesVector featuresVector){
-            return false;
+        public ArrayList<Feature> getSelectedMetrics(){ return selectedMetrics;}
+        @Override
+        public ArrayList<Feature> getRequiredMetrics(){ return requiredMetrics;}
+        @Override
+        public void setSelectedMetrics(){
+            selectedMetrics.add(Feature.TotalLinesOfCode);
+            selectedMetrics.add(Feature.TotalSymbols);
+            selectedMetrics.add(Feature.SymbolsPerLine);
+            selectedMetrics.add(Feature.Area);
+            numFeatures = selectedMetrics.size();
         }
-
-
-
         @Override
         public void logMetric(String filepath){
             // Do nothing just lets tests go
@@ -50,190 +51,138 @@ public class FlagTest {
             // Do nothing just lets tests go
         }
     }
-
     private TestingFlag testFlag;
     private int sensitivity;
+    private ArrayList<Feature> selectedMetrics = new ArrayList<>();
+    private ArrayList<Feature> requiredMetrics = new ArrayList<>();
+    public class FeaturesVectorMock {
+        @Mock
+        private FeaturesVector mockFeaturesVector;
 
+        private float[] metricsArray;
+
+        public FeaturesVectorMock(float[] metricsArray) {
+            mockFeaturesVector = mock(FeaturesVector.class);
+            this.metricsArray = metricsArray;
+
+            // mock methods for the FeaturesVector class
+            when(mockFeaturesVector.buildArray()).thenReturn(this.metricsArray);
+
+            /*
+            Mock the behavior of the getFeatureValue method, the feature values are the numbers in the metricsArray,
+            and the id numbers of the selectedMetrics are the indexes
+             */
+            when(mockFeaturesVector.getFeatureValue(any(Feature.class))).thenAnswer(invocation -> {
+                Feature feature = invocation.getArgument(0);
+                int featureId = feature.getId();
+                return (double) metricsArray[featureId];
+            });
+
+        }
+        public FeaturesVector getMock() {
+            return mockFeaturesVector;
+        }
+    }
+    private List<FeaturesVector> fvList;
+
+    // Zero everything out
     @BeforeEach
     public void beforeTest(){
-        this.testFlag = new TestingFlag(null);
+        this.fvList = new ArrayList<FeaturesVector>();
+        this.selectedMetrics = new ArrayList<Feature>();
+        this.requiredMetrics = new ArrayList<Feature>();
+        this.testFlag = null;
+    }
+    @Test
+    public void testGetMetric_NullFV(){
+
+        // Create a Flag instance
+        testFlag = new TestingFlag(fvList);
+
+        // Call the getMetric method with a null FeaturesVector
+        float[] result = testFlag.getMetric(null);
+
+        // Verify that the lastCalculatedMetric array is initialized with zeros
+        assertArrayEquals(new float[]{0f, 0f, 0f, 0f}, result, 0.0f);
+    }
+    @Test
+    public void testGetMetric(){
+        FeaturesVectorMock featuresVectorMock = new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f});
+
+        // Create a Flag instance
+        testFlag = new TestingFlag(fvList);
+        // Call the getMetric method with the mock FeaturesVector
+        float[] result = testFlag.getMetric(featuresVectorMock.getMock());
+
+        assertArrayEquals(new float[]{1f, 2f, 3f, 4f}, result, 0f);
+
     }
 
     @Test
-    public void testSensitivityZero(){
-        sensitivity = 0;
-        assertEquals(testFlag.getSensitivity(), 0);
+    public void testCalculateThreshold_NullFV(){
+        sensitivity = 50;
+        testFlag = new TestingFlag(fvList);
+
+        testFlag.calculateThreshold();
+
+        assertNotNull(testFlag.thresholds);
+        assertEquals(4, testFlag.thresholds.length);
     }
 
     @Test
-    public void testSensitivityOne(){
-        sensitivity = 1;
-        assertEquals(testFlag.getSensitivity(), 1);
-    }
+    public void testCalculateThreshold_OneFV(){
+        FeaturesVectorMock featuresVectorMock1 = new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f});
+        fvList.add(featuresVectorMock1.getMock());
+        // Create a Flag instance
+        testFlag = new TestingFlag(fvList);
 
+        assertEquals(4, testFlag.thresholds.length);
+        assertArrayEquals(new float[]{1f, 2f, 3f, 4f}, testFlag.thresholds, 0f);
+    }
     @Test
-    public void testSensitivityTwo(){
-        sensitivity = 2;
-        assertEquals(testFlag.getSensitivity(), 2);
-    }
+    public void testCalculateThreshold_MultipleFV(){
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{4f, 1f, 7f, 5f}).getMock());
 
+        testFlag = new TestingFlag(fvList);
+        assertEquals(4, testFlag.thresholds.length);
+        assertArrayEquals(new float[]{1f, 1f, 3f, 4f}, testFlag.thresholds, 0f);
+    }
     @Test
-    public void testSensitivityThree(){
-        sensitivity = 3;
-        assertEquals(testFlag.getSensitivity(), 3);
+    public void testIsFlagTriggered_OneFV(){
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+
+        testFlag = new TestingFlag(fvList);
+        testFlag.cachedSensitivity = 50;
+        this.sensitivity = 50;
+
+        assertFalse(testFlag.isFlagTriggered(fvList.get(0)));
+
     }
-
-    @Test 
-    public void testBoxPlotNullList(){
-        testFlag.boxPlotCalculations(null);
-        ArrayList<Float> expected = new ArrayList<>(List.of(0f));
-        assertEquals(expected, testFlag.getMetricQ1());
-        assertEquals(expected, testFlag.getMetricQ2());
-        assertEquals(expected, testFlag.getMetricQ3());
-    }
-
-    @Test 
-    public void testBoxPlotEmptyList(){
-        ArrayList emptyList = new ArrayList<Float>();
-        testFlag.boxPlotCalculations(emptyList);
-
-        ArrayList<Float> expected = new ArrayList<>(List.of(0f));
-        assertEquals(expected, testFlag.getMetricQ1());
-        assertEquals(expected, testFlag.getMetricQ2());
-        assertEquals(expected, testFlag.getMetricQ3());
-    }
-
-    @Test 
-    public void testBoxPlotSameNumberFourValuesList(){
-        ArrayList fourValueSameNumberFloatList = new ArrayList<Float>();
-        
-        fourValueSameNumberFloatList.add((float)1.0);
-        fourValueSameNumberFloatList.add((float)1.0);
-        fourValueSameNumberFloatList.add((float)1.0);
-        fourValueSameNumberFloatList.add((float)1.0);
-
-        Collections.sort(fourValueSameNumberFloatList);
-
-        testFlag.boxPlotCalculations(fourValueSameNumberFloatList);
-
-        ArrayList<Float> expected = new ArrayList<>((List.of(1f)));
-        assertEquals(expected, testFlag.getMetricQ1());
-        assertEquals(expected, testFlag.getMetricQ2());
-        assertEquals(expected, testFlag.getMetricQ3());
-    }
-
-    @Test 
-    public void testBoxPlotSameNumberFiveValuesList(){
-        ArrayList fiveValueSameNumberFloatList = new ArrayList<Float>();
-        
-        fiveValueSameNumberFloatList.add((float)1.0);
-        fiveValueSameNumberFloatList.add((float)1.0);
-        fiveValueSameNumberFloatList.add((float)1.0);
-        fiveValueSameNumberFloatList.add((float)1.0);
-        fiveValueSameNumberFloatList.add((float)1.0);
-
-        Collections.sort(fiveValueSameNumberFloatList);
-
-        testFlag.boxPlotCalculations(fiveValueSameNumberFloatList);
-
-        ArrayList<Float> expected = new ArrayList<>(Arrays.asList(1f));
-        assertEquals(expected, testFlag.getMetricQ1());
-        assertEquals(expected, testFlag.getMetricQ2());
-        assertEquals(expected, testFlag.getMetricQ3());
-    }
-
-    @Test 
-    public void testBoxPlotDifferentNumberFourValuesList(){
-        ArrayList fourValueDifferentNumberFloatList = new ArrayList<Float>();
-        
-        fourValueDifferentNumberFloatList.add((float)1.0);
-        fourValueDifferentNumberFloatList.add((float)2.0);
-        fourValueDifferentNumberFloatList.add((float)3.0);
-        fourValueDifferentNumberFloatList.add((float)4.0);
-
-        Collections.sort(fourValueDifferentNumberFloatList);
-
-        testFlag.boxPlotCalculations(fourValueDifferentNumberFloatList);
-
-        ArrayList<Float> expectedQ1 = new ArrayList<>(List.of(1.5f));
-        ArrayList<Float> expectedQ2 = new ArrayList<>(List.of(2.5f));
-        ArrayList<Float> expectedQ3 = new ArrayList<>(List.of(3.5f));
-        assertEquals(expectedQ1, testFlag.getMetricQ1());
-        assertEquals(expectedQ2, testFlag.getMetricQ2());
-        assertEquals(expectedQ3, testFlag.getMetricQ3());
-    }
-
-    @Test 
-    public void testBoxPlotDifferentNumberFiveValuesList(){
-        ArrayList fiveValueDifferentNumberFloatList = new ArrayList<Float>();
-        
-        fiveValueDifferentNumberFloatList.add((float)1.0);
-        fiveValueDifferentNumberFloatList.add((float)2.0);
-        fiveValueDifferentNumberFloatList.add((float)3.0);
-        fiveValueDifferentNumberFloatList.add((float)4.0);
-        fiveValueDifferentNumberFloatList.add((float)5.0);
-
-        Collections.sort(fiveValueDifferentNumberFloatList);
-
-        testFlag.boxPlotCalculations(fiveValueDifferentNumberFloatList);
-
-        ArrayList<Float> expectedQ1 = new ArrayList<>(List.of(2f));
-        ArrayList<Float> expectedQ2 = new ArrayList<>(List.of(3f));
-        ArrayList<Float> expectedQ3 = new ArrayList<>(List.of(4f));
-        assertEquals(expectedQ1, testFlag.getMetricQ1());
-        assertEquals(expectedQ2, testFlag.getMetricQ2());
-        assertEquals(expectedQ3, testFlag.getMetricQ3());
-    }
-
-    @Test 
-    public void testBoxPlotDifferentNumberFiveDecimalValuesList(){
-        ArrayList fiveValueDifferentNumberDecimalFloatList = new ArrayList<Float>();
-        
-        fiveValueDifferentNumberDecimalFloatList.add((float)0);
-        fiveValueDifferentNumberDecimalFloatList.add((float)0.25);
-        fiveValueDifferentNumberDecimalFloatList.add((float)0.5);
-        fiveValueDifferentNumberDecimalFloatList.add((float)0.75);
-        fiveValueDifferentNumberDecimalFloatList.add((float)1);
-
-        Collections.sort(fiveValueDifferentNumberDecimalFloatList);
-
-        testFlag.boxPlotCalculations(fiveValueDifferentNumberDecimalFloatList);
-
-        ArrayList<Float> expectedQ1 = new ArrayList<>(List.of(0.25f));
-        ArrayList<Float> expectedQ2 = new ArrayList<>(List.of(0.5f));
-        ArrayList<Float> expectedQ3 = new ArrayList<>(List.of(0.75f));
-        assertEquals(expectedQ1, testFlag.getMetricQ1());
-        assertEquals(expectedQ2, testFlag.getMetricQ2());
-        assertEquals(expectedQ3, testFlag.getMetricQ3());
-    }
-
     @Test
-    public void testBoxPlotMultipleIterations(){
-        ArrayList fourValueDifferentNumberFloatList = new ArrayList<Float>();
-        fourValueDifferentNumberFloatList.add((float)1.0);
-        fourValueDifferentNumberFloatList.add((float)2.0);
-        fourValueDifferentNumberFloatList.add((float)3.0);
-        fourValueDifferentNumberFloatList.add((float)4.0);
+    public void testIsFlagTriggered_MultipleFV(){
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{4f, 1f, 7f, 5f}).getMock());
 
-        Collections.sort(fourValueDifferentNumberFloatList);
-        testFlag.boxPlotCalculations(fourValueDifferentNumberFloatList);
+        testFlag = new TestingFlag(fvList);
+        testFlag.cachedSensitivity = 50;
+        this.sensitivity = 50;
 
-        ArrayList fiveValueDifferentNumberDecimalFloatList = new ArrayList<Float>();
-        fiveValueDifferentNumberDecimalFloatList.add((float)0);
-        fiveValueDifferentNumberDecimalFloatList.add((float)0.25);
-        fiveValueDifferentNumberDecimalFloatList.add((float)0.5);
-        fiveValueDifferentNumberDecimalFloatList.add((float)0.75);
-        fiveValueDifferentNumberDecimalFloatList.add((float)1);
-
-        Collections.sort(fiveValueDifferentNumberDecimalFloatList);
-        testFlag.boxPlotCalculations(fiveValueDifferentNumberDecimalFloatList);
-
-        ArrayList<Float> expectedQ1 = new ArrayList<>(List.of(1.5f, 0.25f));
-        ArrayList<Float> expectedQ2 = new ArrayList<>(List.of(2.5f, 0.5f));
-        ArrayList<Float> expectedQ3 = new ArrayList<>(List.of(3.5f, 0.75f));
-        assertEquals(expectedQ1, testFlag.getMetricQ1());
-        assertEquals(expectedQ2, testFlag.getMetricQ2());
-        assertEquals(expectedQ3, testFlag.getMetricQ3());
+        assertTrue(testFlag.isFlagTriggered(fvList.get(2)));
     }
+    @Test
+    public void testIsFlagTriggered_RequiredMetrics(){
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{1f, 2f, 3f, 4f}).getMock());
+        fvList.add(new FeaturesVectorMock(new float[]{4f, 1f, 7f, 5f}).getMock());
 
+        testFlag = new TestingFlag(fvList);
+        testFlag.cachedSensitivity = 50;
+        this.sensitivity = 50;
+
+        testFlag.requiredMetrics.add(Feature.TotalSymbols);
+        assertFalse(testFlag.isFlagTriggered(fvList.get(2)));
+    }
 }

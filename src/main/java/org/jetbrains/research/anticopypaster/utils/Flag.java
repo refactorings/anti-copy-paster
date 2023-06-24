@@ -1,5 +1,6 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import com.intellij.openapi.wm.impl.status.FatalErrorWidgetFactory;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
@@ -27,6 +28,7 @@ public abstract class Flag{
     protected abstract void setSelectedMetrics();
 
     protected float[] getMetric(FeaturesVector fv){
+        lastCalculatedMetric = new float[selectedMetrics.size()];
         if (fv != null) {
             for (int i = 0; i < selectedMetrics.size(); i++) {
                 Feature feature = selectedMetrics.get(i);
@@ -43,7 +45,6 @@ public abstract class Flag{
 
     protected Flag(List<FeaturesVector> featuresVectorList) {
         this.featuresVectorList = featuresVectorList;
-        this.thresholds = null;
         this.lastCalculatedMetric = null;
         setSelectedMetrics();
         calculateThreshold();
@@ -64,31 +65,32 @@ public abstract class Flag{
         } else if (featuresVectorList.size() == 1) {
             thresholds = getMetric(featuresVectorList.get(0));
         } else {
-            float[][] metricValues = new float[featuresVectorList.size()][numFeatures];
+            float[][] metricValues = new float[numFeatures][featuresVectorList.size()];
             for (int i = 0; i < featuresVectorList.size(); i++) {
                 float[] metric = getMetric(featuresVectorList.get(i));
-                for (int j = 0; j < numFeatures; j++)
+                for (int j = 0; j < numFeatures; j++) {
                     metricValues[j][i] = metric[j];
+                    //printTwoDArray(metricValues);
+                }
             }
             for (float[] metricValue : metricValues)
                 Arrays.sort(metricValue);
 
             if (getSensitivity() == 100) {
                 for (int k = 0; k < numFeatures; k++)
-                    thresholds[k] = metricValues[k][metricValues.length - 1];
+                    thresholds[k] = metricValues[k][metricValues[k].length - 1];
             } else {
                 double position = (double) getSensitivity() * (featuresVectorList.size() - 1) / 100;
                 int lowerIndex = (int) Math.floor(position);
                 float proportion = (float) position % 1;
-
                 thresholds = new float[numFeatures];
                 for (int l = 0; l < numFeatures; l++)
                     thresholds[l] = (1 - proportion) * metricValues[l][lowerIndex]
                             + proportion * metricValues[l][lowerIndex + 1];
             }
         }
+        System.out.println("Thresholds: " + Arrays.toString(thresholds));
     }
-
     /**
      * Returns whether the given feature vector should 'trigger' this flag
      * based on whether the metric calculated from this feature vector
@@ -96,13 +98,15 @@ public abstract class Flag{
      * (Recalculates the threshold value if the sensitivity has changed.)
      */
     public boolean isFlagTriggered(FeaturesVector featuresVector) {
+        System.out.println("Start of method");
         int sensitivity = getSensitivity();
         if (sensitivity != cachedSensitivity) {
+            System.out.println("If triggered");
             cachedSensitivity = sensitivity;
             calculateThreshold();
         }
         lastCalculatedMetric = getMetric(featuresVector);
-
+        System.out.println("Lastcalcmetric: " + Arrays.toString(lastCalculatedMetric));
         boolean flagTripped = false;
         for (int i = 0; i < numFeatures; i++) {
             if (lastCalculatedMetric[i] > thresholds[i]) {
@@ -115,10 +119,13 @@ public abstract class Flag{
                     }
                 }
             }
+            System.out.print("Loop");
         }
         // Return true only if at least one metric has passed.
         return flagTripped;
     }
+    protected ArrayList<Feature> getSelectedMetrics(){ return this.selectedMetrics;}
+    protected ArrayList<Feature> getRequiredMetrics(){ return this.requiredMetrics;}
 
 
     /**
