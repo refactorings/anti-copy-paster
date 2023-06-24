@@ -1,5 +1,7 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -11,7 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertFalse;
-
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.mockito.Mock;
 
 import static org.mockito.Mockito.*;
@@ -26,10 +28,8 @@ public class CouplingMetricsTest {
             super(featuresVectorList);
         }
 
-        @Override
-        public int getSensitivity() {
-            return sensitivity;
-        }
+//        @Override
+//        public int getSensitivity() {return sensitivity;}
     }
 
     public class FeaturesVectorMock {
@@ -65,14 +65,20 @@ public class CouplingMetricsTest {
 
     @Test
     public void testIsTriggeredSensitivityZero(){
-        this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        this.couplingMetrics.sensitivity = 100;
-        assertFalse(couplingMetrics.isFlagTriggered(null));
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+        settings.measureCouplingDensity[1] = false;
+        TestingCouplingMetrics couplingMetrics1 = new TestingCouplingMetrics(fvList);
+
+//        this.couplingMetrics = new TestingCouplingMetrics(fvList);
+        //this.couplingMetrics.sensitivity = 100;
+        assertFalse(couplingMetrics1.isFlagTriggered(null));
     }
 
     @Test
     public void testIsTriggeredSensitivityOneTrue() {
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[5] = 1;
@@ -100,7 +106,7 @@ public class CouplingMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
         this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        this.couplingMetrics.sensitivity = 25;
+        settings.couplingSensitivity = 25;
 
         float[] passedInArray = new float[78];
         passedInArray[5] = (float)3;
@@ -110,7 +116,8 @@ public class CouplingMetricsTest {
     }
     @Test
     public void testIsTriggeredSensitivityOneFalse() {
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[5] = 1;
@@ -138,7 +145,7 @@ public class CouplingMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
         this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        this.couplingMetrics.sensitivity = 25;
+        settings.couplingSensitivity = 25;
 
         float[] passedInArray = new float[78];
         passedInArray[5] = (float)1;
@@ -148,7 +155,8 @@ public class CouplingMetricsTest {
     }
     @Test
     public void testIsTriggeredSensitivityTwoTrue() {
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[5] = 1;
@@ -176,7 +184,7 @@ public class CouplingMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
         this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        this.couplingMetrics.sensitivity = 50;
+        settings.couplingSensitivity = 50;
 
         float[] passedInArray = new float[78];
         passedInArray[5] = (float)5;
@@ -186,7 +194,8 @@ public class CouplingMetricsTest {
     }
     @Test
     public void testIsTriggeredSensitivityTwoFalse() {
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[5] = 1;
@@ -214,7 +223,7 @@ public class CouplingMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
         this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        this.couplingMetrics.sensitivity = 50;
+        settings.couplingSensitivity = 50;
 
         float[] passedInArray = new float[78];
         passedInArray[5] = (float)1;
@@ -224,7 +233,8 @@ public class CouplingMetricsTest {
     }
     @Test
     public void testIsTriggeredSensitivityThreeTrue() {
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[5] = 1;
@@ -252,7 +262,7 @@ public class CouplingMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
         this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        this.couplingMetrics.sensitivity = 75;
+        settings.couplingSensitivity = 75;
 
         float[] passedInArray = new float[78];
         passedInArray[5] = (float)5;
@@ -262,7 +272,8 @@ public class CouplingMetricsTest {
     }
     @Test
     public void testIsTriggeredSensitivityThreeFalse() {
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[5] = 1;
@@ -290,7 +301,7 @@ public class CouplingMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
         this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        this.couplingMetrics.sensitivity = 75;
+        settings.couplingSensitivity = 75;
 
         float[] passedInArray = new float[78];
         passedInArray[5] = (float)5;
@@ -301,7 +312,8 @@ public class CouplingMetricsTest {
 
     @Test
     public void testIsTriggeredMultiMetricSensitivityOne() {
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[5] = 1;
         fvArrayValue1[6] = 12;
@@ -348,7 +360,7 @@ public class CouplingMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
         this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        this.couplingMetrics.sensitivity = 75;
+        settings.couplingSensitivity = 75;
 
         float[] passedInArray = new float[78];
         passedInArray[5] = 3;
@@ -362,7 +374,8 @@ public class CouplingMetricsTest {
     }
     @Test
     public void testIsNotTriggeredMultiMetricSensitivityOne() {
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[5] = 1;
         fvArrayValue1[6] = 12;
@@ -409,7 +422,7 @@ public class CouplingMetricsTest {
         fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
 
         this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        this.couplingMetrics.sensitivity = 75;
+        settings.couplingSensitivity = 75;
 
         float[] passedInArray = new float[78];
         passedInArray[5] = 1;

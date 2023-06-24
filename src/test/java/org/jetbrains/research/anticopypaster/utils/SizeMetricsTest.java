@@ -84,7 +84,8 @@ public class SizeMetricsTest {
 
     @Test
     public void testIsTriggeredSensitivityOneTrue(){
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         // This category uses metric 1, so we set just those
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[0] = 1;
@@ -113,8 +114,8 @@ public class SizeMetricsTest {
 
 
         this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 25;
-        System.out.println(sizeMetrics.metricQ1.toString());
+        settings.sizeSensitivity = 25;
+        //System.out.println(sizeMetrics.metricQ1.toString());
 
 
         float[] passedInArray = new float[78];
@@ -126,7 +127,8 @@ public class SizeMetricsTest {
 
     @Test
     public void testIsTriggeredSensitivityOneFalse(){
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         // This category uses metric 1, so we set just those
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[0] = 1;
@@ -155,9 +157,9 @@ public class SizeMetricsTest {
 
 
        // this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 25;
-        System.out.println(sizeMetrics.metricQ1.toString());
-        System.out.println();
+        settings.sizeSensitivity = 25;
+        //System.out.println(sizeMetrics.metricQ1.toString());
+        //System.out.println();
 
 
         float[] passedInArray = new float[78];
@@ -169,7 +171,8 @@ public class SizeMetricsTest {
 
     @Test
     public void testIsTriggeredSensitivityTwoTrue(){
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         // This category uses metric 1, so we set just those
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[0] = 1;
@@ -209,7 +212,8 @@ public class SizeMetricsTest {
 
     @Test
     public void testIsTriggeredSensitivityTwoFalse(){
-
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         // This category uses metric 1, so we set just those
         float[] fvArrayValue1 = new float[78];
         fvArrayValue1[0] = 1;
@@ -238,7 +242,7 @@ public class SizeMetricsTest {
 
 
         this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 50;
+        settings.sizeSensitivity = 50;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 2;
@@ -278,7 +282,7 @@ public class SizeMetricsTest {
 
 
         this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 75;
+        settings.sizeSensitivity = 75;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 5;
@@ -322,7 +326,7 @@ public class SizeMetricsTest {
 
 
         this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 75;
+        settings.sizeSensitivity = 75;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 3;
@@ -381,7 +385,7 @@ public class SizeMetricsTest {
 
 
         this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 25;
+        settings.sizeSensitivity = 25;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 1;
@@ -443,7 +447,7 @@ public class SizeMetricsTest {
 
 
         this.sizeMetrics = new TestingSizeMetrics(fvList);
-        this.sizeMetrics.sensitivity = 25;
+        settings.sizeSensitivity = 25;
 
         float[] passedInArray = new float[78];
         passedInArray[0] = 1;
