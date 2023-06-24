@@ -3,6 +3,7 @@ package org.jetbrains.research.anticopypaster.utils;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.util.ArrayList;
@@ -16,25 +17,46 @@ public class ComplexityMetrics extends Flag{
     }
 
     /**
-    This is a function that will get the complexity metric out of 
-    the FeaturesVector that is passed in
-    Complexity only uses Metrics #4 and #5, so getting the value at index 3 or 4 (depending on user settings)
-    from the fv array gives us the right value
+     This is a function that will get the complexity metric out of
+     the FeaturesVector that is passed in
+     Complexity only uses Metrics #4 and #5, so getting the value at index 3 or 4 (depending on user settings)
+     from the fv array gives us the right value
      */
+
     @Override
-    protected float getMetric(FeaturesVector fv){
-        if(fv != null){
-            //Project project = ProjectManager.getInstance().getOpenProjects()[0];
-            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+    protected void setSelectedMetrics(){
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
-            int complexityMetricIndex = 3;
-            if (!settings.measureComplexityByTotal) { complexityMetricIndex = 4; }
-
-            lastCalculatedMetric = fv.buildArray()[complexityMetricIndex];
-            return lastCalculatedMetric;
-        } else {
-            return 0;
+        if (settings.measureComplexityTotal[0]) {
+            selectedMetrics.add(Feature.Area);
+            if (settings.measureComplexityTotal[1]) {
+                requiredMetrics.add(Feature.Area);
+            }
         }
+
+        if (settings.measureComplexityDensity[0]) {
+            selectedMetrics.add(Feature.AreaPerLine);
+            if (settings.measureComplexityDensity[1]) {
+                requiredMetrics.add(Feature.AreaPerLine);
+            }
+        }
+
+        if (settings.measureMethodDeclarationArea[0]) {
+            selectedMetrics.add(Feature.MethodDeclarationArea);
+            if (settings.measureMethodDeclarationArea[1]) {
+                requiredMetrics.add(Feature.MethodDeclarationArea);
+            }
+        }
+
+        if (settings.measureMethodDeclarationDepthPerLine[0]) {
+            selectedMetrics.add(Feature.MethodDeclarationAreaPerLine);
+            if (settings.measureMethodDeclarationDepthPerLine[1]) {
+                requiredMetrics.add(Feature.MethodDeclarationAreaPerLine);
+            }
+        }
+
+        numFeatures = selectedMetrics.size();
     }
 
     /**
@@ -43,7 +65,7 @@ public class ComplexityMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         return settings.complexitySensitivity;
     }

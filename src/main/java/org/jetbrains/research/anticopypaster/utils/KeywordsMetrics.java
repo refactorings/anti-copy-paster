@@ -3,8 +3,10 @@ package org.jetbrains.research.anticopypaster.utils;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
-import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsComponent.JavaKeywords;
+
+import org.jetbrains.research.anticopypaster.config.advanced.NewAdvancedProjectSettingsComponent.JavaKeywords;
 import java.util.List;
 
 public class KeywordsMetrics extends Flag{
@@ -14,33 +16,32 @@ public class KeywordsMetrics extends Flag{
     }
 
     /**
-    This is a function that will get the keywords metric out of 
-    the FeaturesVector that is passed in
-    Keywords uses half of the metrics from 17 through 78 (depending on user settings), or fewer if
-     the user has deactivated one or more keywords.
+     This is a function that will get the keywords metric out of
+     the FeaturesVector that is passed in
      */
-    @Override
-    protected float getMetric(FeaturesVector fv){
-        if(fv != null){
-            //Project project = ProjectManager.getInstance().getOpenProjects()[0];
-            ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-
-            int curKeywordsMetricIndex = 16;
-            if (!settings.measureKeywordsByTotal) { curKeywordsMetricIndex += 1; }
-
-            float[] fvArray = fv.buildArray();
-            int totalKeywords = 0;
-            for (JavaKeywords keyword : JavaKeywords.values()){
-                if (settings.activeKeywords.get(keyword)) { totalKeywords += fvArray[curKeywordsMetricIndex]; }
-                curKeywordsMetricIndex += 2;
-            }
-
-            lastCalculatedMetric = totalKeywords;
-            return lastCalculatedMetric;
-        } else {
-            return 0;
+    protected void setSelectedMetrics(){
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+        int metricNum = 16;
+        for(JavaKeywords keyword : JavaKeywords.values()) {
+            if (settings.activeKeywords.get(keyword)) {
+                if (settings.measureKeywordsTotal[0]) {
+                    selectedMetrics.add(Feature.fromId(metricNum));
+                    if (settings.measureKeywordsTotal[1])
+                        requiredMetrics.add(Feature.fromId(metricNum));
+                }
+                metricNum++;
+                if (settings.measureKeywordsDensity[0]) {
+                    selectedMetrics.add(Feature.fromId(metricNum));
+                    if (settings.measureKeywordsDensity[1])
+                        requiredMetrics.add(Feature.fromId(metricNum));
+                }
+                metricNum++;
+            } else metricNum += 2;
         }
+        numFeatures = selectedMetrics.size();
     }
+
 
     /**
      * Required override function from Flag. Gets the sensitivity for this metric
@@ -48,7 +49,7 @@ public class KeywordsMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
         return settings.keywordsSensitivity;
     }

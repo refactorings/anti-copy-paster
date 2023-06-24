@@ -16,6 +16,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.checkers.FragmentCorrectnessChecker;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
+import java.sql.Ref;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -34,11 +35,10 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     private final ArrayList<RefactoringNotificationTask> refactoringNotificationTask = new ArrayList<>();
 
     private static final Logger LOG = Logger.getInstance(AntiCopyPastePreProcessor.class);
-    private int task = 0;
 
     public AntiCopyPastePreProcessor() {
         refactoringNotificationTask.add(new RefactoringNotificationTask(inspection, timer, ProjectManager.getInstance().getOpenProjects()[0]));
-        setCheckingForRefactoringOpportunities(task++);
+        setCheckingForRefactoringOpportunities(refactoringNotificationTask.get(0));
     }
 
     /**
@@ -61,9 +61,12 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         HashSet<String> variablesInCodeFragment = new HashSet<>();
         HashMap<String, Integer> variablesCountsInCodeFragment = new HashMap<>();
 
-        if (!checkForProject(project)) {
-            refactoringNotificationTask.add(new RefactoringNotificationTask(inspection, timer, project));
-            setCheckingForRefactoringOpportunities(task++);
+        RefactoringNotificationTask rnt = getRefactoringTask(project);
+
+        if (rnt == null) {
+            rnt = new RefactoringNotificationTask(inspection, timer, project);
+            refactoringNotificationTask.add(rnt);
+            setCheckingForRefactoringOpportunities(rnt);
         }
 
         AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
@@ -88,28 +91,29 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         //number of lines in fragment
         int linesOfCode = getCountOfCodeLines(text);
 
-        refactoringNotificationTask.get(task-1).addEvent(
+        rnt.addEvent(
                 new RefactoringEvent(file, destinationMethod, text, result.getDuplicatesCount(),
                         project, editor, linesOfCode));
 
         return text;
     }
 
-    private boolean checkForProject(Project project) {
+    //Checks if a RefactoringNotificationTask with the given project exists yet in the refactoringNotificationTask array
+    private RefactoringNotificationTask getRefactoringTask(Project project) {
         for (RefactoringNotificationTask t:refactoringNotificationTask) {
             if (t.getProject() == project) {
-                return true;
+                return t;
             }
         }
-        return false;
+        return null;
     }
 
     /**
      * Sets the regular checking for Extract Method refactoring opportunities.
      */
-    private void setCheckingForRefactoringOpportunities(int task) {
+    private void setCheckingForRefactoringOpportunities(RefactoringNotificationTask task) {
         try {
-            timer.schedule(refactoringNotificationTask.get(task), 15000, 15000);
+            timer.schedule(task, 15000, 15000);
         } catch (Exception ex) {
             LOG.error("[ACP] Failed to schedule the checking for refactorings.", ex.getMessage());
         }
