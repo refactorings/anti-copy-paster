@@ -62,8 +62,9 @@ public abstract class Flag{
      * within the range of 0 to 100.
      */
     public void calculateThreshold() {
+        thresholds = new float[numFeatures];
         if (featuresVectorList == null || featuresVectorList.size() == 0) {
-            thresholds = new float[numFeatures];
+            return;
         } else if (featuresVectorList.size() == 1) {
             thresholds = getMetric(featuresVectorList.get(0));
         } else {
@@ -84,7 +85,6 @@ public abstract class Flag{
                 double position = (double) getSensitivity() * (featuresVectorList.size() - 1) / 100;
                 int lowerIndex = (int) Math.floor(position);
                 float proportion = (float) position % 1;
-                thresholds = new float[numFeatures];
                 for (int l = 0; l < numFeatures; l++)
                     thresholds[l] = (1 - proportion) * metricValues[l][lowerIndex]
                             + proportion * metricValues[l][lowerIndex + 1];
