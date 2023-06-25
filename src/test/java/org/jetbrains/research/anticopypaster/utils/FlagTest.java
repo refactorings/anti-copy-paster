@@ -3,14 +3,11 @@ package org.jetbrains.research.anticopypaster.utils;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
-import org.junit.Before;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
-import static org.junit.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 import org.mockito.Mock;
 
@@ -82,7 +79,7 @@ public class FlagTest {
     // Zero everything out
     @BeforeEach
     public void beforeTest(){
-        this.fvList = new ArrayList<FeaturesVector>();
+        this.fvList = new ArrayList<>();
         this.testFlag = null;
     }
     @Test
