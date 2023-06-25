@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.models;
 
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.junit.Before;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,8 +54,9 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
             
             // mock methods for the FeaturesVector class
             when(mockFeaturesVector.buildArray())
-                .thenReturn(this.metricsArray);
-            
+                    .thenReturn(this.metricsArray);
+            when(mockFeaturesVector.getFeatureValue(any(Feature.class)))
+                    .thenAnswer(invocation -> (double) metricsArray[((Feature) invocation.getArgument(0)).getId()]);
         }
         
         public FeaturesVector getMock() {

@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.utils;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,7 +42,8 @@ public class CouplingMetricsTest {
             // mock methods for the FeaturesVector class
             when(mockFeaturesVector.buildArray())
                     .thenReturn(this.metricsArray);
-
+            when(mockFeaturesVector.getFeatureValue(any(Feature.class)))
+                    .thenAnswer(invocation -> (double) metricsArray[((Feature) invocation.getArgument(0)).getId()]);
         }
 
         public FeaturesVector getMock() {
