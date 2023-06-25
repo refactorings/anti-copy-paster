@@ -1,5 +1,8 @@
 package org.jetbrains.research.anticopypaster.utils;
 
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
@@ -117,6 +120,11 @@ public abstract class Flag{
         }
         // Return true only if at least one metric has passed.
         return flagTripped;
+    }
+
+    protected ProjectSettingsState retrieveCurrentSettings() {
+        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        return project.getService(ProjectSettingsState.class);
     }
 
     /**

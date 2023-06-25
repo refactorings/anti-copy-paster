@@ -1,7 +1,5 @@
 package org.jetbrains.research.anticopypaster.utils;
 
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
@@ -25,8 +23,7 @@ public class CouplingMetrics extends Flag{
      */
     @Override
     protected void setSelectedMetrics(){
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+        ProjectSettingsState settings = retrieveCurrentSettings();
 
         if(settings.measureCouplingTotal[0]){
             if(settings.measureTotalConnectivity[0]){
@@ -77,8 +74,7 @@ public class CouplingMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+        ProjectSettingsState settings = retrieveCurrentSettings();
         return settings.couplingSensitivity;
     }
 

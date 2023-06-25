@@ -4,15 +4,11 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
-import org.junit.Before;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.*;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.mockito.Mock;
 
@@ -60,7 +56,7 @@ public class CouplingMetricsTest {
     public void beforeTest(){
         //Zero out everything
         this.couplingMetrics = null;
-        this.fvList = new ArrayList<FeaturesVector>();
+        this.fvList = new ArrayList<>();
     }
 
     @Test

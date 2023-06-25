@@ -19,8 +19,7 @@ public class KeywordsMetrics extends Flag{
     the FeaturesVector that is passed in
      */
     protected void setSelectedMetrics(){
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+        ProjectSettingsState settings = retrieveCurrentSettings();
         int metricNum = 16;
         for(JavaKeywords keyword : JavaKeywords.values()) {
             if (settings.activeKeywords.get(keyword)) {
@@ -48,8 +47,7 @@ public class KeywordsMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+        ProjectSettingsState settings = retrieveCurrentSettings();
         return settings.keywordsSensitivity;
     }
 
