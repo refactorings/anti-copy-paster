@@ -31,6 +31,7 @@ public abstract class Flag{
     protected abstract void setSelectedMetrics();
 
     protected float[] getMetric(FeaturesVector fv){
+        lastCalculatedMetric = new float[selectedMetrics.size()];
         if (fv != null) {
             for (int i = 0; i < selectedMetrics.size(); i++) {
                 Feature feature = selectedMetrics.get(i);
@@ -68,7 +69,7 @@ public abstract class Flag{
         } else if (featuresVectorList.size() == 1) {
             thresholds = getMetric(featuresVectorList.get(0));
         } else {
-            float[][] metricValues = new float[featuresVectorList.size()][numFeatures];
+            float[][] metricValues = new float[numFeatures][featuresVectorList.size()];
             for (int i = 0; i < featuresVectorList.size(); i++) {
                 float[] metric = getMetric(featuresVectorList.get(i));
                 for (int j = 0; j < numFeatures; j++)
@@ -133,9 +134,9 @@ public abstract class Flag{
         try(FileWriter fr = new FileWriter(filepath, true)){
             fr.write("Current " + metricName +
                     " Threshold, Last Calculated Metric: " +
-                    thresholds.toString() + ", " + lastCalculatedMetric.toString() + "\n");
+                    Arrays.toString(thresholds) + ", " + lastCalculatedMetric.toString() + "\n");
         }catch(IOException ioe){
-
+            ioe.printStackTrace();
         }
     }
 
@@ -154,9 +155,9 @@ public abstract class Flag{
      */
     protected void logThresholds(String filepath, String metricName){
         try(FileWriter fr = new FileWriter(filepath, true)){
-            fr.write(metricName + " Threshold: " + thresholds.toString() + "\n");
+            fr.write(metricName + " Threshold: " + Arrays.toString(thresholds) + "\n");
         }catch(IOException ioe){
-
+            ioe.printStackTrace();
         }
     }
 
