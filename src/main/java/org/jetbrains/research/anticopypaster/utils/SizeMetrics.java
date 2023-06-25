@@ -5,7 +5,6 @@ import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
-import java.util.ArrayList;
 import java.util.List;
 
 public class SizeMetrics extends Flag{

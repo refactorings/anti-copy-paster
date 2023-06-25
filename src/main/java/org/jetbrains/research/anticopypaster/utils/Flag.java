@@ -128,10 +128,8 @@ public abstract class Flag{
         try(FileWriter fr = new FileWriter(filepath, true)){
             fr.write("Current " + metricName +
                     " Threshold, Last Calculated Metric: " +
-                    thresholds.toString() + ", " + lastCalculatedMetric.toString() + "\n");
-        }catch(IOException ioe){
-
-        }
+                    Arrays.toString(thresholds) + ", " + Arrays.toString(lastCalculatedMetric) + "\n");
+        } catch(IOException ioe) {ioe.printStackTrace();}
     }
 
     /**
@@ -149,10 +147,8 @@ public abstract class Flag{
      */
     protected void logThresholds(String filepath, String metricName){
         try(FileWriter fr = new FileWriter(filepath, true)){
-            fr.write(metricName + " Threshold: " + thresholds.toString() + "\n");
-        }catch(IOException ioe){
-
-        }
+            fr.write(metricName + " Threshold: " + Arrays.toString(thresholds) + "\n");
+        } catch(IOException ioe) { ioe.printStackTrace(); }
     }
 
     /**
