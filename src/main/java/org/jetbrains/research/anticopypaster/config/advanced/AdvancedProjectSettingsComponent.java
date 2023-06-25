@@ -241,8 +241,8 @@ public class AdvancedProjectSettingsComponent {
     }
 
 
-    public boolean[] getKeywordTotalSubmetricInfo() { return new boolean[] {totalKeywordCountInCheckBox.isSelected(), requiredSubmetricCheckBox.isSelected()}; }
-    public boolean[] getKeywordDensitySubmetricInfo() { return new boolean[] {keywordDensityPerLineCheckBox.isSelected(), requiredSubmetricCheckBox1.isSelected()}; }
+    public Boolean[] getKeywordTotalSubmetricInfo() { return new Boolean[] {totalKeywordCountInCheckBox.isSelected(), requiredSubmetricCheckBox.isSelected()}; }
+    public Boolean[] getKeywordDensitySubmetricInfo() { return new Boolean[] {keywordDensityPerLineCheckBox.isSelected(), requiredSubmetricCheckBox1.isSelected()}; }
     public EnumMap<JavaKeywords, Boolean> getActiveKeywords() {
         EnumMap<JavaKeywords, Boolean> activeKeywords = new EnumMap<>(JavaKeywords.class);
 
@@ -281,21 +281,21 @@ public class AdvancedProjectSettingsComponent {
         return activeKeywords;
     }
 
-    public boolean[] getCouplingTotalSubmetricInfo() { return new boolean[] {totalConnectivityInSegmentCheckBox.isSelected(), requiredSubmetricCheckBox2.isSelected()}; }
-    public boolean[] getCouplingDensitySubmetricInfo() { return new boolean[] {connectivityDensityPerLineCheckBox.isSelected(), requiredSubmetricCheckBox3.isSelected()}; }
-    public boolean[] getTotalConnectivityInfo() { return new boolean[] {useTotalConnectivityCheckBox.isSelected(), requiredSubmetricCheckBox4.isSelected()}; }
-    public boolean[] getFieldConnectivityInfo() { return new boolean[] {useFieldConnectivityCheckBox.isSelected(), requiredSubmetricCheckBox5.isSelected()}; }
-    public boolean[] getMethodConnectivityInfo() { return new boolean[] {useMethodConnectivityCheckBox.isSelected(), requiredSubmetricCheckBox6.isSelected()}; }
+    public Boolean[] getCouplingTotalSubmetricInfo() { return new Boolean[] {totalConnectivityInSegmentCheckBox.isSelected(), requiredSubmetricCheckBox2.isSelected()}; }
+    public Boolean[] getCouplingDensitySubmetricInfo() { return new Boolean[] {connectivityDensityPerLineCheckBox.isSelected(), requiredSubmetricCheckBox3.isSelected()}; }
+    public Boolean[] getTotalConnectivityInfo() { return new Boolean[] {useTotalConnectivityCheckBox.isSelected(), requiredSubmetricCheckBox4.isSelected()}; }
+    public Boolean[] getFieldConnectivityInfo() { return new Boolean[] {useFieldConnectivityCheckBox.isSelected(), requiredSubmetricCheckBox5.isSelected()}; }
+    public Boolean[] getMethodConnectivityInfo() { return new Boolean[] {useMethodConnectivityCheckBox.isSelected(), requiredSubmetricCheckBox6.isSelected()}; }
 
-    public boolean[] getComplexityTotalSubmetricInfo() { return new boolean[] {totalComplexityOfSegmentCheckBox.isSelected(), requiredSubmetricCheckBox7.isSelected()}; }
-    public boolean[] getComplexityDensitySubmetricInfo() { return new boolean[] {complexityDensityPerLineCheckBox.isSelected(), requiredSubmetricCheckBox8.isSelected()}; }
-    public boolean[] getComplexityMethodAreaInfo() { return new boolean[] {methodDeclarationAreaCheckBox.isSelected(), requiredSubmetricCheckBox11.isSelected()}; }
-    public boolean[] getComplexityMethodDensityInfo() { return new boolean[] {methodDeclarationDepthDensityCheckBox.isSelected(), requiredSubmetricCheckBox12.isSelected()}; }
+    public Boolean[] getComplexityTotalSubmetricInfo() { return new Boolean[] {totalComplexityOfSegmentCheckBox.isSelected(), requiredSubmetricCheckBox7.isSelected()}; }
+    public Boolean[] getComplexityDensitySubmetricInfo() { return new Boolean[] {complexityDensityPerLineCheckBox.isSelected(), requiredSubmetricCheckBox8.isSelected()}; }
+    public Boolean[] getComplexityMethodAreaInfo() { return new Boolean[] {methodDeclarationAreaCheckBox.isSelected(), requiredSubmetricCheckBox11.isSelected()}; }
+    public Boolean[] getComplexityMethodDensityInfo() { return new Boolean[] {methodDeclarationDepthDensityCheckBox.isSelected(), requiredSubmetricCheckBox12.isSelected()}; }
 
-    public boolean[] getSizeByLinesSubmetricInfo() { return new boolean[] {numberOfLinesInCheckBox.isSelected(), requiredSubmetricCheckBox9.isSelected()}; }
-    public boolean[] getSizeBySymbolsSubmetricInfo() { return new boolean[] {numberOfSymbolsInCheckBox.isSelected(), requiredSubmetricCheckBox10.isSelected()}; }
-    public boolean[] getSizeBySymbolDensitySubmetricInfo() { return new boolean[] {densityOfSymbolsInCheckBox.isSelected(), requiredSubmetricCheckBox13.isSelected()}; }
-    public boolean[] getMeasureSizeOfSegmentInfo() { return new boolean[] {measureSizeOfSegmentCheckBox.isSelected(), requiredSubmetricCheckBox14.isSelected()}; }
-    public boolean[] getMeasureSizeOfMethodInfo() { return new boolean[] {measureSizeOfMethodCheckBox.isSelected(), requiredSubmetricCheckBox15.isSelected()}; }
+    public Boolean[] getSizeByLinesSubmetricInfo() { return new Boolean[] {numberOfLinesInCheckBox.isSelected(), requiredSubmetricCheckBox9.isSelected()}; }
+    public Boolean[] getSizeBySymbolsSubmetricInfo() { return new Boolean[] {numberOfSymbolsInCheckBox.isSelected(), requiredSubmetricCheckBox10.isSelected()}; }
+    public Boolean[] getSizeBySymbolDensitySubmetricInfo() { return new Boolean[] {densityOfSymbolsInCheckBox.isSelected(), requiredSubmetricCheckBox13.isSelected()}; }
+    public Boolean[] getMeasureSizeOfSegmentInfo() { return new Boolean[] {measureSizeOfSegmentCheckBox.isSelected(), requiredSubmetricCheckBox14.isSelected()}; }
+    public Boolean[] getMeasureSizeOfMethodInfo() { return new Boolean[] {measureSizeOfMethodCheckBox.isSelected(), requiredSubmetricCheckBox15.isSelected()}; }
 
 }

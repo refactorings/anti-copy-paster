@@ -26,7 +26,7 @@ public class ProjectSettingsState implements PersistentStateComponent<ProjectSet
     // Each boolean array of two elements follow this scheme {boolean submetric_enabled, boolean submetric_required}
 
     // Keyword Metric
-    public boolean[] measureKeywordsTotal = {false, false}, measureKeywordsDensity = {true, true};
+    public Boolean[] measureKeywordsTotal = {false, false}, measureKeywordsDensity = {true, true};
     public EnumMap<JavaKeywords, Boolean> activeKeywords = new EnumMap<>(JavaKeywords.class);
     {
         for (JavaKeywords keyword : JavaKeywords.values()) {
@@ -35,17 +35,18 @@ public class ProjectSettingsState implements PersistentStateComponent<ProjectSet
     }
 
     // Coupling Metric
-    public boolean[] measureCouplingTotal = {false, false}, measureCouplingDensity = {true, true};
-    public boolean[] measureTotalConnectivity = {true, true}, measureFieldConnectivity = {false, false}, measureMethodConnectivity = {false, false};
+    public Boolean[] measureCouplingTotal = {false, false}, measureCouplingDensity = {true, true};
+    public Boolean[] measureTotalConnectivity = {true, true}, measureFieldConnectivity = {false, false}, measureMethodConnectivity = {false, false};
 
     // Complexity Metric
-    public boolean[] measureComplexityTotal = {false, false}, measureComplexityDensity = {true, true},
+    public Boolean[] measureComplexityTotal = {false, false}, measureComplexityDensity = {true, true},
             measureMethodDeclarationArea = {false, false}, measureMethodDeclarationDepthPerLine = {true, false};
 
     // Size Metric
-    public boolean[] measureSizeByLines = {true, true}, measureSizeBySymbols = {false, false}, measureSizeBySymbolsPerLine = {false, false};
-    public boolean[] measureTotalSize = {true, true}, measureMethodDeclarationSize = {false, false};
+    public Boolean[] measureSizeByLines = {true, true}, measureSizeBySymbols = {false, false}, measureSizeBySymbolsPerLine = {false, false};
+    public Boolean[] measureTotalSize = {true, true}, measureMethodDeclarationSize = {false, false};
 
+    public ProjectSettingsState() {}
 
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);

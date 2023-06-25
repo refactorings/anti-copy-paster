@@ -2,7 +2,6 @@ package org.jetbrains.research.anticopypaster.config;
 
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
-import kotlinx.html.A;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
 
