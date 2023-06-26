@@ -15,8 +15,8 @@ public class KeywordsMetrics extends Flag{
     }
 
     /**
-    This is a function that will get the keywords metric out of 
-    the FeaturesVector that is passed in
+     This is a function that will get the keywords metric out of
+     the FeaturesVector that is passed in
      */
     protected void setSelectedMetrics(){
         ProjectSettingsState settings = retrieveCurrentSettings();
