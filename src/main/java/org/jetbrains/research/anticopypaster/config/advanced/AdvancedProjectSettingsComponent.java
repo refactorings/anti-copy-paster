@@ -3,7 +3,7 @@ package org.jetbrains.research.anticopypaster.config.advanced;
 import javax.swing.*;
 import java.util.EnumMap;
 
-public class NewAdvancedProjectSettingsComponent {
+public class AdvancedProjectSettingsComponent {
     private JCheckBox totalKeywordCountInCheckBox;
     private JCheckBox requiredSubmetricCheckBox;
     private JCheckBox keywordDensityPerLineCheckBox;
@@ -68,13 +68,15 @@ public class NewAdvancedProjectSettingsComponent {
     private JCheckBox requiredSubmetricCheckBox14;
     private JCheckBox measureSizeOfMethodCheckBox;
     private JCheckBox requiredSubmetricCheckBox15;
+    private JScrollPane mainScroll;
+    private JPanel masterPanel;
 
     public JPanel getPanel() {
-        return mainPanel;
+        return masterPanel;
     }
 
     public JComponent getPreferredFocusedComponent() {
-        return totalKeywordCountInCheckBox;
+        return mainScroll;
     }
 
     private void addConditionallyEnabledCheckboxGroup(JCheckBox ind, JCheckBox dep) {
@@ -90,7 +92,7 @@ public class NewAdvancedProjectSettingsComponent {
         );
     }
 
-    public NewAdvancedProjectSettingsComponent() {
+    public AdvancedProjectSettingsComponent() {
 
         addConditionallyEnabledCheckboxGroup(totalKeywordCountInCheckBox, requiredSubmetricCheckBox);
         addConditionallyEnabledCheckboxGroup(keywordDensityPerLineCheckBox, requiredSubmetricCheckBox1);

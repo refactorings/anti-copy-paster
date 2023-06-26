@@ -3,7 +3,7 @@ package org.jetbrains.research.anticopypaster.config;
 import javax.swing.*;
 import com.intellij.openapi.project.Project;
 
-import org.jetbrains.research.anticopypaster.config.advanced.NewAdvancedProjectSettingsDialogWrapper;
+import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 
 public class ProjectSettingsComponent {
 
@@ -22,7 +22,7 @@ public class ProjectSettingsComponent {
 
     public ProjectSettingsComponent(Project project) {
         advancedSettingsButton.addActionListener(e -> {
-            NewAdvancedProjectSettingsDialogWrapper advancedDialog = new NewAdvancedProjectSettingsDialogWrapper(project);
+            AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
             boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
             advancedDialog.saveSettings(displayAndResolveAdvanced);
         });

@@ -17,7 +17,7 @@ public class SizeMetrics extends Flag{
 
     @Override
     protected void setSelectedMetrics(){
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
 
         if (settings.measureSizeByLines[0]) {

@@ -9,12 +9,12 @@ import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import java.util.EnumMap;
 import javax.swing.*;
 
-public class NewAdvancedProjectSettingsDialogWrapper extends DialogWrapper {
+public class AdvancedProjectSettingsDialogWrapper extends DialogWrapper {
 
     Project project;
-    private NewAdvancedProjectSettingsComponent settingsComponent;
+    private AdvancedProjectSettingsComponent settingsComponent;
 
-    public NewAdvancedProjectSettingsDialogWrapper(Project project) {
+    public AdvancedProjectSettingsDialogWrapper(Project project) {
         super(true);
         this.project = project;
 
@@ -27,7 +27,7 @@ public class NewAdvancedProjectSettingsDialogWrapper extends DialogWrapper {
     @Nullable
     @Override
     public JComponent createCenterPanel() {
-        settingsComponent = new NewAdvancedProjectSettingsComponent();
+        settingsComponent = new AdvancedProjectSettingsComponent();
         setFields();
         return settingsComponent.getPanel();
     }
