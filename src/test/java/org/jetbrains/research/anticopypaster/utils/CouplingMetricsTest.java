@@ -22,7 +22,7 @@ public class CouplingMetricsTest {
     private class TestingCouplingMetrics extends CouplingMetrics {
 
         public TestingCouplingMetrics(List<FeaturesVector> featuresVectorList) {
-            super(featuresVectorList);
+            super(featuresVectorList, null);
         }
 
 //        @Override
