@@ -25,7 +25,7 @@ public class ComplexityMetricsTest {
     private class TestingComplexityMetrics extends ComplexityMetrics {
 
         public TestingComplexityMetrics(List<FeaturesVector> featuresVectorList) {
-            super(featuresVectorList);
+            super(featuresVectorList, null);
         }
 
         @Override

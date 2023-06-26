@@ -35,7 +35,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     protected void setUp() throws Exception {
         super.setUp();
         while (!getProject().isInitialized());
-        model = new UserSettingsModel(null);
+        model = new UserSettingsModel(null, getProject());
         settings = ProjectSettingsState.getInstance(getProject());
     }
 
@@ -576,6 +576,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         passedInArray[3] = (float)1;
         FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
 
+        //System.out.println(model.predict(passedInFv.getMock()));
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 

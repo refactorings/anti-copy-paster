@@ -31,6 +31,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+import static com.intellij.refactoring.extractMethod.ExtractMethodHandler.canUseNewImpl;
 import static com.intellij.refactoring.extractMethod.ExtractMethodHandler.getProcessor;
 import static org.jetbrains.research.anticopypaster.utils.PsiUtil.*;
 
@@ -48,17 +49,19 @@ public class RefactoringNotificationTask extends TimerTask {
     private PredictionModel model;
     private final boolean debugMetrics = true;
     private String logFilePath;
+    private Project p;
 
 
-    public RefactoringNotificationTask(DuplicatesInspection inspection, Timer timer) {
+    public RefactoringNotificationTask(DuplicatesInspection inspection, Timer timer, Project p) {
         this.inspection = inspection;
         this.timer = timer;
+        this.p = p;
         if(debugMetrics && this.logFilePath == null){
             var filepathHolder = new Object(){String filepath = "";};
             // Using ProjectManager outside runReadAction causes issues,
             // this allows us to get the location of the baseFilePath
             ApplicationManager.getApplication().runReadAction(() -> {
-                Project p = ProjectManager.getInstance().getOpenProjects()[0];
+                //p = ProjectManager.getInstance().getOpenProjects()[0];
                 String basePath = p.getBasePath();
                 filepathHolder.filepath = basePath +
                         "/.idea/anticopypaster-refactoringSuggestionsLog.log";
@@ -70,7 +73,7 @@ public class RefactoringNotificationTask extends TimerTask {
     private PredictionModel getOrInitModel() {
         PredictionModel model = this.model;
         if (model == null) {
-            model = this.model = new UserSettingsModel(new MetricsGatherer());
+            model = this.model = new UserSettingsModel(new MetricsGatherer(p), p);
             if(debugMetrics){
                 UserSettingsModel settingsModel = (UserSettingsModel) model;
                 try(FileWriter fr = new FileWriter(logFilePath, true)){
@@ -240,5 +243,12 @@ public class RefactoringNotificationTask extends TimerTask {
                         eventBeginLine, eventEndLine);
 
         return metricCalculator.getFeaturesVector();
+    }
+
+    public void setProject(Project p) {
+        this.p = p;
+    }
+    public Project getProject() {
+        return p;
     }
 }

@@ -23,7 +23,7 @@ public class KeywordsMetricsTest {
     private class TestingKeywordsMetrics extends KeywordsMetrics {
 
         public TestingKeywordsMetrics(List<FeaturesVector> featuresVectorList) {
-            super(featuresVectorList);
+            super(featuresVectorList, null);
         }
 
         @Override

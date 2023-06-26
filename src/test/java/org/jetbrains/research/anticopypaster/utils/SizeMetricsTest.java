@@ -26,7 +26,10 @@ public class SizeMetricsTest {
     private ProjectSettingsState settings;
 
     private class TestingSizeMetrics extends SizeMetrics {
-        public TestingSizeMetrics(List<FeaturesVector> featuresVectorList) {super(featuresVectorList);}
+
+        public TestingSizeMetrics(List<FeaturesVector> featuresVectorList) {
+            super(featuresVectorList, null);
+        }
 
         @Override
         public int getSensitivity() {
@@ -309,7 +312,7 @@ public class SizeMetricsTest {
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[0] = 5;
 
-        
+
         //Adding these values gives:
         // Q1 = 2
         // Q2 = 3

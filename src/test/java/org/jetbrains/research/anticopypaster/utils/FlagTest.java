@@ -21,7 +21,7 @@ public class FlagTest {
     class TestingFlag extends Flag{
 
         public TestingFlag(List<FeaturesVector> featuresVectorList){
-            super(featuresVectorList);
+            super(featuresVectorList, null);
         }
         @Override
         public int getSensitivity() {

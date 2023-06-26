@@ -19,7 +19,7 @@ public abstract class Flag{
     protected float[] thresholds;
 
     protected float[] lastCalculatedMetric;
-
+    protected Project project;
     protected int cachedSensitivity;
 
     protected ArrayList<Feature> selectedMetrics = new ArrayList<>();
@@ -45,14 +45,14 @@ public abstract class Flag{
         return lastCalculatedMetric;
     }
 
-    protected Flag(List<FeaturesVector> featuresVectorList) {
+    public Flag(List<FeaturesVector> featuresVectorList, Project project){
         this.featuresVectorList = featuresVectorList;
         this.lastCalculatedMetric = null;
+        // For unit testing when project is null
+        this.project = project == null ? ProjectManager.getInstance().getOpenProjects()[0] : project;
         setSelectedMetrics();
         calculateThreshold();
     }
-
-
 
     /**
      * Recalculates this Flag's threshold from its current sensitivity value.
@@ -92,6 +92,7 @@ public abstract class Flag{
         }
         System.out.println("Thresholds: " + Arrays.toString(thresholds));
     }
+
     /**
      * Returns whether the given feature vector should 'trigger' this flag
      * based on whether the metric calculated from this feature vector
@@ -123,7 +124,6 @@ public abstract class Flag{
     }
 
     protected ProjectSettingsState retrieveCurrentSettings() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
         return project.getService(ProjectSettingsState.class);
     }
 
@@ -166,4 +166,8 @@ public abstract class Flag{
      * @param filepath path to the log file
      */
     public abstract void logThresholds(String filepath);
+
+    public void setProject(Project project) {
+        this.project = project;
+    }
 }

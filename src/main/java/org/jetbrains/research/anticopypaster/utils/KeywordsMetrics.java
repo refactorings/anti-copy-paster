@@ -10,8 +10,8 @@ import java.util.List;
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsComponent.JavaKeywords;
 public class KeywordsMetrics extends Flag{
 
-    public KeywordsMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList);
+    public KeywordsMetrics(List<FeaturesVector> featuresVectorList, Project project){
+        super(featuresVectorList, project);
     }
 
     /**
@@ -19,6 +19,7 @@ public class KeywordsMetrics extends Flag{
      the FeaturesVector that is passed in
      */
     protected void setSelectedMetrics(){
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
         int metricNum = 16;
         for(JavaKeywords keyword : JavaKeywords.values()) {
@@ -47,6 +48,7 @@ public class KeywordsMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
         return settings.keywordsSensitivity;
     }

@@ -5,16 +5,19 @@ import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class SizeMetrics extends Flag{
 
-    public SizeMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList);
-
+    public SizeMetrics(List<FeaturesVector> featuresVectorList, Project project){
+        super(featuresVectorList, project);
     }
+
     @Override
     protected void setSelectedMetrics(){
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
 
         if (settings.measureSizeByLines[0]) {
@@ -63,6 +66,7 @@ public class SizeMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
         return settings.sizeSensitivity;
     }

@@ -44,7 +44,7 @@ public class MetricsGathererTest extends LightJavaCodeInsightFixtureTestCase {
      * Calculator.java should be gotten.
      */
     public void testMetricsListSize() {
-        MetricsGatherer metricsGatherer = new MetricsGatherer();
+        MetricsGatherer metricsGatherer = new MetricsGatherer(getProject());
         System.out.println("Message = Metrics List Has 6 Methods");
         Assertions.assertEquals(6 , metricsGatherer.getMethodsMetrics().size());
     }
@@ -54,7 +54,7 @@ public class MetricsGathererTest extends LightJavaCodeInsightFixtureTestCase {
      * properly and that the MetricsGatherer doesn't crash.
      */
     public void testMetricsListNotNull() {
-        MetricsGatherer metricsGatherer = new MetricsGatherer();
+        MetricsGatherer metricsGatherer = new MetricsGatherer(getProject());
         System.out.println("Message = MetricsList Not Null");
         Assertions.assertNotNull(metricsGatherer.getMethodsMetrics());
     }
@@ -65,7 +65,7 @@ public class MetricsGathererTest extends LightJavaCodeInsightFixtureTestCase {
      * have a 1 line method. The only 1 line methods exist in CalculatorTest.java
      */
     public void testMetricsInListNoTestMethods() {
-        MetricsGatherer metricsGatherer = new MetricsGatherer();
+        MetricsGatherer metricsGatherer = new MetricsGatherer(getProject());
         System.out.println("Message = No Single Line Methods Gotten");
         for(FeaturesVector fv: metricsGatherer.getMethodsMetrics()){
             float[] arr = fv.buildArray();

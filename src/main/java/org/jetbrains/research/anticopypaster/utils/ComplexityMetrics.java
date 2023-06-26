@@ -10,19 +10,20 @@ import java.util.List;
 
 public class ComplexityMetrics extends Flag{
 
-    public ComplexityMetrics(List<FeaturesVector> featuresVectorList){
-        super(featuresVectorList);
+    public ComplexityMetrics(List<FeaturesVector> featuresVectorList, Project project){
+        super(featuresVectorList, project);
     }
 
     /**
-    This is a function that will get the complexity metric out of 
-    the FeaturesVector that is passed in
-    Complexity only uses Metrics #4 and #5, so getting the value at index 3 or 4 (depending on user settings)
-    from the fv array gives us the right value
+     This is a function that will get the complexity metric out of
+     the FeaturesVector that is passed in
+     Complexity only uses Metrics #4 and #5, so getting the value at index 3 or 4 (depending on user settings)
+     from the fv array gives us the right value
      */
 
     @Override
     protected void setSelectedMetrics(){
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
 
         if (settings.measureComplexityTotal[0]) {
@@ -62,6 +63,7 @@ public class ComplexityMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
+        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
         return settings.complexitySensitivity;
     }
