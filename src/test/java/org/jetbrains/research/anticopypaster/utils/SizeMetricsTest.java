@@ -104,6 +104,13 @@ public class SizeMetricsTest {
 
         assertEquals(3, sizeMetrics.selectedMetrics.size());
         assertEquals(2, sizeMetrics.requiredMetrics.size());
+
+        assertEquals(Feature.TotalLinesOfCode, sizeMetrics.selectedMetrics.get(0));
+        assertEquals(Feature.TotalSymbols, sizeMetrics.selectedMetrics.get(1));
+        assertEquals(Feature.SymbolsPerLine, sizeMetrics.selectedMetrics.get(2));
+
+        assertEquals(Feature.TotalLinesOfCode, sizeMetrics.requiredMetrics.get(0));
+        assertEquals(Feature.TotalSymbols, sizeMetrics.requiredMetrics.get(1));
     }
 }
 
