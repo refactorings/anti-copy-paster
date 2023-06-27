@@ -44,12 +44,12 @@ public abstract class Flag{
         }
         return lastCalculatedMetric;
     }
-
+    //TODO: even here when a test object is created the getInstance() still returns null
     public Flag(List<FeaturesVector> featuresVectorList, Project project){
         this.featuresVectorList = featuresVectorList;
         this.lastCalculatedMetric = null;
         // For unit testing when project is null
-        this.project = project == null ? ProjectManager.getInstance().getOpenProjects()[0] : project;
+        this.project = project;
         setSelectedMetrics();
         calculateThreshold();
     }

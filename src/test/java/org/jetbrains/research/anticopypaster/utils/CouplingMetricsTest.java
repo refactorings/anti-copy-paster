@@ -27,6 +27,10 @@ public class CouplingMetricsTest {
 
 //        @Override
 //        public int getSensitivity() {return sensitivity;}
+        @Override
+        protected ProjectSettingsState retrieveCurrentSettings(){
+            return new ProjectSettingsState();
+        }
     }
 
     public class FeaturesVectorMock {
@@ -63,10 +67,9 @@ public class CouplingMetricsTest {
 
     @Test
     public void testIsTriggeredSensitivityZero(){
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        settings.measureCouplingDensity[1] = false;
         TestingCouplingMetrics couplingMetrics1 = new TestingCouplingMetrics(fvList);
+        ProjectSettingsState settings = couplingMetrics1.retrieveCurrentSettings();
+        settings.measureCouplingDensity[1] = false;
 
 //        this.couplingMetrics = new TestingCouplingMetrics(fvList);
         //this.couplingMetrics.sensitivity = 100;
