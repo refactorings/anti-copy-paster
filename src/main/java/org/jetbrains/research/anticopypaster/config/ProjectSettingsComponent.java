@@ -19,6 +19,8 @@ public class ProjectSettingsComponent {
     private JSlider complexitySlider;
     private JCheckBox complexityCheckBox;
     private JButton advancedSettingsButton;
+    private JSpinner minimumMethodSelector;
+    private JTextPane methodsMustContainDuplicateTextPane;
 
     public ProjectSettingsComponent(Project project) {
         advancedSettingsButton.addActionListener(e -> {
@@ -44,6 +46,10 @@ public class ProjectSettingsComponent {
         useModelControlRadioButton.setSelected(useMLModel);
         useManualControlRadioButton.setSelected(!useMLModel);
     }
+
+    public int getMinimumDuplicateMethods() { return (int) minimumMethodSelector.getValue(); }
+
+    public void setMinimumDuplicateMethods(int minimumMethods) { minimumMethodSelector.setValue(minimumMethods); }
 
     public int getKeywordsSensitivity() {
         return keywordsSlider.getValue();
@@ -107,5 +113,10 @@ public class ProjectSettingsComponent {
 
     public void setComplexityRequired(boolean required) {
         complexityCheckBox.setSelected(required);
+    }
+
+    private void createUIComponents() {
+        SpinnerModel spinnerModel = new SpinnerNumberModel(2, 1, Integer.MAX_VALUE, 1);
+        minimumMethodSelector = new JSpinner(spinnerModel);
     }
 }

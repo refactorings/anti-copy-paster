@@ -17,6 +17,7 @@ import com.intellij.refactoring.extractMethod.PrepareFailedException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.research.anticopypaster.AntiCopyPasterBundle;
 import org.jetbrains.research.anticopypaster.checkers.FragmentCorrectnessChecker;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.models.PredictionModel;
 import org.jetbrains.research.anticopypaster.models.UserSettingsModel;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
@@ -98,8 +99,11 @@ public class RefactoringNotificationTask extends TimerTask {
                 final RefactoringEvent event = eventsQueue.poll();
                 ApplicationManager.getApplication().runReadAction(() -> {
                     DuplicatesInspection.InspectionResult result = inspection.resolve(event.getFile(), event.getText());
-                    // This only triggers if there are duplicates found in multiple methods,
-                    // multiple duplicates in one method doesn't count.
+                    // This only triggers if there are duplicates found in at least as many
+                    // methods as specified by the user in configurations.
+
+                    ProjectSettingsState settings = ProjectManager.getInstance().getOpenProjects()[0].getService(ProjectSettingsState.class);
+
                     if (result.getDuplicatesCount() < 2) {
                         return;
                     }
