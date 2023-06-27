@@ -104,7 +104,7 @@ public class RefactoringNotificationTask extends TimerTask {
 
                     ProjectSettingsState settings = ProjectManager.getInstance().getOpenProjects()[0].getService(ProjectSettingsState.class);
 
-                    if (result.getDuplicatesCount() < 2) {
+                    if (result.getDuplicatesCount() < settings.minimumDuplicateMethods) {
                         return;
                     }
                     HashSet<String> variablesInCodeFragment = new HashSet<>();
