@@ -52,16 +52,11 @@ public class SizeMetricsTest {
         this.fvList = new ArrayList<>();
     }
     @Test
-    public void testSetSelectedMetrics_SelectedMetrics(){
+    public void testSetSelectedMetrics_DefaultSettings(){
         sizeMetrics = new TestingSizeMetrics(fvList);
 
         assertEquals(1, sizeMetrics.selectedMetrics.size());
         assertEquals(Feature.TotalLinesOfCode, sizeMetrics.selectedMetrics.get(0));
-    }
-    @Test
-    public void testSetSelectedMetrics_RequiredMetrics(){
-        sizeMetrics = new TestingSizeMetrics(fvList);
-
         assertEquals(1, sizeMetrics.requiredMetrics.size());
         assertEquals(Feature.TotalLinesOfCode, sizeMetrics.requiredMetrics.get(0));
     }

@@ -3,7 +3,6 @@ package org.jetbrains.research.anticopypaster.utils;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
-import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsComponent.JavaKeywords;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,48 +58,36 @@ public class KeywordsMetricsTest {
     }
     
     @Test
-    public void testSetSelectedMetrics_SelectedMetrics() {
-        keywordsMetrics = new TestingKeywordsMetrics(fvList);
-
-        for(JavaKeywords keyword: JavaKeywords.values()){
-            String firstLetter = keyword.name().substring(0, 1).toUpperCase();
-            String otherLetters = keyword.name().substring(1).toLowerCase();
-            System.out.println(firstLetter + otherLetters);
-        }
-
-        assertEquals(31, keywordsMetrics.selectedMetrics.size());
-        assertEquals(Feature.KeywordContinueCountPerLine, keywordsMetrics.selectedMetrics.get(0));
-        assertEquals(Feature.KeywordForCountPerLine, keywordsMetrics.selectedMetrics.get(1));
-        assertEquals(Feature.KeywordWhileCountPerLine, keywordsMetrics.selectedMetrics.get(30));
-    }
-    @Test
-    public void testSetSelectedMetrics_RequiredMetrics() {
+    public void testSetSelectedMetrics_DefaultSettings() {
         keywordsMetrics = new TestingKeywordsMetrics(fvList);
 
         assertEquals(31, keywordsMetrics.selectedMetrics.size());
-        assertEquals(Feature.KeywordContinueCountPerLine, keywordsMetrics.requiredMetrics.get(0));
-        assertEquals(Feature.KeywordForCountPerLine, keywordsMetrics.requiredMetrics.get(1));
-        assertEquals(Feature.KeywordWhileCountPerLine, keywordsMetrics.requiredMetrics.get(30));
+        for (int i = 0; i < 31; i++)
+            assertEquals(Feature.fromId(17 + 2 * i), keywordsMetrics.selectedMetrics.get(i));
+        assertEquals(31, keywordsMetrics.requiredMetrics.size());
+        for (int i = 0; i < 31; i++)
+            assertEquals(Feature.fromId(17 + 2 * i), keywordsMetrics.requiredMetrics.get(i));
     }
+
     @Test
     public void testSetSelectedMetrics_ChangeSettings(){
         keywordsMetrics = new TestingKeywordsMetrics(fvList);
 
         keywordsMetrics.settings.measureKeywordsTotal[0] = true;
         keywordsMetrics.settings.measureKeywordsTotal[1] = true;
+        keywordsMetrics.settings.measureKeywordsDensity[0] = true;
+        keywordsMetrics.settings.measureKeywordsDensity[1] = false;
 
         keywordsMetrics.selectedMetrics.clear();
         keywordsMetrics.requiredMetrics.clear();
         keywordsMetrics.setSelectedMetrics();
 
         assertEquals(62, keywordsMetrics.selectedMetrics.size());
-        assertEquals(Feature.KeywordContinueTotalCount, keywordsMetrics.selectedMetrics.get(0));
-        assertEquals(Feature.KeywordContinueCountPerLine, keywordsMetrics.selectedMetrics.get(1));
-        assertEquals(Feature.KeywordWhileCountPerLine, keywordsMetrics.selectedMetrics.get(61));
-
-        assertEquals(Feature.KeywordContinueTotalCount, keywordsMetrics.requiredMetrics.get(0));
-        assertEquals(Feature.KeywordContinueCountPerLine, keywordsMetrics.requiredMetrics.get(1));
-        assertEquals(Feature.KeywordWhileCountPerLine, keywordsMetrics.requiredMetrics.get(61));
+        for (int i = 0; i < 62; i++)
+            assertEquals(Feature.fromId(16 + i), keywordsMetrics.selectedMetrics.get(i));
+        assertEquals(31, keywordsMetrics.requiredMetrics.size());
+        for (int i = 0; i < 31; i++)
+            assertEquals(Feature.fromId(16 + 2 * i), keywordsMetrics.requiredMetrics.get(i));
 
     }
 
