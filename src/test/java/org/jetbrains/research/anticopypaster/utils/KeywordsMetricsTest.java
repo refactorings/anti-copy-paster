@@ -3,6 +3,7 @@ package org.jetbrains.research.anticopypaster.utils;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
+import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsComponent.JavaKeywords;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,6 +22,8 @@ public class KeywordsMetricsTest {
      * Stores sensitivity setting locally rather than through IntelliJ project settings.
      */
     private class TestingKeywordsMetrics extends KeywordsMetrics {
+        //Stores a projectSettingsState variable locally to adjust settings for testing
+        private ProjectSettingsState settings;
 
         public TestingKeywordsMetrics(List<FeaturesVector> featuresVectorList) {
             super(featuresVectorList, null);
@@ -29,6 +32,13 @@ public class KeywordsMetricsTest {
         @Override
         public int getSensitivity() {
             return sensitivity;
+        }
+        @Override
+        protected ProjectSettingsState retrieveCurrentSettings(){
+            if(settings == null){
+                this.settings = new ProjectSettingsState();
+            }
+            return this.settings;
         }
     }
 
@@ -72,197 +82,54 @@ public class KeywordsMetricsTest {
 
     @BeforeEach
     public void beforeTest(){
-        //Zero out everything
         this.keywordsMetrics = null;
-        this.fvList = new ArrayList<FeaturesVector>();
     }
     
     @Test
-    public void testIsTriggeredSensitivityZero(){
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 100;
-        assertFalse(keywordsMetrics.isFlagTriggered(null));
+    public void testSetSelectedMetrics_SelectedMetrics() {
+        keywordsMetrics = new TestingKeywordsMetrics(fvList);
+
+        for(JavaKeywords keyword: JavaKeywords.values()){
+            String firstLetter = keyword.name().substring(0, 1).toUpperCase();
+            String otherLetters = keyword.name().substring(1).toLowerCase();
+            System.out.println(firstLetter + otherLetters);
+        }
+
+        assertEquals(31, keywordsMetrics.selectedMetrics.size());
+        assertEquals(Feature.KeywordContinueCountPerLine, keywordsMetrics.selectedMetrics.get(0));
+        assertEquals(Feature.KeywordForCountPerLine, keywordsMetrics.selectedMetrics.get(1));
+        assertEquals(Feature.KeywordWhileCountPerLine, keywordsMetrics.selectedMetrics.get(30));
     }
-
-
     @Test
-    public void testIsTriggeredSensitivityOneTrue(){
+    public void testSetSelectedMetrics_RequiredMetrics() {
+        keywordsMetrics = new TestingKeywordsMetrics(fvList);
 
-        // This category uses the odd metrics between 17-77 so there's a helper method for it
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 25;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(3);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertEquals(31, keywordsMetrics.selectedMetrics.size());
+        assertEquals(Feature.KeywordContinueCountPerLine, keywordsMetrics.requiredMetrics.get(0));
+        assertEquals(Feature.KeywordForCountPerLine, keywordsMetrics.requiredMetrics.get(1));
+        assertEquals(Feature.KeywordWhileCountPerLine, keywordsMetrics.requiredMetrics.get(30));
     }
-
     @Test
-    public void testIsTriggeredSensitivityOneFalse(){
+    public void testSetSelectedMetrics_ChangeSettings(){
+        keywordsMetrics = new TestingKeywordsMetrics(fvList);
 
-        // This category uses the odd metrics between 17-77 so there's a helper method for it
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
+        keywordsMetrics.settings.measureKeywordsTotal[0] = true;
+        keywordsMetrics.settings.measureKeywordsTotal[1] = true;
 
+        keywordsMetrics.selectedMetrics.clear();
+        keywordsMetrics.requiredMetrics.clear();
+        keywordsMetrics.setSelectedMetrics();
 
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 25;
+        assertEquals(62, keywordsMetrics.selectedMetrics.size());
+        assertEquals(Feature.KeywordContinueTotalCount, keywordsMetrics.selectedMetrics.get(0));
+        assertEquals(Feature.KeywordContinueCountPerLine, keywordsMetrics.selectedMetrics.get(1));
+        assertEquals(Feature.KeywordWhileCountPerLine, keywordsMetrics.selectedMetrics.get(61));
 
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(1);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertFalse(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
-    }
-
-    @Test
-    public void testIsTriggeredSensitivityTwoTrue(){
-
-        // This category uses the odd metrics between 17-77 so there's a helper method for it
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
+        assertEquals(Feature.KeywordContinueTotalCount, keywordsMetrics.requiredMetrics.get(0));
+        assertEquals(Feature.KeywordContinueCountPerLine, keywordsMetrics.requiredMetrics.get(1));
+        assertEquals(Feature.KeywordWhileCountPerLine, keywordsMetrics.requiredMetrics.get(61));
 
 
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 50;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(4);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
-    }
-
-    @Test
-    public void testIsTriggeredSensitivityTwoFalse(){
-
-        // This category uses the odd metrics between 17-77 so there's a helper method for it
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 50;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(2);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertFalse(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
-    }
-
-    @Test
-    public void testIsTriggeredSensitivityThreeTrue(){
-
-        // This category uses the odd metrics between 17-77 so there's a helper method for it
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 75;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(5);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
-    }
-
-    @Test
-    public void testIsTriggeredSensitivityThreeFalse(){
-
-        // This category uses the odd metrics between 17-77 so there's a helper method for it
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 75;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(3);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertFalse(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
     }
 
 }

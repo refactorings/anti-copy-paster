@@ -76,6 +76,11 @@ public class SizeMetricsTest {
 
     private TestingSizeMetrics sizeMetrics;
     private List<FeaturesVector> fvList;
+
+    @BeforeEach
+    public void beforeTest(){
+        this.sizeMetrics = null;
+    }
     @Test
     public void testSetSelectedMetrics_SelectedMetrics(){
         sizeMetrics = new TestingSizeMetrics(fvList);
