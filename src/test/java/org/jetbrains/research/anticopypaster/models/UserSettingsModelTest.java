@@ -3,15 +3,11 @@ package org.jetbrains.research.anticopypaster.models;
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
+import org.jetbrains.research.anticopypaster.utils.*;
 import org.junit.Before;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
-import org.jetbrains.research.anticopypaster.utils.MetricsGatherer;
-import org.jetbrains.research.anticopypaster.utils.KeywordsMetrics;
-import org.jetbrains.research.anticopypaster.utils.SizeMetrics;
-import org.jetbrains.research.anticopypaster.utils.ComplexityMetrics;
-import org.jetbrains.research.anticopypaster.utils.Flag;
 
 import java.io.File;
 import java.util.*;
@@ -20,7 +16,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import org.mockito.Mock;
-import org.mockito.Mockito;
 
 import static org.mockito.Mockito.*;
 
@@ -37,31 +32,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         while (!getProject().isInitialized());
         model = new UserSettingsModel(null, getProject());
         settings = ProjectSettingsState.getInstance(getProject());
-    }
-
-    /**
-    Inner class to mock a FeaturesVector, should only need buildArray() for this
-     */
-    public static class FeaturesVectorMock {
-        @Mock
-        private FeaturesVector mockFeaturesVector;
-        
-        private float[] metricsArray;
-
-        public FeaturesVectorMock(float[] metricsArray) {
-            mockFeaturesVector = mock(FeaturesVector.class);
-            this.metricsArray = metricsArray;
-            
-            // mock methods for the FeaturesVector class
-            when(mockFeaturesVector.buildArray())
-                    .thenReturn(this.metricsArray);
-            when(mockFeaturesVector.getFeatureValue(any(Feature.class)))
-                    .thenAnswer(invocation -> (double) metricsArray[((Feature) invocation.getArgument(0)).getId()]);
-        }
-        
-        public FeaturesVector getMock() {
-            return mockFeaturesVector;
-        }
     }
 
 

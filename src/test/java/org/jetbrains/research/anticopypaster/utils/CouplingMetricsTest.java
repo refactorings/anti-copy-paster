@@ -2,7 +2,6 @@ package org.jetbrains.research.anticopypaster.utils;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,9 +10,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import static org.junit.jupiter.api.Assertions.*;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
-import org.mockito.Mock;
-
-import static org.mockito.Mockito.*;
 
 public class CouplingMetricsTest {
     /**
@@ -33,25 +29,6 @@ public class CouplingMetricsTest {
 
         @Override
         public int getSensitivity() {return sensitivity;}
-    }
-
-    public static class FeaturesVectorMock {
-        @Mock
-        private FeaturesVector mockFeaturesVector;
-
-        public FeaturesVectorMock(float[] metricsArray) {
-            mockFeaturesVector = mock(FeaturesVector.class);
-
-            // mock methods for the FeaturesVector class
-            when(mockFeaturesVector.buildArray())
-                    .thenReturn(metricsArray);
-            when(mockFeaturesVector.getFeatureValue(any(Feature.class)))
-                    .thenAnswer(invocation -> (double) metricsArray[((Feature) invocation.getArgument(0)).getId()]);
-        }
-
-        public FeaturesVector getMock() {
-            return mockFeaturesVector;
-        }
     }
 
     private int sensitivity;

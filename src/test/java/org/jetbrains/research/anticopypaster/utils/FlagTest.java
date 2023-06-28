@@ -9,10 +9,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import static org.junit.jupiter.api.Assertions.*;
 
-import org.mockito.Mock;
-
-import static org.mockito.Mockito.*;
-
 public class FlagTest {
 
     /**
@@ -46,34 +42,7 @@ public class FlagTest {
     }
     private TestingFlag testFlag;
     private int sensitivity;
-    public class FeaturesVectorMock {
-        @Mock
-        private FeaturesVector mockFeaturesVector;
 
-        private float[] metricsArray;
-
-        public FeaturesVectorMock(float[] metricsArray) {
-            mockFeaturesVector = mock(FeaturesVector.class);
-            this.metricsArray = metricsArray;
-
-            // mock methods for the FeaturesVector class
-            when(mockFeaturesVector.buildArray()).thenReturn(this.metricsArray);
-
-            /*
-            Mock the behavior of the getFeatureValue method, the feature values are the numbers in the metricsArray,
-            and the id numbers of the selectedMetrics are the indexes
-             */
-            when(mockFeaturesVector.getFeatureValue(any(Feature.class))).thenAnswer(invocation -> {
-                Feature feature = invocation.getArgument(0);
-                int featureId = feature.getId();
-                return (double) metricsArray[featureId];
-            });
-
-        }
-        public FeaturesVector getMock() {
-            return mockFeaturesVector;
-        }
-    }
     private List<FeaturesVector> fvList;
 
     // Zero everything out

@@ -12,10 +12,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import static org.junit.jupiter.api.Assertions.*;
 
-import org.mockito.Mock;
-
-import static org.mockito.Mockito.*;
-
 public class KeywordsMetricsTest {
 
     /**
@@ -44,28 +40,6 @@ public class KeywordsMetricsTest {
     }
 
     private int sensitivity;
-    
-    /**
-    Inner class to mock a FeaturesVector
-     */
-    public static class FeaturesVectorMock {
-        @Mock
-        private FeaturesVector mockFeaturesVector;
-
-        public FeaturesVectorMock(float[] metricsArray) {
-            mockFeaturesVector = mock(FeaturesVector.class);
-            
-            // mock methods for the FeaturesVector class
-            when(mockFeaturesVector.buildArray())
-                    .thenReturn(metricsArray);
-            when(mockFeaturesVector.getFeatureValue(any(Feature.class)))
-                    .thenAnswer(invocation -> (double) metricsArray[((Feature) invocation.getArgument(0)).getId()]);
-        }
-        
-        public FeaturesVector getMock() {
-            return mockFeaturesVector;
-        }
-    }
 
     private float[] generateArrayForKeywordsPopulatedByValue(float value){
         float[] floatArr = new float[78];
