@@ -1,10 +1,9 @@
 package org.jetbrains.research.anticopypaster.utils;
 
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -48,19 +47,16 @@ public class ComplexityMetricsTest {
     /**
     Inner class to mock a FeaturesVector
      */
-    public class FeaturesVectorMock {
+    public static class FeaturesVectorMock {
         @Mock
         private FeaturesVector mockFeaturesVector;
-        
-        private float[] metricsArray;
 
         public FeaturesVectorMock(float[] metricsArray) {
             mockFeaturesVector = mock(FeaturesVector.class);
-            this.metricsArray = metricsArray;
             
             // mock methods for the FeaturesVector class
             when(mockFeaturesVector.buildArray())
-                    .thenReturn(this.metricsArray);
+                    .thenReturn(metricsArray);
             when(mockFeaturesVector.getFeatureValue(any(Feature.class)))
                     .thenAnswer(invocation -> (double) metricsArray[((Feature) invocation.getArgument(0)).getId()]);
         }
@@ -76,6 +72,7 @@ public class ComplexityMetricsTest {
     @BeforeEach
     public void beforeTest(){
         this.complexityMetrics = null;
+        this.fvList = new ArrayList<>();
     }
     @Test
     public void testSetSelectedMetrics_SelectedMetrics(){

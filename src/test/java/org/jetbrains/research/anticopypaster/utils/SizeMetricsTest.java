@@ -1,10 +1,9 @@
 package org.jetbrains.research.anticopypaster.utils;
 
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -22,8 +21,6 @@ public class SizeMetricsTest {
      * Testing variant of SizeMetrics.
      * Stores sensitivity setting locally rather than through IntelliJ project settings.
      */
-    @Mock
-    private ProjectSettingsState settings;
 
     private class TestingSizeMetrics extends SizeMetrics {
         //Stores a projectSettingsState variable locally to adjust settings for testing
@@ -39,8 +36,8 @@ public class SizeMetricsTest {
             return sensitivity;
         }
         @Override
-        protected ProjectSettingsState retrieveCurrentSettings(){
-            if(settings == null){
+        protected ProjectSettingsState retrieveCurrentSettings() {
+            if (settings == null){
                 this.settings = new ProjectSettingsState();
             }
             return this.settings;
@@ -52,19 +49,16 @@ public class SizeMetricsTest {
     /**
     Inner class to mock a FeaturesVector
      */
-    public class FeaturesVectorMock {
+    public static class FeaturesVectorMock {
         @Mock
         private FeaturesVector mockFeaturesVector;
-        
-        private float[] metricsArray;
 
         public FeaturesVectorMock(float[] metricsArray) {
             mockFeaturesVector = mock(FeaturesVector.class);
-            this.metricsArray = metricsArray;
             
             // mock methods for the FeaturesVector class
             when(mockFeaturesVector.buildArray())
-                    .thenReturn(this.metricsArray);
+                    .thenReturn(metricsArray);
             when(mockFeaturesVector.getFeatureValue(any(Feature.class)))
                     .thenAnswer(invocation -> (double) metricsArray[((Feature) invocation.getArgument(0)).getId()]);
         }
@@ -80,6 +74,7 @@ public class SizeMetricsTest {
     @BeforeEach
     public void beforeTest(){
         this.sizeMetrics = null;
+        this.fvList = new ArrayList<>();
     }
     @Test
     public void testSetSelectedMetrics_SelectedMetrics(){

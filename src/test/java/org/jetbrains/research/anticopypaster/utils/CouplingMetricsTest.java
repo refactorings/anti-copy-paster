@@ -14,6 +14,7 @@ import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.mockito.Mock;
 
 import static org.mockito.Mockito.*;
+
 public class CouplingMetricsTest {
     /**
      * Testing variant of CouplingMetrics.
@@ -25,27 +26,25 @@ public class CouplingMetricsTest {
             super(featuresVectorList, null);
         }
 
-//        @Override
-//        public int getSensitivity() {return sensitivity;}
         @Override
         protected ProjectSettingsState retrieveCurrentSettings(){
             return new ProjectSettingsState();
         }
+
+        @Override
+        public int getSensitivity() {return sensitivity;}
     }
 
-    public class FeaturesVectorMock {
+    public static class FeaturesVectorMock {
         @Mock
         private FeaturesVector mockFeaturesVector;
 
-        private float[] metricsArray;
-
         public FeaturesVectorMock(float[] metricsArray) {
             mockFeaturesVector = mock(FeaturesVector.class);
-            this.metricsArray = metricsArray;
 
             // mock methods for the FeaturesVector class
             when(mockFeaturesVector.buildArray())
-                    .thenReturn(this.metricsArray);
+                    .thenReturn(metricsArray);
             when(mockFeaturesVector.getFeatureValue(any(Feature.class)))
                     .thenAnswer(invocation -> (double) metricsArray[((Feature) invocation.getArgument(0)).getId()]);
         }
@@ -54,6 +53,8 @@ public class CouplingMetricsTest {
             return mockFeaturesVector;
         }
     }
+
+    private int sensitivity;
 
     private TestingCouplingMetrics couplingMetrics;
     private List<FeaturesVector> fvList;
