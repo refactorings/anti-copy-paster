@@ -4,11 +4,9 @@ import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.BeforeEach;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class KeywordsMetricsTest {
@@ -17,9 +15,10 @@ public class KeywordsMetricsTest {
      * Testing variant of KeywordsMetrics.
      * Stores sensitivity setting locally rather than through IntelliJ project settings.
      */
-    private class TestingKeywordsMetrics extends KeywordsMetrics {
-        //Stores a projectSettingsState variable locally to adjust settings for testing
+    private static class TestingKeywordsMetrics extends KeywordsMetrics {
+
         private ProjectSettingsState settings;
+        private int sensitivity;
 
         public TestingKeywordsMetrics(List<FeaturesVector> featuresVectorList) {
             super(featuresVectorList, null);
@@ -29,37 +28,26 @@ public class KeywordsMetricsTest {
         public int getSensitivity() {
             return sensitivity;
         }
+
         @Override
         protected ProjectSettingsState retrieveCurrentSettings(){
-            if(settings == null){
-                this.settings = new ProjectSettingsState();
-            }
+            if (settings == null)
+                settings = new ProjectSettingsState();
             return this.settings;
         }
     }
 
-    private int sensitivity;
-
-    private float[] generateArrayForKeywordsPopulatedByValue(float value){
+    private FeaturesVector generateFVMForKeywordsByValue(float value){
         float[] floatArr = new float[78];
         for (int i = 16; i <= 77; i++ ) {
             floatArr[i] = value;
         }
-        return floatArr;
+        return new FeaturesVectorMock(floatArr).getMock();
     }
 
-    private TestingKeywordsMetrics keywordsMetrics;
-    private List<FeaturesVector> fvList;
-
-    @BeforeEach
-    public void beforeTest(){
-        this.keywordsMetrics = null;
-        this.fvList = new ArrayList<>();
-    }
-    
     @Test
     public void testSetSelectedMetrics_DefaultSettings() {
-        keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(null);
 
         assertEquals(31, keywordsMetrics.selectedMetrics.size());
         for (int i = 0; i < 31; i++)
@@ -71,7 +59,7 @@ public class KeywordsMetricsTest {
 
     @Test
     public void testSetSelectedMetrics_ChangeSettings(){
-        keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(null);
 
         keywordsMetrics.settings.measureKeywordsTotal[0] = true;
         keywordsMetrics.settings.measureKeywordsTotal[1] = true;
@@ -93,210 +81,136 @@ public class KeywordsMetricsTest {
 
     @Test
     public void testNullInputFalse(){
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 1;
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(null);
+        keywordsMetrics.sensitivity = 1;
         assertFalse(keywordsMetrics.isFlagTriggered(null));
     }
 
-
     @Test
     public void testMinimumThresholdTrue(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
 
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics.sensitivity = 1;
 
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 1;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(3);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertTrue(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
     }
 
     @Test
     public void testMinimumThresholdFalse(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
 
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics.sensitivity = 1;
 
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 1;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(1);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertFalse(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertFalse(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(1)));
     }
 
     @Test
     public void testModerateThresholdTrue(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
 
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics.sensitivity = 50;
 
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 50;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(4);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertTrue(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
 
     @Test
     public void testModerateThresholdFalse(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
 
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics.sensitivity = 50;
 
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 50;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(2);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertFalse(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertFalse(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(2)));
     }
 
     @Test
     public void testHighThresholdTrue(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
 
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics.sensitivity = 75;
 
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 75;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(5);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertTrue(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
 
     @Test
     public void testHighThresholdFalse(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
 
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics.sensitivity = 75;
 
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 75;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(3);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertFalse(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertFalse(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
     }
 
     @Test
     public void testMaximumThresholdTrue(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
 
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics.sensitivity = 100;
 
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 100;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(6);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertTrue(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(6)));
     }
 
     @Test
     public void testMaximumThresholdFalse(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
 
-        float[] fvArrayValue1 = generateArrayForKeywordsPopulatedByValue(1);
-        float[] fvArrayValue2 = generateArrayForKeywordsPopulatedByValue(2);
-        float[] fvArrayValue3 = generateArrayForKeywordsPopulatedByValue(3);
-        float[] fvArrayValue4 = generateArrayForKeywordsPopulatedByValue(4);
-        float[] fvArrayValue5 = generateArrayForKeywordsPopulatedByValue(5);
+        TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics.sensitivity = 100;
 
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-
-        this.keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        sensitivity = 100;
-
-        float[] passedInArray = generateArrayForKeywordsPopulatedByValue(5);
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertFalse(keywordsMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertFalse(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
-
 }
