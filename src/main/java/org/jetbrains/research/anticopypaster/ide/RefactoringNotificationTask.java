@@ -99,7 +99,7 @@ public class RefactoringNotificationTask extends TimerTask {
                     // This only triggers if there are duplicates found in at least as many
                     // methods as specified by the user in configurations.
 
-                    ProjectSettingsState settings = ProjectManager.getInstance().getOpenProjects()[0].getService(ProjectSettingsState.class);
+                    ProjectSettingsState settings = ProjectSettingsState.getInstance(event.getProject());
 
                     if (result.getDuplicatesCount() < settings.minimumDuplicateMethods) {
                         return;
