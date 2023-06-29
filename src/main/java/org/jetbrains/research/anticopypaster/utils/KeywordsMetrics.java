@@ -25,12 +25,15 @@ public class KeywordsMetrics extends Flag{
         int metricNum = 16;
         for(JavaKeywords keyword : JavaKeywords.values()) {
             if (settings.activeKeywords.get(keyword)) {
+                // Keyword is selected to be counted by the plugin.
+                // Even indices indicate the total count of the current keyword.
                 if (settings.measureKeywordsTotal[0]) {
                     selectedMetrics.add(Feature.fromId(metricNum));
                     if (settings.measureKeywordsTotal[1])
                         requiredMetrics.add(Feature.fromId(metricNum));
                 }
                 metricNum++;
+                // Iterate metricNum by one to consider the density feature for the same keyword.
                 if (settings.measureKeywordsDensity[0]) {
                     selectedMetrics.add(Feature.fromId(metricNum));
                     if (settings.measureKeywordsDensity[1])
@@ -49,7 +52,6 @@ public class KeywordsMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
         return settings.keywordsSensitivity;
     }

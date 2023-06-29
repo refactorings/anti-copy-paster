@@ -20,6 +20,10 @@ public class SizeMetrics extends Flag{
         * Feature index 12: Method declaration symbols
         * Feature index 2: Symbols per line
         * Feature index 13: Method declaration symbols per line
+     *
+     * Users select between measuring by lines, symbols, and/or symbols per line (3 choices),
+     *  and between measuring the whole code segment or just method declarations (2 choices).
+     *  3 x 2 = 6 features.
      */
     @Override
     protected void setSelectedMetrics(){
@@ -71,7 +75,6 @@ public class SizeMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
         return settings.sizeSensitivity;
     }

@@ -21,6 +21,10 @@ public class CouplingMetrics extends Flag{
          * Feature index 8: Field connectivity per line
          * Feature index 9: Method connectivity
          * Feature index 10: Method connectivity per line
+     *
+     * Users select between measuring connectivity over all lines and/or per line (2 choices), and
+     *  between measuring total, field, and/or method connectivity (3 choices).
+     *  2 x 3 = 6 features.
      */
     @Override
     protected void setSelectedMetrics(){
@@ -75,7 +79,6 @@ public class CouplingMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
         return settings.couplingSensitivity;
     }

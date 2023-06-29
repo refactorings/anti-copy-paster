@@ -16,7 +16,6 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.checkers.FragmentCorrectnessChecker;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
-import java.sql.Ref;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;

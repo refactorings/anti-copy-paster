@@ -2,18 +2,11 @@ package org.jetbrains.research.anticopypaster.models;
 
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
-import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.utils.*;
-import org.junit.Before;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
-import java.io.File;
 import java.util.*;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 import org.mockito.Mock;
 
@@ -71,7 +64,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
     /**
     This is a test to make sure that if the model has a null metrics
-    gatherer that it will always return 0 (do not pop-up)
+    gatherer that it will always return 0 (do not pop up)
      */
     public void testPredictEverythingNull(){
         assertEquals(model.predict(null), 0, 0);
@@ -101,18 +94,14 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 //    }
 
     public void testPredictEverythingOff(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         float[] fvArrayValue1 = new float[78];
         float[] fvArrayValue2 = new float[78];
         float[] fvArrayValue3 = new float[78];
         float[] fvArrayValue4 = new float[78];
         float[] fvArrayValue5 = new float[78];
-        
-        //Adding these values gives:
-        // Q1 = 0
-        // Q2 = 0
-        // Q3 = 0
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -150,7 +139,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     
      */
     public void testPredictOnlySizeOnSensOneTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses metric 1, so we set just those
         float[] fvArrayValue1 = new float[78];
@@ -167,11 +156,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[0] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -200,7 +185,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlySizeOnSensOneFalse(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses metric 1, so we set just those
         float[] fvArrayValue1 = new float[78];
@@ -217,11 +202,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[0] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -250,7 +231,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlySizeOnSensTwoTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses metric 1, so we set just those
         float[] fvArrayValue1 = new float[78];
@@ -267,11 +248,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[0] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -300,7 +277,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlySizeOnSensTwoFalse(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses metric 1, so we set just those
         float[] fvArrayValue1 = new float[78];
@@ -317,11 +294,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[0] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -350,7 +323,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlySizeOnSensThreeTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses metric 1, so we set just those
         float[] fvArrayValue1 = new float[78];
@@ -367,11 +340,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[0] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -400,7 +369,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlySizeOnSensThreeFalse(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses metric 1, so we set just those
         float[] fvArrayValue1 = new float[78];
@@ -417,11 +386,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[0] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -450,7 +415,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyComplexityOnSensOneTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
          // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
@@ -467,11 +432,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -500,7 +461,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyComplexityOnSensOneFalse(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
          // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
@@ -517,11 +478,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -551,7 +508,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyComplexityOnSensTwoTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
          // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
@@ -568,11 +525,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -601,7 +554,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyComplexityOnSensTwoFalse(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
          // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
@@ -618,11 +571,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -651,7 +600,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyComplexityOnSensThreeTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
          // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
@@ -668,11 +617,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -701,7 +646,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyComplexityOnSensThreeFalse(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
          // This category only uses metric 4, which would be index 3 here
         float[] fvArrayValue1 = new float[78];
@@ -718,11 +663,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -751,7 +692,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyKeywordsOnSensOneTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses the odd metrics between 17-77, filled by helper method
         float[] fvArrayValue1 = generateAndFillArray(1);
@@ -759,11 +700,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue3 = generateAndFillArray(3);
         float[] fvArrayValue4 = generateAndFillArray(4);
         float[] fvArrayValue5 = generateAndFillArray(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -792,7 +729,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyKeywordsOnSensOneFalse(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses the odd metrics between 17-77, filled by helper method
         float[] fvArrayValue1 = generateAndFillArray(1);
@@ -800,11 +737,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue3 = generateAndFillArray(3);
         float[] fvArrayValue4 = generateAndFillArray(4);
         float[] fvArrayValue5 = generateAndFillArray(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -833,7 +766,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyKeywordsOnSensTwoTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses the odd metrics between 17-77, filled by helper method
         float[] fvArrayValue1 = generateAndFillArray(1);
@@ -841,11 +774,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue3 = generateAndFillArray(3);
         float[] fvArrayValue4 = generateAndFillArray(4);
         float[] fvArrayValue5 = generateAndFillArray(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -874,7 +803,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyKeywordsOnSensTwoFalse(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses the odd metrics between 17-77, filled by helper method
         float[] fvArrayValue1 = generateAndFillArray(1);
@@ -882,11 +811,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue3 = generateAndFillArray(3);
         float[] fvArrayValue4 = generateAndFillArray(4);
         float[] fvArrayValue5 = generateAndFillArray(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -915,7 +840,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyKeywordsOnSensThreeTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses the odd metrics between 17-77, filled by helper method
         float[] fvArrayValue1 = generateAndFillArray(1);
@@ -923,11 +848,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue3 = generateAndFillArray(3);
         float[] fvArrayValue4 = generateAndFillArray(4);
         float[] fvArrayValue5 = generateAndFillArray(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -956,7 +877,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictOnlyKeywordsOnSensThreeFalse(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // This category uses the odd metrics between 17-77, filled by helper method
         float[] fvArrayValue1 = generateAndFillArray(1);
@@ -964,11 +885,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue3 = generateAndFillArray(3);
         float[] fvArrayValue4 = generateAndFillArray(4);
         float[] fvArrayValue5 = generateAndFillArray(5);
-        
-        //Adding these values gives:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
+
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
@@ -997,7 +914,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictSizeComplexityTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // The size category uses metric 1, so we set those
         // Complexity uses metric 4, so that will also be set
@@ -1020,15 +937,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[0] = 5;
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives size metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And complexity metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1059,7 +967,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictSizeComplexityFalseOneValue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // The size category uses metric 1, so we set those
         // Complexity uses metric 4, so that will also be set
@@ -1082,15 +990,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[0] = 5;
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives size metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And complexity metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1121,7 +1020,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictSizeComplexityFalseBothValues(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // The size category uses metric 1, so we set those
         // Complexity uses metric 4, so that will also be set
@@ -1144,15 +1043,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue5 = new float[78];
         fvArrayValue5[0] = 5;
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives size metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And complexity metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1183,7 +1073,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictSizeKeywordsTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // Keywords uses every odd metric from 17-77, so we set those with the helper method
         // The size category uses metric 1, so we set those after the array is filled
@@ -1205,16 +1095,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[0] = 5;
-        
-        
-        //Adding these values gives size metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And keywords metrics of:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1244,7 +1124,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictSizeKeywordsFalseOneValue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // Keywords uses every odd metric from 17-77, so we set those with the helper method
         // The size category uses metric 1, so we set those after the array is filled
@@ -1266,16 +1146,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[0] = 5;
-        
-        
-        //Adding these values gives size metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And keywords metrics of:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1305,7 +1175,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictSizeKeywordsFalseBothValues(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // Keywords uses every odd metric from 17-77, so we set those with the helper method
         // The size category uses metrics 12, so we set those after the array is filled
@@ -1327,16 +1197,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
 
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[0] = 5;
-        
-        
-        //Adding these values gives size metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And keywords metrics of:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1366,10 +1226,10 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictComplexityKeywordsTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
-        // Keywords uses every odd metric from 17-77, so we set those with the helper method
-        // The complexity category uses metric 4 so we set those after the array is filled
+        // Keywords uses every odd metric from 17-77 by default, so we set those with the helper method
+        // The complexity category uses metric 4 by default, so we set those after the array is filled
         float[] fvArrayValue1 = generateAndFillArray(1);
         fvArrayValue1[3] = 1;
 
@@ -1384,15 +1244,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives complexity metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And keywords metrics of:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1422,10 +1273,10 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictComplexityKeywordsFalseOneValue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
-        // Keywords uses every odd metric from 17-77, so we set those with the helper method
-        // The complexity category uses metric 4 so we set those after the array is filled
+        // Keywords uses every odd metric from 17-77 by default, so we set those with the helper method
+        // The complexity category uses metric 4 by default, so we set those after the array is filled
         float[] fvArrayValue1 = generateAndFillArray(1);
         fvArrayValue1[3] = 1;
 
@@ -1440,15 +1291,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives complexity metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And keywords metrics of:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1478,10 +1320,10 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictComplexityKeywordsFalseBothValues(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
-        // Keywords uses every odd metric from 17-77, so we set those with the helper method
-        // The complexity category uses metric 4 so we set those after the array is filled
+        // Keywords uses every odd metric from 17-77 by default, so we set those with the helper method
+        // The complexity category uses metric 4 by default, so we set those after the array is filled
         float[] fvArrayValue1 = generateAndFillArray(1);
         fvArrayValue1[3] = 1;
 
@@ -1496,15 +1338,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives complexity metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And keywords metrics of:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1534,7 +1367,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictAllFlagsTrue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // Keywords uses every odd metric from 17-77, so we set those with the helper method
         // The size category uses metric 1, so we set those after the array is filled
@@ -1559,19 +1392,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[0] = 5;
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives size metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And keywords metrics of:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
-        //And complexity metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1602,7 +1422,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictAllFlagsFalseOneValue(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // Keywords uses every odd metric from 17-77, so we set those with the helper method
         // The size category uses metric 1, so we set those after the array is filled
@@ -1627,19 +1447,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[0] = 5;
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives size metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And keywords metrics of:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
-        //And complexity metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1670,7 +1477,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictAllFlagsFalseTwoValues(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // Keywords uses every odd metric from 17-77, so we set those with the helper method
         // The size category uses metrics 12, so we set those after the array is filled
@@ -1695,19 +1502,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[0] = 5;
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives size metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And keywords metrics of:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
-        //And complexity metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
@@ -1738,7 +1532,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     }
 
     public void testPredictAllFlagsFalseThreeValues(){
-        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
+        List<FeaturesVector> fvList = new ArrayList<>();
 
         // Keywords uses every odd metric from 17-77, so we set those with the helper method
         // The size category uses metrics 12, so we set those after the array is filled
@@ -1763,19 +1557,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[0] = 5;
         fvArrayValue5[3] = 5;
-        
-        //Adding these values gives size metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        //And keywords metrics of:
-        // Q1 = 60
-        // Q2 = 90
-        // Q3 = 120
-        //And complexity metrics of:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
 
         fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
         fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());

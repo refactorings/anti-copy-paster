@@ -6,9 +6,7 @@ import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import org.jetbrains.research.anticopypaster.utils.*;
 
-import java.io.*;
 import java.util.List;
-import java.util.Scanner;
 
 
 public class UserSettingsModel extends PredictionModel{

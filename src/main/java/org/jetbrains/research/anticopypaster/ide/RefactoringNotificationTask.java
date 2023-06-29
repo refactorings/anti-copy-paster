@@ -32,7 +32,6 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import static com.intellij.refactoring.extractMethod.ExtractMethodHandler.canUseNewImpl;
 import static com.intellij.refactoring.extractMethod.ExtractMethodHandler.getProcessor;
 import static org.jetbrains.research.anticopypaster.utils.PsiUtil.*;
 
@@ -82,9 +81,7 @@ public class RefactoringNotificationTask extends TimerTask {
                             new SimpleDateFormat("yyyy.MM.dd HH:mm:ss").format(new Date());
                     fr.write("\n-----------------------\nInitial Metric Thresholds: " +
                             timestamp + "\n");
-                }catch(IOException ioe){
-
-                }
+                } catch(IOException ioe) { ioe.printStackTrace(); }
                 settingsModel.logThresholds(logFilePath);
             }
         }
@@ -136,9 +133,7 @@ public class RefactoringNotificationTask extends TimerTask {
                                 fr.write("\n\nSent Notification: False");
                             }
                             fr.write("\nMETRICS\n");
-                        }catch(IOException ioe){
-
-                        }
+                        } catch(IOException ioe) { ioe.printStackTrace(); }
                         settingsModel.logMetrics(logFilePath);
                     }
                     event.setReasonToExtract(AntiCopyPasterBundle.message(

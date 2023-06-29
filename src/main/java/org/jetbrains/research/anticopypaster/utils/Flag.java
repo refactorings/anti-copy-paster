@@ -89,7 +89,6 @@ public abstract class Flag{
                             + proportion * metricValues[l][lowerIndex + 1];
             }
         }
-        System.out.println("Thresholds: " + Arrays.toString(thresholds));
     }
 
     /**
