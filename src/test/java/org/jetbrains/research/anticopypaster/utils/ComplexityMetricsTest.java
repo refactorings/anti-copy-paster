@@ -17,9 +17,10 @@ public class ComplexityMetricsTest {
      * Testing variant of ComplexityMetrics.
      * Stores sensitivity setting locally rather than through IntelliJ project settings.
      */
-    private class TestingComplexityMetrics extends ComplexityMetrics {
-        //Stores a projectSettingsState variable locally to adjust settings for testing
+    private static class TestingComplexityMetrics extends ComplexityMetrics {
+        //Stores a ProjectSettingsState variable locally to adjust settings for testing
         private ProjectSettingsState settings;
+        private int sensitivity;
 
         public TestingComplexityMetrics(List<FeaturesVector> featuresVectorList) {
             super(featuresVectorList, null);
@@ -38,8 +39,6 @@ public class ComplexityMetricsTest {
         }
     }
 
-    private int sensitivity;
-
     private TestingComplexityMetrics complexityMetrics;
     private List<FeaturesVector> fvList;
 
@@ -52,9 +51,8 @@ public class ComplexityMetricsTest {
     public void testSetSelectedMetrics_SelectedMetrics(){
         complexityMetrics = new TestingComplexityMetrics(fvList);
 
-        assertEquals(2, complexityMetrics.selectedMetrics.size());
+        assertEquals(1, complexityMetrics.selectedMetrics.size());
         assertEquals(Feature.AreaPerLine, complexityMetrics.selectedMetrics.get(0));
-        assertEquals(Feature.MethodDeclarationAreaPerLine, complexityMetrics.selectedMetrics.get(1));
     }
     @Test
     public void testSetSelectedMetrics_RequiredMetrics(){
@@ -74,12 +72,11 @@ public class ComplexityMetricsTest {
         complexityMetrics.requiredMetrics.clear();
         complexityMetrics.setSelectedMetrics();
 
-        assertEquals(3, complexityMetrics.selectedMetrics.size());
+        assertEquals(2, complexityMetrics.selectedMetrics.size());
         assertEquals(2, complexityMetrics.requiredMetrics.size());
 
         assertEquals(Feature.Area, complexityMetrics.selectedMetrics.get(0));
         assertEquals(Feature.AreaPerLine, complexityMetrics.selectedMetrics.get(1));
-        assertEquals(Feature.MethodDeclarationAreaPerLine, complexityMetrics.selectedMetrics.get(2));
 
         assertEquals(Feature.Area, complexityMetrics.requiredMetrics.get(0));
         assertEquals(Feature.AreaPerLine, complexityMetrics.requiredMetrics.get(1));

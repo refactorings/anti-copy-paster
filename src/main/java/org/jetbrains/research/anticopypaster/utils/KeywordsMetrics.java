@@ -15,11 +15,12 @@ public class KeywordsMetrics extends Flag{
     }
 
     /**
-     This is a function that will get the keywords metric out of
-     the FeaturesVector that is passed in
+     * Keywords uses features index 16 to 77, according to this scheme:
+         * Even indices: Total keywords
+         * (DEFAULT) Odd indices: Keyword density
+         * Each even-odd pair of indices corresponds to one Java keyword.
      */
     protected void setSelectedMetrics(){
-        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
         int metricNum = 16;
         for(JavaKeywords keyword : JavaKeywords.values()) {

@@ -16,7 +16,7 @@ public class KeywordsMetricsTest {
      * Stores sensitivity setting locally rather than through IntelliJ project settings.
      */
     private static class TestingKeywordsMetrics extends KeywordsMetrics {
-
+        //Stores a ProjectSettingsState variable locally to adjust settings for testing
         private ProjectSettingsState settings;
         private int sensitivity;
 
@@ -25,10 +25,7 @@ public class KeywordsMetricsTest {
         }
 
         @Override
-        public int getSensitivity() {
-            return sensitivity;
-        }
-
+        public int getSensitivity() { return sensitivity; }
         @Override
         protected ProjectSettingsState retrieveCurrentSettings(){
             if (settings == null)

@@ -41,7 +41,7 @@ public class ProjectSettingsState implements PersistentStateComponent<ProjectSet
 
     // Complexity Metric
     public Boolean[] measureComplexityTotal = {false, false}, measureComplexityDensity = {true, true},
-            measureMethodDeclarationArea = {false, false}, measureMethodDeclarationDepthPerLine = {true, false};
+            measureMethodDeclarationArea = {false, false}, measureMethodDeclarationDepthPerLine = {false, false};
 
     // Size Metric
     public Boolean[] measureSizeByLines = {true, true}, measureSizeBySymbols = {false, false}, measureSizeBySymbolsPerLine = {false, false};

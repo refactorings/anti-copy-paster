@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.utils;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
+import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,22 +17,25 @@ public class CouplingMetricsTest {
      * Testing variant of CouplingMetrics.
      * Stores sensitivity setting locally rather than through IntelliJ project settings.
      */
-    private class TestingCouplingMetrics extends CouplingMetrics {
+    private static class TestingCouplingMetrics extends CouplingMetrics {
+        //Stores a ProjectSettingsState variable locally to adjust settings for testing
+        private ProjectSettingsState settings;
+        private int sensitivity;
 
         public TestingCouplingMetrics(List<FeaturesVector> featuresVectorList) {
             super(featuresVectorList, null);
         }
 
         @Override
-        protected ProjectSettingsState retrieveCurrentSettings(){
-            return new ProjectSettingsState();
-        }
-
-        @Override
         public int getSensitivity() {return sensitivity;}
+        @Override
+        protected ProjectSettingsState retrieveCurrentSettings(){
+            if(settings == null){
+                this.settings = new ProjectSettingsState();
+            }
+            return this.settings;
+        }
     }
-
-    private int sensitivity;
 
     private TestingCouplingMetrics couplingMetrics;
     private List<FeaturesVector> fvList;
@@ -42,375 +46,38 @@ public class CouplingMetricsTest {
         this.couplingMetrics = null;
         this.fvList = new ArrayList<>();
     }
-
     @Test
-    public void testIsTriggeredSensitivityZero(){
-        TestingCouplingMetrics couplingMetrics1 = new TestingCouplingMetrics(fvList);
-        ProjectSettingsState settings = couplingMetrics1.retrieveCurrentSettings();
-        settings.measureCouplingDensity[1] = false;
+    public void testSetSelectedMetrics_SelectedMetrics(){
+        couplingMetrics = new TestingCouplingMetrics(fvList);
 
-//        this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        //this.couplingMetrics.sensitivity = 100;
-        assertFalse(couplingMetrics1.isFlagTriggered(null));
-    }
-
-    @Test
-    public void testIsTriggeredSensitivityOneTrue() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        // This category only uses metric 4, which would be index 3 here
-        float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[5] = 1;
-
-        float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[5] = 2;
-
-        float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[5] = 3;
-
-        float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[5] = 4;
-
-        float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[5] = 5;
-
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-        this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        settings.couplingSensitivity = 25;
-
-        float[] passedInArray = new float[78];
-        passedInArray[5] = (float)3;
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertEquals(1, couplingMetrics.selectedMetrics.size());
+        assertEquals(Feature.TotalConnectivityPerLine, couplingMetrics.selectedMetrics.get(0));
     }
     @Test
-    public void testIsTriggeredSensitivityOneFalse() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        // This category only uses metric 4, which would be index 3 here
-        float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[5] = 1;
+    public void testSetSelectedMetrics_RequiredMetrics(){
+        couplingMetrics = new TestingCouplingMetrics(fvList);
 
-        float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[5] = 2;
-
-        float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[5] = 3;
-
-        float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[5] = 4;
-
-        float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[5] = 5;
-
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-        this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        settings.couplingSensitivity = 25;
-
-        float[] passedInArray = new float[78];
-        passedInArray[5] = (float)1;
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertFalse(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
+        assertEquals(1, couplingMetrics.requiredMetrics.size());
+        assertEquals(Feature.TotalConnectivityPerLine, couplingMetrics.requiredMetrics.get(0));
     }
     @Test
-    public void testIsTriggeredSensitivityTwoTrue() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        // This category only uses metric 4, which would be index 3 here
-        float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[5] = 1;
+    public void testSetSelectedMetrics_ChangeSettings(){
+        couplingMetrics = new TestingCouplingMetrics(fvList);
 
-        float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[5] = 2;
+        couplingMetrics.settings.measureCouplingTotal[0] = true;
+        couplingMetrics.settings.measureCouplingTotal[1] = false;
 
-        float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[5] = 3;
+        couplingMetrics.selectedMetrics.clear();
+        couplingMetrics.requiredMetrics.clear();
+        couplingMetrics.setSelectedMetrics();
 
-        float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[5] = 4;
+        assertEquals(2, couplingMetrics.selectedMetrics.size());
+        assertEquals(1, couplingMetrics.requiredMetrics.size());
 
-        float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[5] = 5;
+        assertEquals(Feature.TotalConnectivity, couplingMetrics.selectedMetrics.get(0));
+        assertEquals(Feature.TotalConnectivityPerLine, couplingMetrics.selectedMetrics.get(1));
 
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
+        assertEquals(Feature.TotalConnectivityPerLine, couplingMetrics.requiredMetrics.get(0));
 
-        this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        settings.couplingSensitivity = 50;
-
-        float[] passedInArray = new float[78];
-        passedInArray[5] = (float)5;
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
-    }
-    @Test
-    public void testIsTriggeredSensitivityTwoFalse() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        // This category only uses metric 4, which would be index 3 here
-        float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[5] = 1;
-
-        float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[5] = 2;
-
-        float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[5] = 3;
-
-        float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[5] = 4;
-
-        float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[5] = 5;
-
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-        this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        settings.couplingSensitivity = 50;
-
-        float[] passedInArray = new float[78];
-        passedInArray[5] = (float)1;
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertFalse(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
-    }
-    @Test
-    public void testIsTriggeredSensitivityThreeTrue() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        // This category only uses metric 4, which would be index 3 here
-        float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[5] = 1;
-
-        float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[5] = 2;
-
-        float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[5] = 3;
-
-        float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[5] = 4;
-
-        float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[5] = 5;
-
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-        this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        settings.couplingSensitivity = 75;
-
-        float[] passedInArray = new float[78];
-        passedInArray[5] = (float)5;
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
-    }
-    @Test
-    public void testIsTriggeredSensitivityThreeFalse() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        // This category only uses metric 4, which would be index 3 here
-        float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[5] = 1;
-
-        float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[5] = 2;
-
-        float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[5] = 3;
-
-        float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[5] = 4;
-
-        float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[5] = 5;
-
-        //Adding these values gives:
-        // Q1 = 2
-        // Q2 = 3
-        // Q3 = 4
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-        this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        settings.couplingSensitivity = 75;
-
-        float[] passedInArray = new float[78];
-        passedInArray[5] = (float)5;
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
-    }
-
-    @Test
-    public void testIsTriggeredMultiMetricSensitivityOne() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[5] = 1;
-        fvArrayValue1[6] = 12;
-        fvArrayValue1[7] = 12;
-        fvArrayValue1[8] = 1;
-        fvArrayValue1[9] = 1;
-
-        float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[5] = 2;
-        fvArrayValue2[6] = 5;
-        fvArrayValue2[7] = 5;
-        fvArrayValue2[8] = 2;
-        fvArrayValue2[9] = 1;
-
-        float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[5] = 3;
-        fvArrayValue3[6] = 2;
-        fvArrayValue3[7] = 2;
-        fvArrayValue3[8] = 3;
-        fvArrayValue3[9] = 1;
-
-        float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[5] = 4;
-        fvArrayValue4[6] = 0;
-        fvArrayValue4[7] = 7;
-        fvArrayValue4[8] = 4;
-        fvArrayValue4[9] = 1;
-
-        float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[5] = 5;
-        fvArrayValue5[6] = 4;
-        fvArrayValue5[7] = 24;
-        fvArrayValue5[8] = 5;
-        fvArrayValue5[9] = 1;
-
-        //Adding these values gives:
-        // Q1 = 2, 2, 5, 2, 1
-        // Q2 = 3, 4, 7, 3, 1
-        // Q3 = 4, 5,12, 4, 1
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-        this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        settings.couplingSensitivity = 75;
-
-        float[] passedInArray = new float[78];
-        passedInArray[5] = 3;
-        passedInArray[6] = 1;
-        passedInArray[7] = 5;
-        passedInArray[8] = 10;
-        passedInArray[9] = 0;
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertTrue(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
-    }
-    @Test
-    public void testIsNotTriggeredMultiMetricSensitivityOne() {
-        Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
-        float[] fvArrayValue1 = new float[78];
-        fvArrayValue1[5] = 1;
-        fvArrayValue1[6] = 12;
-        fvArrayValue1[7] = 12;
-        fvArrayValue1[8] = 1;
-        fvArrayValue1[9] = 1;
-
-        float[] fvArrayValue2 = new float[78];
-        fvArrayValue2[5] = 2;
-        fvArrayValue2[6] = 5;
-        fvArrayValue2[7] = 5;
-        fvArrayValue2[8] = 2;
-        fvArrayValue2[9] = 1;
-
-        float[] fvArrayValue3 = new float[78];
-        fvArrayValue3[5] = 3;
-        fvArrayValue3[6] = 2;
-        fvArrayValue3[7] = 2;
-        fvArrayValue3[8] = 3;
-        fvArrayValue3[9] = 1;
-
-        float[] fvArrayValue4 = new float[78];
-        fvArrayValue4[5] = 4;
-        fvArrayValue4[6] = 0;
-        fvArrayValue4[7] = 7;
-        fvArrayValue4[8] = 4;
-        fvArrayValue4[9] = 1;
-
-        float[] fvArrayValue5 = new float[78];
-        fvArrayValue5[5] = 5;
-        fvArrayValue5[6] = 4;
-        fvArrayValue5[7] = 24;
-        fvArrayValue5[8] = 5;
-        fvArrayValue5[9] = 1;
-
-        //Adding these values gives:
-        // Q1 = 2, 2, 5, 2, 1
-        // Q2 = 3, 4, 7, 3, 1
-        // Q3 = 4, 5,12, 4, 1
-        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue2).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue3).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue4).getMock());
-        fvList.add(new FeaturesVectorMock(fvArrayValue5).getMock());
-
-        this.couplingMetrics = new TestingCouplingMetrics(fvList);
-        settings.couplingSensitivity = 75;
-
-        float[] passedInArray = new float[78];
-        passedInArray[5] = 1;
-        passedInArray[6] = 1;
-        passedInArray[7] = 4;
-        passedInArray[8] = 1;
-        passedInArray[9] = 0;
-        FeaturesVectorMock passedInFv = new FeaturesVectorMock(passedInArray);
-
-        assertFalse(couplingMetrics.isFlagTriggered(passedInFv.getMock()));
     }
 }

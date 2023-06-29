@@ -1,12 +1,9 @@
 package org.jetbrains.research.anticopypaster.utils;
 
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class SizeMetrics extends Flag{
@@ -15,9 +12,17 @@ public class SizeMetrics extends Flag{
         super(featuresVectorList, project);
     }
 
+    /**
+     * Size uses six features, according to this scheme:
+        * (DEFAULT) Feature index 0: Total lines of code
+        * Feature index 11: Method declaration lines of code
+        * Feature index 1: Total symbols
+        * Feature index 12: Method declaration symbols
+        * Feature index 2: Symbols per line
+        * Feature index 13: Method declaration symbols per line
+     */
     @Override
     protected void setSelectedMetrics(){
-        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
         ProjectSettingsState settings = retrieveCurrentSettings();
 
         if (settings.measureSizeByLines[0]) {

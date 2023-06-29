@@ -1,7 +1,6 @@
 package org.jetbrains.research.anticopypaster.utils;
 
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
@@ -15,10 +14,11 @@ public class ComplexityMetrics extends Flag{
     }
 
     /**
-     This is a function that will get the complexity metric out of
-     the FeaturesVector that is passed in
-     Complexity only uses Metrics #4 and #5, so getting the value at index 3 or 4 (depending on user settings)
-     from the fv array gives us the right value
+     * Complexity uses four features, according to this scheme:
+         * Feature index 3: Area
+         * (DEFAULT) Feature index 4: Area per line
+         * Feature index 14: Method declaration area
+         * Feature index 15: Method declaration depth per line
      */
 
     @Override
