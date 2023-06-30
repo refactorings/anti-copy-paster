@@ -19,15 +19,9 @@ public class KeywordsMetricsTest {
 
         // Stores a ProjectSettingsState variable locally to adjust settings for testing
         private ProjectSettingsState settings;
-        private int sensitivity;
 
         public TestingKeywordsMetrics(List<FeaturesVector> featuresVectorList) {
             super(featuresVectorList, null);
-        }
-
-        @Override
-        public int getSensitivity() {
-            return sensitivity;
         }
 
         @Override
@@ -83,7 +77,7 @@ public class KeywordsMetricsTest {
     @Test
     public void testNullInputFalse(){
         TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(null);
-        keywordsMetrics.sensitivity = 1;
+        keywordsMetrics.settings.keywordsSensitivity = 1;
         assertFalse(keywordsMetrics.isFlagTriggered(null));
     }
 
@@ -98,7 +92,7 @@ public class KeywordsMetricsTest {
         );
 
         TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        keywordsMetrics.sensitivity = 1;
+        keywordsMetrics.settings.keywordsSensitivity = 1;
 
         assertTrue(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
     }
@@ -114,7 +108,7 @@ public class KeywordsMetricsTest {
         );
 
         TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        keywordsMetrics.sensitivity = 1;
+        keywordsMetrics.settings.keywordsSensitivity = 1;
 
         assertFalse(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(1)));
     }
@@ -130,7 +124,7 @@ public class KeywordsMetricsTest {
         );
 
         TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        keywordsMetrics.sensitivity = 50;
+        keywordsMetrics.settings.keywordsSensitivity = 50;
 
         assertTrue(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
@@ -146,7 +140,7 @@ public class KeywordsMetricsTest {
         );
 
         TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        keywordsMetrics.sensitivity = 50;
+        keywordsMetrics.settings.keywordsSensitivity = 50;
 
         assertFalse(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(2)));
     }
@@ -162,7 +156,7 @@ public class KeywordsMetricsTest {
         );
 
         TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        keywordsMetrics.sensitivity = 75;
+        keywordsMetrics.settings.keywordsSensitivity = 75;
 
         assertTrue(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
@@ -178,7 +172,7 @@ public class KeywordsMetricsTest {
         );
 
         TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        keywordsMetrics.sensitivity = 75;
+        keywordsMetrics.settings.keywordsSensitivity = 75;
 
         assertFalse(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
     }
@@ -194,7 +188,7 @@ public class KeywordsMetricsTest {
         );
 
         TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        keywordsMetrics.sensitivity = 100;
+        keywordsMetrics.settings.keywordsSensitivity = 100;
 
         assertTrue(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(6)));
     }
@@ -210,7 +204,7 @@ public class KeywordsMetricsTest {
         );
 
         TestingKeywordsMetrics keywordsMetrics = new TestingKeywordsMetrics(fvList);
-        keywordsMetrics.sensitivity = 100;
+        keywordsMetrics.settings.keywordsSensitivity = 100;
 
         assertFalse(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }

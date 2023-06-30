@@ -19,15 +19,9 @@ public class ComplexityMetricsTest {
 
         // Stores a ProjectSettingsState variable locally to adjust settings for testing
         private ProjectSettingsState settings;
-        private int sensitivity;
 
         public TestingComplexityMetrics(List<FeaturesVector> featuresVectorList) {
             super(featuresVectorList, null);
-        }
-
-        @Override
-        public int getSensitivity() {
-            return sensitivity;
         }
 
         @Override

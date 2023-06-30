@@ -17,15 +17,9 @@ public class CouplingMetricsTest {
 
         // Stores a ProjectSettingsState variable locally to adjust settings for testing
         private ProjectSettingsState settings;
-        private int sensitivity;
 
         public TestingCouplingMetrics(List<FeaturesVector> featuresVectorList) {
             super(featuresVectorList, null);
-        }
-
-        @Override
-        public int getSensitivity() {
-            return sensitivity;
         }
 
         @Override

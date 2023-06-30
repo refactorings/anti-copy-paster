@@ -19,15 +19,9 @@ public class SizeMetricsTest {
 
         // Stores a ProjectSettingsState variable locally to adjust settings for testing
         private ProjectSettingsState settings;
-        private int sensitivity;
 
         public TestingSizeMetrics(List<FeaturesVector> featuresVectorList) {
             super(featuresVectorList, null);
-        }
-
-        @Override
-        public int getSensitivity() {
-            return sensitivity;
         }
 
         @Override
