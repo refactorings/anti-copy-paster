@@ -62,31 +62,32 @@ public abstract class Flag{
      */
     public void calculateThreshold() {
         thresholds = new float[numFeatures];
-        if (featuresVectorList == null || featuresVectorList.size() == 0) {
-            return;
-        } else if (featuresVectorList.size() == 1) {
-            thresholds = getMetric(featuresVectorList.get(0));
-        } else {
-            float[][] metricValues = new float[numFeatures][featuresVectorList.size()];
-            for (int i = 0; i < featuresVectorList.size(); i++) {
-                float[] metric = getMetric(featuresVectorList.get(i));
-                for (int j = 0; j < numFeatures; j++) {
-                    metricValues[j][i] = metric[j];
-                }
-            }
-            for (float[] metricValue : metricValues)
-                Arrays.sort(metricValue);
-
-            if (getSensitivity() == 100) {
-                for (int k = 0; k < numFeatures; k++)
-                    thresholds[k] = metricValues[k][metricValues[k].length - 1];
+        if (featuresVectorList != null && featuresVectorList.size() != 0) {
+            // FeaturesVector list exists and has at least one element.
+            if (featuresVectorList.size() == 1) {
+                thresholds = getMetric(featuresVectorList.get(0));
             } else {
-                double position = (double) getSensitivity() * (featuresVectorList.size() - 1) / 100;
-                int lowerIndex = (int) Math.floor(position);
-                float proportion = (float) position % 1;
-                for (int l = 0; l < numFeatures; l++)
-                    thresholds[l] = (1 - proportion) * metricValues[l][lowerIndex]
-                            + proportion * metricValues[l][lowerIndex + 1];
+                float[][] metricValues = new float[numFeatures][featuresVectorList.size()];
+                for (int i = 0; i < featuresVectorList.size(); i++) {
+                    float[] metric = getMetric(featuresVectorList.get(i));
+                    for (int j = 0; j < numFeatures; j++) {
+                        metricValues[j][i] = metric[j];
+                    }
+                }
+                for (float[] metricValue : metricValues)
+                    Arrays.sort(metricValue);
+
+                if (getSensitivity() == 100) {
+                    for (int k = 0; k < numFeatures; k++)
+                        thresholds[k] = metricValues[k][metricValues[k].length - 1];
+                } else {
+                    double position = (double) getSensitivity() * (featuresVectorList.size() - 1) / 100;
+                    int lowerIndex = (int) Math.floor(position);
+                    float proportion = (float) position % 1;
+                    for (int l = 0; l < numFeatures; l++)
+                        thresholds[l] = (1 - proportion) * metricValues[l][lowerIndex]
+                                + proportion * metricValues[l][lowerIndex + 1];
+                }
             }
         }
     }
