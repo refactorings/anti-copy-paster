@@ -61,18 +61,15 @@ public class UserSettingsModel extends PredictionModel{
      */
     @Override
     public float predict(FeaturesVector featuresVector) {
-
-        if (sizeMetrics == null || complexityMetrics == null || keywordsMetrics == null || couplingMetrics == null){
+        if (sizeMetrics == null || complexityMetrics == null || keywordsMetrics == null || couplingMetrics == null)
             return 0;
-        }
 
-        boolean sizeTriggered = this.sizeMetrics.isFlagTriggered(featuresVector);
-        boolean complexityTriggered = this.complexityMetrics.isFlagTriggered(featuresVector);
-        boolean keywordsTriggered = this.keywordsMetrics.isFlagTriggered(featuresVector);
-        boolean couplingTriggered = this.couplingMetrics.isFlagTriggered(featuresVector);
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
 
-        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
-        ProjectSettingsState settings = project.getService(ProjectSettingsState.class);
+        boolean sizeTriggered = settings.sizeEnabled && sizeMetrics.isFlagTriggered(featuresVector);
+        boolean complexityTriggered = settings.complexityEnabled && complexityMetrics.isFlagTriggered(featuresVector);
+        boolean keywordsTriggered = settings.keywordsEnabled && keywordsMetrics.isFlagTriggered(featuresVector);
+        boolean couplingTriggered = settings.couplingEnabled && couplingMetrics.isFlagTriggered(featuresVector);
 
         boolean shouldNotify = sizeTriggered || complexityTriggered || keywordsTriggered || couplingTriggered;
         if (shouldNotify) {
@@ -85,8 +82,7 @@ public class UserSettingsModel extends PredictionModel{
             else if (!couplingTriggered && settings.couplingRequired)
                 shouldNotify = false;
         }
-        //System.out.println("Size: " + sizeTriggered + " | Complexity: " + complexityTriggered + " | Keywords: " + keywordsTriggered + " | Coupling: " + couplingTriggered);
-        //System.out.println(complexityMetrics.getMetricQ1() + ", " + complexityMetrics.getMetricQ2() + ", " + complexityMetrics.getMetricQ3());
+
         return shouldNotify ? 1 : 0;
     }
 

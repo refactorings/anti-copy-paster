@@ -3,6 +3,7 @@ package org.jetbrains.research.anticopypaster.config;
 import javax.swing.*;
 import com.intellij.openapi.project.Project;
 
+import com.intellij.ui.JBIntSpinner;
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 
 public class ProjectSettingsComponent {
@@ -11,16 +12,19 @@ public class ProjectSettingsComponent {
     private JRadioButton useModelControlRadioButton;
     private JRadioButton useManualControlRadioButton;
     private JSlider keywordsSlider;
-    private JCheckBox keywordsCheckBox;
+    private JCheckBox keywordsEnabledCheckBox;
+    private JCheckBox keywordsRequiredCheckBox;
     private JSlider couplingSlider;
-    private JCheckBox couplingCheckBox;
+    private JCheckBox couplingEnabledCheckBox;
+    private JCheckBox couplingRequiredCheckBox;
     private JSlider sizeSlider;
-    private JCheckBox sizeCheckBox;
+    private JCheckBox sizeEnabledCheckBox;
+    private JCheckBox sizeRequiredCheckBox;
     private JSlider complexitySlider;
-    private JCheckBox complexityCheckBox;
+    private JCheckBox complexityEnabledCheckBox;
+    private JCheckBox complexityRequiredCheckBox;
     private JButton advancedSettingsButton;
     private JSpinner minimumMethodSelector;
-    private JTextPane methodsMustContainDuplicateTextPane;
 
     public ProjectSettingsComponent(Project project) {
         advancedSettingsButton.addActionListener(e -> {
@@ -59,12 +63,20 @@ public class ProjectSettingsComponent {
         keywordsSlider.setValue(sensitivity);
     }
 
+    public boolean getKeywordsEnabled() {
+        return keywordsEnabledCheckBox.isSelected();
+    }
+
+    public void setKeywordsEnabled(boolean enabled) {
+        keywordsEnabledCheckBox.setSelected(enabled);
+    }
+
     public boolean getKeywordsRequired() {
-        return keywordsCheckBox.isSelected();
+        return keywordsRequiredCheckBox.isSelected();
     }
 
     public void setKeywordsRequired(boolean required) {
-        keywordsCheckBox.setSelected(required);
+        keywordsRequiredCheckBox.setSelected(required);
     }
 
     public int getCouplingSensitivity() {
@@ -75,12 +87,20 @@ public class ProjectSettingsComponent {
         couplingSlider.setValue(sensitivity);
     }
 
+    public boolean getCouplingEnabled() {
+        return couplingEnabledCheckBox.isSelected();
+    }
+
+    public void setCouplingEnabled(boolean enabled) {
+        couplingEnabledCheckBox.setSelected(enabled);
+    }
+
     public boolean getCouplingRequired() {
-        return couplingCheckBox.isSelected();
+        return couplingRequiredCheckBox.isSelected();
     }
 
     public void setCouplingRequired(boolean required) {
-        couplingCheckBox.setSelected(required);
+        couplingRequiredCheckBox.setSelected(required);
     }
 
     public int getSizeSensitivity() {
@@ -91,12 +111,20 @@ public class ProjectSettingsComponent {
         sizeSlider.setValue(sensitivity);
     }
 
+    public boolean getSizeEnabled() {
+        return sizeEnabledCheckBox.isSelected();
+    }
+
+    public void setSizeEnabled(boolean enabled) {
+        sizeEnabledCheckBox.setSelected(enabled);
+    }
+
     public boolean getSizeRequired() {
-        return sizeCheckBox.isSelected();
+        return sizeRequiredCheckBox.isSelected();
     }
 
     public void setSizeRequired(boolean required) {
-        sizeCheckBox.setSelected(required);
+        sizeRequiredCheckBox.setSelected(required);
     }
 
     public int getComplexitySensitivity() {
@@ -107,16 +135,23 @@ public class ProjectSettingsComponent {
         complexitySlider.setValue(sensitivity);
     }
 
+    public boolean getComplexityEnabled() {
+        return complexityEnabledCheckBox.isSelected();
+    }
+
+    public void setComplexityEnabled(boolean enabled) {
+        complexityEnabledCheckBox.setSelected(enabled);
+    }
+
     public boolean getComplexityRequired() {
-        return complexityCheckBox.isSelected();
+        return complexityRequiredCheckBox.isSelected();
     }
 
     public void setComplexityRequired(boolean required) {
-        complexityCheckBox.setSelected(required);
+        complexityRequiredCheckBox.setSelected(required);
     }
 
     private void createUIComponents() {
-        SpinnerModel spinnerModel = new SpinnerNumberModel(2, 1, Integer.MAX_VALUE, 1);
-        minimumMethodSelector = new JSpinner(spinnerModel);
+        minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);
     }
 }

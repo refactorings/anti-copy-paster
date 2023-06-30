@@ -20,7 +20,8 @@ public class ProjectSettingsState implements PersistentStateComponent<ProjectSet
     // PRIMARY SETTINGS STATES
     public boolean useMLModel = false;
     public int minimumDuplicateMethods = 2;
-    public boolean keywordsRequired = true, couplingRequired = true, sizeRequired = true, complexityRequired = true;
+    public boolean keywordsEnabled = true, couplingEnabled = true, sizeEnabled = true, complexityEnabled = true,
+            keywordsRequired = true,couplingRequired = true, sizeRequired = true, complexityRequired = true;
     public int keywordsSensitivity = 50, couplingSensitivity = 50, sizeSensitivity = 50, complexitySensitivity = 50;
 
     // ADVANCED SETTINGS STATES

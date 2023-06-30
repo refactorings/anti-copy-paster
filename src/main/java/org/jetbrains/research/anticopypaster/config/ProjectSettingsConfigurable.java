@@ -40,12 +40,16 @@ public class ProjectSettingsConfigurable implements Configurable {
         boolean modified = settingsComponent.getUseMLModel() != settings.useMLModel;
         modified |= settingsComponent.getMinimumDuplicateMethods() != settings.minimumDuplicateMethods;
         modified |= settingsComponent.getKeywordsSensitivity() != settings.keywordsSensitivity;
+        modified |= settingsComponent.getKeywordsEnabled() != settings.keywordsEnabled;
         modified |= settingsComponent.getKeywordsRequired() != settings.keywordsRequired;
         modified |= settingsComponent.getCouplingSensitivity() != settings.couplingSensitivity;
+        modified |= settingsComponent.getCouplingEnabled() != settings.couplingEnabled;
         modified |= settingsComponent.getCouplingRequired() != settings.couplingRequired;
         modified |= settingsComponent.getSizeSensitivity() != settings.sizeSensitivity;
+        modified |= settingsComponent.getSizeEnabled() != settings.sizeEnabled;
         modified |= settingsComponent.getSizeRequired() != settings.sizeRequired;
         modified |= settingsComponent.getComplexitySensitivity() != settings.complexitySensitivity;
+        modified |= settingsComponent.getComplexityEnabled() != settings.complexityEnabled;
         modified |= settingsComponent.getComplexityRequired() != settings.complexityRequired;
         return modified;
     }
@@ -56,12 +60,16 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.useMLModel = settingsComponent.getUseMLModel();
         settings.minimumDuplicateMethods = settingsComponent.getMinimumDuplicateMethods();
         settings.keywordsSensitivity = settingsComponent.getKeywordsSensitivity();
+        settings.keywordsEnabled = settingsComponent.getKeywordsEnabled();
         settings.keywordsRequired = settingsComponent.getKeywordsRequired();
         settings.couplingSensitivity = settingsComponent.getCouplingSensitivity();
+        settings.couplingEnabled = settingsComponent.getCouplingEnabled();
         settings.couplingRequired = settingsComponent.getCouplingRequired();
         settings.sizeSensitivity = settingsComponent.getSizeSensitivity();
+        settings.sizeEnabled = settingsComponent.getSizeEnabled();
         settings.sizeRequired = settingsComponent.getSizeRequired();
         settings.complexitySensitivity = settingsComponent.getComplexitySensitivity();
+        settings.complexityEnabled = settingsComponent.getComplexityEnabled();
         settings.complexityRequired = settingsComponent.getComplexityRequired();
     }
 
@@ -71,12 +79,16 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setUseMLModel(settings.useMLModel);
         settingsComponent.setMinimumDuplicateMethods(settings.minimumDuplicateMethods);
         settingsComponent.setKeywordsSensitivity(settings.keywordsSensitivity);
+        settingsComponent.setKeywordsEnabled(settings.keywordsEnabled);
         settingsComponent.setKeywordsRequired(settings.keywordsRequired);
         settingsComponent.setCouplingSensitivity(settings.couplingSensitivity);
+        settingsComponent.setCouplingEnabled(settings.couplingEnabled);
         settingsComponent.setCouplingRequired(settings.couplingRequired);
         settingsComponent.setSizeSensitivity(settings.sizeSensitivity);
+        settingsComponent.setSizeEnabled(settings.sizeEnabled);
         settingsComponent.setSizeRequired(settings.sizeRequired);
         settingsComponent.setComplexitySensitivity(settings.complexitySensitivity);
+        settingsComponent.setComplexityEnabled(settings.complexityEnabled);
         settingsComponent.setComplexityRequired(settings.complexityRequired);
     }
 
