@@ -13,17 +13,16 @@ public class SizeMetricsTest {
 
     /**
      * Testing variant of SizeMetrics.
-     * Stores sensitivity setting locally rather than through IntelliJ project settings.
+     * Stores project settings locally rather than through IntelliJ systems.
      */
-
     private static class TestingSizeMetrics extends SizeMetrics {
 
+        // Stores a ProjectSettingsState variable locally to adjust settings for testing
         private ProjectSettingsState settings;
         private int sensitivity;
 
         public TestingSizeMetrics(List<FeaturesVector> featuresVectorList) {
             super(featuresVectorList, null);
-            this.settings = new ProjectSettingsState();
         }
 
         @Override

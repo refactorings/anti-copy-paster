@@ -15,10 +15,11 @@ public class ComplexityMetricsTest {
 
     /**
      * Testing variant of ComplexityMetrics.
-     * Stores sensitivity setting locally rather than through IntelliJ project settings.
+     * Stores project settings locally rather than through IntelliJ systems.
      */
     private static class TestingComplexityMetrics extends ComplexityMetrics {
-        //Stores a ProjectSettingsState variable locally to adjust settings for testing
+
+        // Stores a ProjectSettingsState variable locally to adjust settings for testing
         private ProjectSettingsState settings;
         private int sensitivity;
 
@@ -30,12 +31,12 @@ public class ComplexityMetricsTest {
         public int getSensitivity() {
             return sensitivity;
         }
+
         @Override
         protected ProjectSettingsState retrieveCurrentSettings(){
-            if(settings == null){
-                this.settings = new ProjectSettingsState();
-            }
-            return this.settings;
+            if (settings == null)
+                settings = new ProjectSettingsState();
+            return settings;
         }
     }
 
@@ -80,7 +81,5 @@ public class ComplexityMetricsTest {
 
         assertEquals(Feature.Area, complexityMetrics.requiredMetrics.get(0));
         assertEquals(Feature.AreaPerLine, complexityMetrics.requiredMetrics.get(1));
-
     }
-    
 }
