@@ -37,6 +37,16 @@ public class SizeMetricsTest {
             return settings;
         }
     }
+    private FeaturesVector generateFVMForKeywordsByValue(float value){
+        float[] floatArr = new float[78];
+        for (int i = 0; i < 4; i++ ) {
+            floatArr[i] = value;
+        }
+        for(int i = 11; i < 14; i++){
+            floatArr[i] = value;
+        }
+        return new FeaturesVectorMock(floatArr).getMock();
+    }
 
     @Test
     public void testSetSelectedMetrics_DefaultSettings() {
@@ -69,6 +79,140 @@ public class SizeMetricsTest {
 
         assertEquals(Feature.TotalLinesOfCode, sizeMetrics.requiredMetrics.get(0));
         assertEquals(Feature.TotalSymbols, sizeMetrics.requiredMetrics.get(1));
+    }
+    @Test
+    public void testNullInputFalse(){
+        TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(null);
+        sizeMetrics.sensitivity = 1;
+        assertFalse(sizeMetrics.isFlagTriggered(null));
+    }
+
+    @Test
+    public void testMinimumThresholdTrue(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
+
+        TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
+        sizeMetrics.sensitivity = 1;
+
+        assertTrue(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
+    }
+
+    @Test
+    public void testMinimumThresholdFalse(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
+
+        TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
+        sizeMetrics.sensitivity = 1;
+
+        assertFalse(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(1)));
+    }
+
+    @Test
+    public void testModerateThresholdTrue(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
+
+        TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
+        sizeMetrics.sensitivity = 50;
+
+        assertTrue(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
+    }
+
+    @Test
+    public void testModerateThresholdFalse(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
+
+        TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
+        sizeMetrics.sensitivity = 50;
+
+        assertFalse(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(2)));
+    }
+
+    @Test
+    public void testHighThresholdTrue(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
+
+        TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
+        sizeMetrics.sensitivity = 75;
+
+        assertTrue(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
+    }
+
+    @Test
+    public void testHighThresholdFalse(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
+
+        TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
+        sizeMetrics.sensitivity = 75;
+
+        assertFalse(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
+    }
+
+    @Test
+    public void testMaximumThresholdTrue(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
+
+        TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
+        sizeMetrics.sensitivity = 100;
+
+        assertTrue(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(6)));
+    }
+
+    @Test
+    public void testMaximumThresholdFalse(){
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
+
+        TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
+        sizeMetrics.sensitivity = 100;
+
+        assertFalse(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
 }
 
