@@ -32,8 +32,26 @@ public class ProjectSettingsComponent {
             boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
             advancedDialog.saveSettings(displayAndResolveAdvanced);
         });
-    }
+        addConditionallyEnabledMetricGroup(keywordsEnabledCheckBox,keywordsSlider,keywordsRequiredCheckBox);
+        addConditionallyEnabledMetricGroup(couplingEnabledCheckBox,couplingSlider,couplingRequiredCheckBox);
+        addConditionallyEnabledMetricGroup(complexityEnabledCheckBox, complexitySlider, complexityRequiredCheckBox);
+        addConditionallyEnabledMetricGroup(sizeEnabledCheckBox, sizeSlider, sizeRequiredCheckBox);
 
+    }
+    private void addConditionallyEnabledMetricGroup(JCheckBox ind, JSlider depslid, JCheckBox dep) {
+        ind.addActionListener(e -> {
+                    if (ind.isSelected()) {
+                        dep.setEnabled(true);
+                        depslid.setEnabled(true);
+                        dep.setSelected(true);
+                    } else {
+                        dep.setSelected(false);
+                        depslid.setEnabled(false);
+                        dep.setEnabled(false);
+                    }
+                }
+        );
+    }
     public JPanel getPanel() {
         return mainPanel;
     }
