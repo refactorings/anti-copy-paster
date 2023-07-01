@@ -2,10 +2,12 @@ package org.jetbrains.research.anticopypaster.utils;
 
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+
 import java.util.List;
+
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
-import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
 public class CouplingMetricsTest {
 
@@ -29,7 +31,8 @@ public class CouplingMetricsTest {
             return settings;
         }
     }
-    private FeaturesVector generateFVMForKeywordsByValue(float value){
+
+    private FeaturesVector generateFVMForCouplingByValue(float value) {
         float[] floatArr = new float[78];
         for (int i = 5; i <= 10; i++ ) {
             floatArr[i] = value;
@@ -71,140 +74,151 @@ public class CouplingMetricsTest {
         assertEquals(1, couplingMetrics.requiredMetrics.size());
         assertEquals(Feature.TotalConnectivityPerLine, couplingMetrics.requiredMetrics.get(0));
     }
+
     @Test
     public void testNullInputFalse(){
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(null);
         couplingMetrics.settings.couplingSensitivity = 1;
         assertFalse(couplingMetrics.isFlagTriggered(null));
     }
+
     @Test
     public void testMinimumSensitivityTrue(){
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
         couplingMetrics.settings.couplingSensitivity = 1;
-        assertTrue(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
+        assertTrue(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(3)));
     }
+
     @Test
     public void testMinimumSensitivityFalse(){
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
         couplingMetrics.settings.couplingSensitivity = 1;
-        assertFalse(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(1)));
+        assertFalse(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(1)));
     }
+
     @Test
     public void testLowerSensitivityTrue(){
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
         couplingMetrics.settings.couplingSensitivity = 25;
-        assertTrue(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
+        assertTrue(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(3)));
     }
+
     @Test
     public void testLowerSensitivityFalse(){
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
         couplingMetrics.settings.couplingSensitivity = 25;
-        assertFalse(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(2)));
+        assertFalse(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(2)));
     }
+
     @Test
     public void testModerateSensitivityTrue(){
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
         couplingMetrics.settings.couplingSensitivity = 50;
-        assertTrue(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(4)));
+        assertTrue(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(4)));
     }
+
     @Test
     public void testModerateSensitivityFalse(){
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
         couplingMetrics.settings.couplingSensitivity= 50;
-        assertFalse(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(2)));
+        assertFalse(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(2)));
     }
+
     @Test
     public void testHighSensitivityTrue(){
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
         couplingMetrics.settings.couplingSensitivity = 75;
-        assertTrue(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
+        assertTrue(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(5)));
     }
+
     @Test
     public void testHighSensitivityFalse(){
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
         couplingMetrics.settings.couplingSensitivity = 75;
-        assertFalse(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(4)));
+        assertFalse(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(4)));
     }
+
     @Test
     public void testMaximumSensitivityTrue(){
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
         couplingMetrics.settings.couplingSensitivity = 100;
-        assertTrue(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(6)));
+        assertTrue(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(6)));
     }
+
     @Test
     public void testMaximumSensitivityFalse(){
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
         couplingMetrics.settings.couplingSensitivity = 100;
-        assertFalse(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
+        assertFalse(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(5)));
     }
 }

@@ -25,13 +25,13 @@ public class ComplexityMetricsTest {
         }
 
         @Override
-        protected ProjectSettingsState retrieveCurrentSettings(){
+        protected ProjectSettingsState retrieveCurrentSettings() {
             if (settings == null)
                 settings = new ProjectSettingsState();
             return settings;
         }
     }
-    private FeaturesVector generateFVMForKeywordsByValue(float value){
+    private FeaturesVector generateFVMForComplexityByValue(float value) {
         float[] floatArr = new float[78];
         floatArr[3] = value;
         floatArr[4] = value;
@@ -41,21 +41,23 @@ public class ComplexityMetricsTest {
     }
 
     @Test
-    public void testSetSelectedMetrics_SelectedMetrics(){
+    public void testSetSelectedMetrics_SelectedMetrics() {
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(null);
 
         assertEquals(1, complexityMetrics.selectedMetrics.size());
         assertEquals(Feature.AreaPerLine, complexityMetrics.selectedMetrics.get(0));
     }
+
     @Test
-    public void testSetSelectedMetrics_RequiredMetrics(){
+    public void testSetSelectedMetrics_RequiredMetrics() {
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(null);
 
         assertEquals(1, complexityMetrics.requiredMetrics.size());
         assertEquals(Feature.AreaPerLine, complexityMetrics.requiredMetrics.get(0));
     }
+
     @Test
-    public void testSetSelectedMetrics_ChangeSettings(){
+    public void testSetSelectedMetrics_ChangeSettings() {
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(null);
 
         complexityMetrics.settings.measureComplexityTotal[0] = true;
@@ -74,138 +76,139 @@ public class ComplexityMetricsTest {
         assertEquals(Feature.Area, complexityMetrics.requiredMetrics.get(0));
         assertEquals(Feature.AreaPerLine, complexityMetrics.requiredMetrics.get(1));
     }
+
     @Test
-    public void testNullInputFalse(){
+    public void testNullInputFalse() {
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(  null);
         complexityMetrics.settings.complexitySensitivity = 1;
         assertFalse(complexityMetrics.isFlagTriggered(null));
     }
 
     @Test
-    public void testMinimumThresholdTrue(){
+    public void testMinimumThresholdTrue() {
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForComplexityByValue(1),
+                generateFVMForComplexityByValue(2),
+                generateFVMForComplexityByValue(3),
+                generateFVMForComplexityByValue(4),
+                generateFVMForComplexityByValue(5)
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
         complexityMetrics.settings.complexitySensitivity = 1;
 
-        assertTrue(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
+        assertTrue(complexityMetrics.isFlagTriggered(generateFVMForComplexityByValue(3)));
     }
 
     @Test
-    public void testMinimumThresholdFalse(){
+    public void testMinimumThresholdFalse() {
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForComplexityByValue(1),
+                generateFVMForComplexityByValue(2),
+                generateFVMForComplexityByValue(3),
+                generateFVMForComplexityByValue(4),
+                generateFVMForComplexityByValue(5)
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
         complexityMetrics.settings.complexitySensitivity = 1;
 
-        assertFalse(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(1)));
+        assertFalse(complexityMetrics.isFlagTriggered(generateFVMForComplexityByValue(1)));
     }
 
     @Test
-    public void testModerateThresholdTrue(){
+    public void testModerateThresholdTrue() {
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForComplexityByValue(1),
+                generateFVMForComplexityByValue(2),
+                generateFVMForComplexityByValue(3),
+                generateFVMForComplexityByValue(4),
+                generateFVMForComplexityByValue(5)
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
         complexityMetrics.settings.complexitySensitivity = 50;
 
-        assertTrue(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
+        assertTrue(complexityMetrics.isFlagTriggered(generateFVMForComplexityByValue(5)));
     }
 
     @Test
-    public void testModerateThresholdFalse(){
+    public void testModerateThresholdFalse() {
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForComplexityByValue(1),
+                generateFVMForComplexityByValue(2),
+                generateFVMForComplexityByValue(3),
+                generateFVMForComplexityByValue(4),
+                generateFVMForComplexityByValue(5)
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
         complexityMetrics.settings.complexitySensitivity = 50;
 
-        assertFalse(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(2)));
+        assertFalse(complexityMetrics.isFlagTriggered(generateFVMForComplexityByValue(2)));
     }
 
     @Test
-    public void testHighThresholdTrue(){
+    public void testHighThresholdTrue() {
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForComplexityByValue(1),
+                generateFVMForComplexityByValue(2),
+                generateFVMForComplexityByValue(3),
+                generateFVMForComplexityByValue(4),
+                generateFVMForComplexityByValue(5)
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
         complexityMetrics.settings.complexitySensitivity = 75;
 
-        assertTrue(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
+        assertTrue(complexityMetrics.isFlagTriggered(generateFVMForComplexityByValue(5)));
     }
 
     @Test
-    public void testHighThresholdFalse(){
+    public void testHighThresholdFalse() {
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForComplexityByValue(1),
+                generateFVMForComplexityByValue(2),
+                generateFVMForComplexityByValue(3),
+                generateFVMForComplexityByValue(4),
+                generateFVMForComplexityByValue(5)
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
         complexityMetrics.settings.complexitySensitivity = 75;
 
-        assertFalse(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
+        assertFalse(complexityMetrics.isFlagTriggered(generateFVMForComplexityByValue(3)));
     }
 
     @Test
-    public void testMaximumThresholdTrue(){
+    public void testMaximumThresholdTrue() {
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForComplexityByValue(1),
+                generateFVMForComplexityByValue(2),
+                generateFVMForComplexityByValue(3),
+                generateFVMForComplexityByValue(4),
+                generateFVMForComplexityByValue(5)
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
         complexityMetrics.settings.complexitySensitivity = 100;
 
-        assertTrue(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(6)));
+        assertTrue(complexityMetrics.isFlagTriggered(generateFVMForComplexityByValue(6)));
     }
 
     @Test
-    public void testMaximumThresholdFalse(){
+    public void testMaximumThresholdFalse() {
         List<FeaturesVector> fvList = List.of(
-                generateFVMForKeywordsByValue(1),
-                generateFVMForKeywordsByValue(2),
-                generateFVMForKeywordsByValue(3),
-                generateFVMForKeywordsByValue(4),
-                generateFVMForKeywordsByValue(5)
+                generateFVMForComplexityByValue(1),
+                generateFVMForComplexityByValue(2),
+                generateFVMForComplexityByValue(3),
+                generateFVMForComplexityByValue(4),
+                generateFVMForComplexityByValue(5)
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
         complexityMetrics.settings.complexitySensitivity = 100;
 
-        assertFalse(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
+        assertFalse(complexityMetrics.isFlagTriggered(generateFVMForComplexityByValue(5)));
     }
 }
