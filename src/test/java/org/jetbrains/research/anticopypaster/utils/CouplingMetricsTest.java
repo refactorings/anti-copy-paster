@@ -74,7 +74,7 @@ public class CouplingMetricsTest {
     @Test
     public void testNullInputFalse(){
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(null);
-        couplingMetrics.sensitivity = 1;
+        couplingMetrics.settings.couplingSensitivity = 1;
         assertFalse(couplingMetrics.isFlagTriggered(null));
     }
     @Test
@@ -87,7 +87,7 @@ public class CouplingMetricsTest {
                 generateFVMForKeywordsByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
-        couplingMetrics.sensitivity = 1;
+        couplingMetrics.settings.couplingSensitivity = 1;
         assertTrue(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
     }
     @Test
@@ -100,7 +100,7 @@ public class CouplingMetricsTest {
                 generateFVMForKeywordsByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
-        couplingMetrics.sensitivity = 1;
+        couplingMetrics.settings.couplingSensitivity = 1;
         assertFalse(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(1)));
     }
     @Test
@@ -113,7 +113,7 @@ public class CouplingMetricsTest {
                 generateFVMForKeywordsByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
-        couplingMetrics.sensitivity = 25;
+        couplingMetrics.settings.couplingSensitivity = 25;
         assertTrue(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
     }
     @Test
@@ -126,7 +126,7 @@ public class CouplingMetricsTest {
                 generateFVMForKeywordsByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
-        couplingMetrics.sensitivity = 25;
+        couplingMetrics.settings.couplingSensitivity = 25;
         assertFalse(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(2)));
     }
     @Test
@@ -139,7 +139,7 @@ public class CouplingMetricsTest {
                 generateFVMForKeywordsByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
-        couplingMetrics.sensitivity = 50;
+        couplingMetrics.settings.couplingSensitivity = 50;
         assertTrue(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(4)));
     }
     @Test
@@ -152,7 +152,7 @@ public class CouplingMetricsTest {
                 generateFVMForKeywordsByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
-        couplingMetrics.sensitivity = 50;
+        couplingMetrics.settings.couplingSensitivity= 50;
         assertFalse(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(2)));
     }
     @Test
@@ -165,7 +165,7 @@ public class CouplingMetricsTest {
                 generateFVMForKeywordsByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
-        couplingMetrics.sensitivity = 75;
+        couplingMetrics.settings.couplingSensitivity = 75;
         assertTrue(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
     @Test
@@ -178,7 +178,7 @@ public class CouplingMetricsTest {
                 generateFVMForKeywordsByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
-        couplingMetrics.sensitivity = 75;
+        couplingMetrics.settings.couplingSensitivity = 75;
         assertFalse(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(4)));
     }
     @Test
@@ -191,7 +191,7 @@ public class CouplingMetricsTest {
                 generateFVMForKeywordsByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
-        couplingMetrics.sensitivity = 100;
+        couplingMetrics.settings.couplingSensitivity = 100;
         assertTrue(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(6)));
     }
     @Test
@@ -204,7 +204,7 @@ public class CouplingMetricsTest {
                 generateFVMForKeywordsByValue(5)
         );
         TestingCouplingMetrics couplingMetrics = new TestingCouplingMetrics(fvList);
-        couplingMetrics.sensitivity = 100;
+        couplingMetrics.settings.couplingSensitivity = 100;
         assertFalse(couplingMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
 }

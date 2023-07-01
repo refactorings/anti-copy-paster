@@ -77,7 +77,7 @@ public class ComplexityMetricsTest {
     @Test
     public void testNullInputFalse(){
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(  null);
-        complexityMetrics.sensitivity = 1;
+        complexityMetrics.settings.complexitySensitivity = 1;
         assertFalse(complexityMetrics.isFlagTriggered(null));
     }
 
@@ -92,7 +92,7 @@ public class ComplexityMetricsTest {
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
-        complexityMetrics.sensitivity = 1;
+        complexityMetrics.settings.complexitySensitivity = 1;
 
         assertTrue(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
     }
@@ -108,7 +108,7 @@ public class ComplexityMetricsTest {
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
-        complexityMetrics.sensitivity = 1;
+        complexityMetrics.settings.complexitySensitivity = 1;
 
         assertFalse(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(1)));
     }
@@ -124,7 +124,7 @@ public class ComplexityMetricsTest {
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
-        complexityMetrics.sensitivity = 50;
+        complexityMetrics.settings.complexitySensitivity = 50;
 
         assertTrue(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
@@ -140,7 +140,7 @@ public class ComplexityMetricsTest {
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
-        complexityMetrics.sensitivity = 50;
+        complexityMetrics.settings.complexitySensitivity = 50;
 
         assertFalse(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(2)));
     }
@@ -156,7 +156,7 @@ public class ComplexityMetricsTest {
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
-        complexityMetrics.sensitivity = 75;
+        complexityMetrics.settings.complexitySensitivity = 75;
 
         assertTrue(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
@@ -172,7 +172,7 @@ public class ComplexityMetricsTest {
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
-        complexityMetrics.sensitivity = 75;
+        complexityMetrics.settings.complexitySensitivity = 75;
 
         assertFalse(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
     }
@@ -188,7 +188,7 @@ public class ComplexityMetricsTest {
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
-        complexityMetrics.sensitivity = 100;
+        complexityMetrics.settings.complexitySensitivity = 100;
 
         assertTrue(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(6)));
     }
@@ -204,7 +204,7 @@ public class ComplexityMetricsTest {
         );
 
         TestingComplexityMetrics complexityMetrics = new TestingComplexityMetrics(fvList);
-        complexityMetrics.sensitivity = 100;
+        complexityMetrics.settings.complexitySensitivity = 100;
 
         assertFalse(complexityMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }

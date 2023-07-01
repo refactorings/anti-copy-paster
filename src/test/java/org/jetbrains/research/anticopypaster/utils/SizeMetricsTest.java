@@ -77,7 +77,7 @@ public class SizeMetricsTest {
     @Test
     public void testNullInputFalse(){
         TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(null);
-        sizeMetrics.sensitivity = 1;
+        sizeMetrics.settings.sizeSensitivity = 1;
         assertFalse(sizeMetrics.isFlagTriggered(null));
     }
 
@@ -92,7 +92,7 @@ public class SizeMetricsTest {
         );
 
         TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
-        sizeMetrics.sensitivity = 1;
+        sizeMetrics.settings.sizeSensitivity = 1;
 
         assertTrue(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
     }
@@ -108,7 +108,7 @@ public class SizeMetricsTest {
         );
 
         TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
-        sizeMetrics.sensitivity = 1;
+        sizeMetrics.settings.sizeSensitivity = 1;
 
         assertFalse(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(1)));
     }
@@ -124,7 +124,7 @@ public class SizeMetricsTest {
         );
 
         TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
-        sizeMetrics.sensitivity = 50;
+        sizeMetrics.settings.sizeSensitivity = 50;
 
         assertTrue(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
@@ -140,7 +140,7 @@ public class SizeMetricsTest {
         );
 
         TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
-        sizeMetrics.sensitivity = 50;
+        sizeMetrics.settings.sizeSensitivity = 50;
 
         assertFalse(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(2)));
     }
@@ -156,7 +156,7 @@ public class SizeMetricsTest {
         );
 
         TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
-        sizeMetrics.sensitivity = 75;
+        sizeMetrics.settings.sizeSensitivity = 75;
 
         assertTrue(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
@@ -172,7 +172,7 @@ public class SizeMetricsTest {
         );
 
         TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
-        sizeMetrics.sensitivity = 75;
+        sizeMetrics.settings.sizeSensitivity = 75;
 
         assertFalse(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(3)));
     }
@@ -188,7 +188,7 @@ public class SizeMetricsTest {
         );
 
         TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
-        sizeMetrics.sensitivity = 100;
+        sizeMetrics.settings.sizeSensitivity = 100;
 
         assertTrue(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(6)));
     }
@@ -204,7 +204,7 @@ public class SizeMetricsTest {
         );
 
         TestingSizeMetrics sizeMetrics = new TestingSizeMetrics(fvList);
-        sizeMetrics.sensitivity = 100;
+        sizeMetrics.settings.sizeSensitivity = 100;
 
         assertFalse(sizeMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
