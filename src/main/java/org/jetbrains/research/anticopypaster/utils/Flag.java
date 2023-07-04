@@ -122,10 +122,6 @@ public abstract class Flag{
         return flagTripped;
     }
 
-    protected ProjectSettingsState retrieveCurrentSettings() {
-        return project.getService(ProjectSettingsState.class);
-    }
-
     /**
      * This function logs the last known metric and the current threshold
      * @param filepath path to the log file

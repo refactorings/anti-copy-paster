@@ -28,7 +28,7 @@ public class CouplingMetrics extends Flag{
      */
     @Override
     protected void setSelectedMetrics(){
-        ProjectSettingsState settings = retrieveCurrentSettings();
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
 
         if(settings.measureCouplingTotal[0]){
             if(settings.measureTotalConnectivity[0]){
@@ -79,8 +79,7 @@ public class CouplingMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        ProjectSettingsState settings = retrieveCurrentSettings();
-        return settings.couplingSensitivity;
+        return ProjectSettingsState.getInstance(project).couplingSensitivity;
     }
 
     /**

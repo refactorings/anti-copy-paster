@@ -27,7 +27,7 @@ public class SizeMetrics extends Flag{
      */
     @Override
     protected void setSelectedMetrics(){
-        ProjectSettingsState settings = retrieveCurrentSettings();
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
 
         if (settings.measureSizeByLines[0]) {
             if (settings.measureTotalSize[0]) {
@@ -75,8 +75,7 @@ public class SizeMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        ProjectSettingsState settings = retrieveCurrentSettings();
-        return settings.sizeSensitivity;
+        return ProjectSettingsState.getInstance(project).sizeSensitivity;
     }
 
     /**

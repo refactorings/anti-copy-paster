@@ -23,7 +23,7 @@ public class ComplexityMetrics extends Flag{
 
     @Override
     protected void setSelectedMetrics(){
-        ProjectSettingsState settings = retrieveCurrentSettings();
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
 
         if (settings.measureComplexityTotal[0]) {
             selectedMetrics.add(Feature.Area);
@@ -62,8 +62,7 @@ public class ComplexityMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        ProjectSettingsState settings = retrieveCurrentSettings();
-        return settings.complexitySensitivity;
+        return ProjectSettingsState.getInstance(project).complexitySensitivity;
     }
 
     /**

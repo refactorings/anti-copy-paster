@@ -13,22 +13,15 @@ public class CouplingMetricsTest {
 
     /**
      * Testing variant of CouplingMetrics.
-     * Stores project settings locally rather than through IntelliJ systems.
+     * Uses a ProjectMock instead of a project and exposes a reference to its settings.
      */
     private static class TestingCouplingMetrics extends CouplingMetrics {
 
-        // Stores a ProjectSettingsState variable locally to adjust settings for testing
-        private ProjectSettingsState settings;
+        public final ProjectSettingsState settings;
 
         public TestingCouplingMetrics(List<FeaturesVector> featuresVectorList) {
-            super(featuresVectorList, null);
-        }
-
-        @Override
-        protected ProjectSettingsState retrieveCurrentSettings() {
-            if (settings == null)
-                settings = new ProjectSettingsState();
-            return settings;
+            super(featuresVectorList, new ProjectMock(new ProjectSettingsState()).getMock());
+            settings = ProjectSettingsState.getInstance(project);
         }
     }
 

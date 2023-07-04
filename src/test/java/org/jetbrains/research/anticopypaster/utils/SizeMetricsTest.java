@@ -17,18 +17,11 @@ public class SizeMetricsTest {
      */
     private static class TestingSizeMetrics extends SizeMetrics {
 
-        // Stores a ProjectSettingsState variable locally to adjust settings for testing
-        private ProjectSettingsState settings;
+        public final ProjectSettingsState settings;
 
         public TestingSizeMetrics(List<FeaturesVector> featuresVectorList) {
-            super(featuresVectorList, null);
-        }
-
-        @Override
-        protected ProjectSettingsState retrieveCurrentSettings() {
-            if (settings == null)
-                settings = new ProjectSettingsState();
-            return settings;
+            super(featuresVectorList, new ProjectMock(new ProjectSettingsState()).getMock());
+            settings = ProjectSettingsState.getInstance(project);
         }
     }
 

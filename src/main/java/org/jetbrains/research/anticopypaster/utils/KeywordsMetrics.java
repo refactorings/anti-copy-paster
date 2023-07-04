@@ -21,7 +21,7 @@ public class KeywordsMetrics extends Flag{
          * Each even-odd pair of indices corresponds to one Java keyword.
      */
     protected void setSelectedMetrics(){
-        ProjectSettingsState settings = retrieveCurrentSettings();
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         int metricNum = 16;
         for(JavaKeywords keyword : JavaKeywords.values()) {
             if (settings.activeKeywords.get(keyword)) {
@@ -52,8 +52,7 @@ public class KeywordsMetrics extends Flag{
      */
     @Override
     protected int getSensitivity() {
-        ProjectSettingsState settings = retrieveCurrentSettings();
-        return settings.keywordsSensitivity;
+        return ProjectSettingsState.getInstance(project).keywordsSensitivity;
     }
 
     /**
