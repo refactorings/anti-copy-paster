@@ -1633,7 +1633,7 @@ public class UserSettingsModelTest {
         settings.complexityRequired = true;
 
         settings.keywordsEnabled = true;
-        settings.couplingSensitivity = 100;
+        settings.couplingEnabled = false;
         settings.sizeEnabled = true;
         settings.complexityEnabled = true;
 
