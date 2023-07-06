@@ -204,4 +204,67 @@ public class ComplexityMetricsTest {
 
         assertFalse(complexityMetrics.isFlagTriggered(generateFVMForComplexityByValue(5)));
     }
+
+    @Test
+    public void test_SetSelectedMetrics_ChangeSettings_MultipleProjects() {
+        TestingComplexityMetrics complexityMetrics1 = new TestingComplexityMetrics(null);
+        TestingComplexityMetrics complexityMetrics2 = new TestingComplexityMetrics(null);
+
+        complexityMetrics1.settings.measureComplexityTotal[0] = true;
+        complexityMetrics1.settings.measureComplexityTotal[1] = true;
+
+        complexityMetrics1.selectedMetrics.clear();
+        complexityMetrics1.requiredMetrics.clear();
+        complexityMetrics1.setSelectedMetrics();
+
+        assertEquals(2, complexityMetrics1.selectedMetrics.size());
+        assertEquals(2, complexityMetrics1.requiredMetrics.size());
+        assertEquals(1, complexityMetrics2.selectedMetrics.size());
+        assertEquals(1, complexityMetrics2.requiredMetrics.size());
+
+        assertEquals(Feature.Area, complexityMetrics1.selectedMetrics.get(0));
+        assertNotEquals(Feature.Area, complexityMetrics2.selectedMetrics.get(0));
+
+        assertEquals(Feature.Area, complexityMetrics1.requiredMetrics.get(0));
+        assertNotEquals(Feature.Area, complexityMetrics2.requiredMetrics.get(0));
+    }
+
+    @Test
+    public void testMinimumThresholds_MultipleProjects() {
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForComplexityByValue(1),
+                generateFVMForComplexityByValue(2),
+                generateFVMForComplexityByValue(3),
+                generateFVMForComplexityByValue(4),
+                generateFVMForComplexityByValue(5)
+        );
+
+        TestingComplexityMetrics complexityMetrics1 = new TestingComplexityMetrics(fvList);
+        complexityMetrics1.settings.complexitySensitivity = 1;
+        TestingComplexityMetrics complexityMetrics2 = new TestingComplexityMetrics(fvList);
+        complexityMetrics2.settings.complexitySensitivity = 1;
+
+        assertTrue(complexityMetrics1.isFlagTriggered(generateFVMForComplexityByValue(3)));
+        assertFalse(complexityMetrics1.isFlagTriggered(generateFVMForComplexityByValue(1)));
+    }
+
+    @Test
+    public void testMaximumThresholds_MultipleProjects() {
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForComplexityByValue(1),
+                generateFVMForComplexityByValue(2),
+                generateFVMForComplexityByValue(3),
+                generateFVMForComplexityByValue(4),
+                generateFVMForComplexityByValue(5)
+        );
+
+        TestingComplexityMetrics complexityMetrics1 = new TestingComplexityMetrics(fvList);
+        complexityMetrics1.settings.complexitySensitivity = 100;
+        TestingComplexityMetrics complexityMetrics2 = new TestingComplexityMetrics(fvList);
+        complexityMetrics2.settings.complexitySensitivity = 100;
+
+        assertTrue(complexityMetrics1.isFlagTriggered(generateFVMForComplexityByValue(6)));
+        assertFalse(complexityMetrics2.isFlagTriggered(generateFVMForComplexityByValue(5)));
+
+    }
 }

@@ -201,4 +201,71 @@ public class KeywordsMetricsTest {
 
         assertFalse(keywordsMetrics.isFlagTriggered(generateFVMForKeywordsByValue(5)));
     }
+
+    @Test
+    public void testSetSelectedMetrics_ChangeSettings_MultipleProjects(){
+        TestingKeywordsMetrics keywordsMetrics1 = new TestingKeywordsMetrics(null);
+        TestingKeywordsMetrics keywordsMetrics2 = new TestingKeywordsMetrics(null);
+
+        keywordsMetrics1.settings.measureKeywordsTotal[0] = true;
+        keywordsMetrics1.settings.measureKeywordsTotal[1] = true;
+        keywordsMetrics1.settings.measureKeywordsDensity[0] = true;
+        keywordsMetrics1.settings.measureKeywordsDensity[1] = false;
+
+        keywordsMetrics1.selectedMetrics.clear();
+        keywordsMetrics1.requiredMetrics.clear();
+        keywordsMetrics1.setSelectedMetrics();
+
+        assertEquals(62, keywordsMetrics1.selectedMetrics.size());
+        for (int i = 0; i < 62; i++)
+            assertEquals(Feature.fromId(16 + i), keywordsMetrics1.selectedMetrics.get(i));
+        assertEquals(31, keywordsMetrics1.requiredMetrics.size());
+        for (int i = 0; i < 31; i++)
+            assertEquals(Feature.fromId(16 + 2 * i), keywordsMetrics1.requiredMetrics.get(i));
+
+        assertEquals(31, keywordsMetrics2.selectedMetrics.size());
+        for (int i = 0; i < 31; i++)
+            assertEquals(Feature.fromId(17 + 2 * i), keywordsMetrics2.selectedMetrics.get(i));
+        assertEquals(31, keywordsMetrics2.requiredMetrics.size());
+        for (int i = 0; i < 31; i++)
+            assertEquals(Feature.fromId(17 + 2 * i), keywordsMetrics2.requiredMetrics.get(i));
+    }
+
+    @Test
+    public void testMinimumThresholds_MultipleProjects() {
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
+
+        TestingKeywordsMetrics keywordsMetrics1 = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics1.settings.keywordsSensitivity = 1;
+        TestingKeywordsMetrics keywordsMetrics2 = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics2.settings.keywordsSensitivity = 1;
+
+        assertTrue(keywordsMetrics1.isFlagTriggered(generateFVMForKeywordsByValue(3)));
+        assertFalse(keywordsMetrics2.isFlagTriggered(generateFVMForKeywordsByValue(1)));
+    }
+
+    @Test
+    public void testMaximumThresholds_MultipleProjects() {
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForKeywordsByValue(1),
+                generateFVMForKeywordsByValue(2),
+                generateFVMForKeywordsByValue(3),
+                generateFVMForKeywordsByValue(4),
+                generateFVMForKeywordsByValue(5)
+        );
+
+        TestingKeywordsMetrics keywordsMetrics1 = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics1.settings.keywordsSensitivity = 100;
+        TestingKeywordsMetrics keywordsMetrics2 = new TestingKeywordsMetrics(fvList);
+        keywordsMetrics2.settings.keywordsSensitivity = 100;
+
+        assertTrue(keywordsMetrics1.isFlagTriggered(generateFVMForKeywordsByValue(6)));
+        assertFalse(keywordsMetrics2.isFlagTriggered(generateFVMForKeywordsByValue(5)));
+    }
 }

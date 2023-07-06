@@ -214,4 +214,62 @@ public class CouplingMetricsTest {
         couplingMetrics.settings.couplingSensitivity = 100;
         assertFalse(couplingMetrics.isFlagTriggered(generateFVMForCouplingByValue(5)));
     }
+
+    @Test
+    public void testSetSelectedMetrics_ChangeSettings_MultipleProject() {
+        TestingCouplingMetrics couplingMetrics1 = new TestingCouplingMetrics(null);
+        TestingCouplingMetrics couplingMetrics2 = new TestingCouplingMetrics(null);
+
+        couplingMetrics1.settings.measureCouplingTotal[0] = true;
+        couplingMetrics1.settings.measureCouplingTotal[1] = false;
+
+        couplingMetrics1.selectedMetrics.clear();
+        couplingMetrics1.requiredMetrics.clear();
+        couplingMetrics1.setSelectedMetrics();
+
+        assertEquals(2, couplingMetrics1.selectedMetrics.size());
+        assertEquals(1, couplingMetrics2.selectedMetrics.size());
+        assertEquals(1, couplingMetrics1.requiredMetrics.size());
+        assertEquals(1, couplingMetrics2.requiredMetrics.size());
+        assertEquals(Feature.TotalConnectivityPerLine, couplingMetrics1.requiredMetrics.get(0));
+        assertEquals(Feature.TotalConnectivityPerLine, couplingMetrics2.requiredMetrics.get(0));
+    }
+
+    @Test
+    public void testMinimumThresholds_MultipleProjects() {
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
+        );
+
+        TestingCouplingMetrics couplingMetrics1 = new TestingCouplingMetrics(fvList);
+        couplingMetrics1.settings.couplingSensitivity = 1;
+        TestingCouplingMetrics couplingMetrics2 = new TestingCouplingMetrics(fvList);
+        couplingMetrics2.settings.couplingSensitivity = 1;
+
+        assertTrue(couplingMetrics1.isFlagTriggered(generateFVMForCouplingByValue(3)));
+        assertFalse(couplingMetrics2.isFlagTriggered(generateFVMForCouplingByValue(1)));
+    }
+
+    @Test
+    public void testMaximumThresholds_MultipleProjects() {
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForCouplingByValue(1),
+                generateFVMForCouplingByValue(2),
+                generateFVMForCouplingByValue(3),
+                generateFVMForCouplingByValue(4),
+                generateFVMForCouplingByValue(5)
+        );
+
+        TestingCouplingMetrics couplingMetrics1 = new TestingCouplingMetrics(fvList);
+        couplingMetrics1.settings.couplingSensitivity = 100;
+        TestingCouplingMetrics couplingMetrics2 = new TestingCouplingMetrics(fvList);
+        couplingMetrics2.settings.couplingSensitivity = 100;
+
+        assertTrue(couplingMetrics1.isFlagTriggered(generateFVMForCouplingByValue(6)));
+        assertFalse(couplingMetrics2.isFlagTriggered(generateFVMForCouplingByValue(5)));
+    }
 }

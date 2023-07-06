@@ -201,5 +201,70 @@ public class SizeMetricsTest {
 
         assertFalse(sizeMetrics.isFlagTriggered(generateFVMForSizeByValue(5)));
     }
+
+    @Test
+    public void testSetSelectedMetrics_ChangedSettings_MultipleProjects() {
+        TestingSizeMetrics sizeMetrics1 = new TestingSizeMetrics(null);
+        TestingSizeMetrics sizeMetrics2 = new TestingSizeMetrics(null);
+
+        sizeMetrics1.settings.measureSizeBySymbols[0] = true;
+        sizeMetrics1.settings.measureSizeBySymbols[1] = true;
+        sizeMetrics1.settings.measureSizeBySymbolsPerLine[0] = true;
+
+        sizeMetrics1.selectedMetrics.clear();
+        sizeMetrics1.requiredMetrics.clear();
+        sizeMetrics1.setSelectedMetrics();
+
+        assertEquals(3, sizeMetrics1.selectedMetrics.size());
+        assertEquals(2, sizeMetrics1.requiredMetrics.size());
+        assertEquals(1, sizeMetrics2.selectedMetrics.size());
+        assertEquals(1, sizeMetrics2.requiredMetrics.size());
+
+        assertEquals(Feature.TotalLinesOfCode, sizeMetrics1.selectedMetrics.get(0));
+        assertEquals(Feature.TotalSymbols, sizeMetrics1.selectedMetrics.get(1));
+        assertEquals(Feature.SymbolsPerLine, sizeMetrics1.selectedMetrics.get(2));
+
+        assertEquals(Feature.TotalLinesOfCode, sizeMetrics1.requiredMetrics.get(0));
+        assertEquals(Feature.TotalSymbols, sizeMetrics1.requiredMetrics.get(1));
+    }
+
+    @Test
+    public void testMinimumThresholds_MultipleProjects() {
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForSizeByValue(1),
+                generateFVMForSizeByValue(2),
+                generateFVMForSizeByValue(3),
+                generateFVMForSizeByValue(4),
+                generateFVMForSizeByValue(5)
+        );
+
+        TestingSizeMetrics sizeMetrics1 = new TestingSizeMetrics(fvList);
+        sizeMetrics1.settings.sizeSensitivity = 1;
+        TestingSizeMetrics sizeMetrics2 = new TestingSizeMetrics(fvList);
+        sizeMetrics2.settings.sizeSensitivity = 1;
+
+        assertTrue(sizeMetrics1.isFlagTriggered(generateFVMForSizeByValue(3)));
+        assertFalse(sizeMetrics1.isFlagTriggered(generateFVMForSizeByValue(1)));
+    }
+
+    @Test
+    public void testMaximumThresholds_MultipleProjects() {
+        List<FeaturesVector> fvList = List.of(
+                generateFVMForSizeByValue(1),
+                generateFVMForSizeByValue(2),
+                generateFVMForSizeByValue(3),
+                generateFVMForSizeByValue(4),
+                generateFVMForSizeByValue(5)
+        );
+
+        TestingSizeMetrics sizeMetrics1 = new TestingSizeMetrics(fvList);
+        sizeMetrics1.settings.sizeSensitivity = 100;
+        TestingSizeMetrics sizeMetrics2 = new TestingSizeMetrics(fvList);
+        sizeMetrics2.settings.sizeSensitivity = 100;
+
+        assertTrue(sizeMetrics1.isFlagTriggered(generateFVMForSizeByValue(6)));
+        assertFalse(sizeMetrics2.isFlagTriggered(generateFVMForSizeByValue(5)));
+
+    }
 }
 
