@@ -1,6 +1,6 @@
 package org.jetbrains.research.anticopypaster.models;
 
-import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.utils.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,29 +8,15 @@ import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
 import java.util.*;
 
+import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
 
-public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
-    /**
-     * Overridden from LightJavaCodeInsightFixtureTestCase. Setup now also ensures
-     * the project is initialized fully and adds the testdata to the project.
-     * @throws Exception
-     */
-    @Override
-    protected void setUp() throws Exception {
-        super.setUp();
-        while (!getProject().isInitialized());
-        model = new UserSettingsModel(null, getProject());
-        settings = ProjectSettingsState.getInstance(getProject());
-    }
+public class UserSettingsModelTest {
 
-
-    /**
-    Mock metrics gatherer needs to go here
-    */ 
     public static class MetricsGathererMock {
         @Mock
         private MetricsGatherer mockMetricsGatherer;
@@ -45,7 +31,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
             // mock methods for the MetricsGatherer class, should only need to mock getMethodMetrics() here
             when(mockMetricsGatherer.getMethodsMetrics())
                 .thenReturn(this.fvArray);
-            
         }
         
         public MetricsGatherer getMock() {
@@ -62,37 +47,24 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
     private UserSettingsModel model;
     private ProjectSettingsState settings;
 
+    @BeforeEach
+    public void beforeEach() {
+        settings = new ProjectSettingsState();
+        MetricsGatherer mockedMetricsGatherer = new MetricsGathererMock(null).getMock();
+        Project mockedProject = new ProjectMock(settings).getMock();
+        model = new UserSettingsModel(mockedMetricsGatherer, mockedProject);
+    }
+
     /**
     This is a test to make sure that if the model has a null metrics
     gatherer that it will always return 0 (do not pop up)
      */
-    public void testPredictEverythingNull(){
+    @Test
+    public void testPredictEverythingNull() {
         assertEquals(model.predict(null), 0, 0);
     }
 
-//    public void testReadSensitivityFromFrontend(){
-//        //Mock the file and the scanner to make sure that each flag sensitivity will be set to low or 1
-//        File mockedFile = Mockito.mock(File.class);
-//        Scanner mockedScanner = Mockito.mock(Scanner.class);
-//        Mockito.when(mockedFile.exists()).thenReturn(true);
-//        Mockito.when(mockedScanner.nextLine()).thenReturn("low");
-//
-//        List<FeaturesVector> fvList = new ArrayList<FeaturesVector>();
-//
-//        float[] fvArrayValue1 = new float[78];
-//
-//        fvList.add(new FeaturesVectorMock(fvArrayValue1).getMock());
-//
-//        MetricsGathererMock mockMg = new MetricsGathererMock(fvList);
-//        //This method will make a call to readSensitivityFromFrontend which we are testing
-//        this.model.initMetricsGathererAndMetricsFlags(mockMg.getMock());
-//
-//        assertEquals(1, model.getComplexitySensitivity());
-//        assertEquals(1, model.getSizeSensitivity());
-//        assertEquals(1, model.getKeywordsSensitivity() );
-//
-//    }
-
+    @Test
     public void testPredictEverythingOff() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -129,14 +101,14 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
-    /**
-    
+    /*
     These tests will retest each of the cases from the flag tests
     to show that they are still valid when the flags are created
     via the metrics gatherer. If any of these tests fail, but the 
     flag tests are passing, it is an issue within the model.
-    
      */
+
+    @Test
     public void testPredictOnlySizeOnSensOneTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -185,6 +157,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictOnlySizeOnSensOneFalse() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -232,6 +205,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictOnlySizeOnSensTwoTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -280,6 +254,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictOnlySizeOnSensTwoFalse() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -328,6 +303,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictOnlySizeOnSensThreeTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -376,6 +352,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictOnlySizeOnSensThreeFalse() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -424,6 +401,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictOnlyComplexityOnSensOneTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -472,6 +450,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictOnlyComplexityOnSensOneFalse() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -522,6 +501,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictOnlyComplexityOnSensTwoTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -570,6 +550,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictOnlyComplexityOnSensTwoFalse() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -618,6 +599,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictOnlyComplexityOnSensThreeTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -666,6 +648,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictOnlyComplexityOnSensThreeFalse() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -714,6 +697,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictOnlyKeywordsOnSensOneTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -753,6 +737,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictOnlyKeywordsOnSensOneFalse() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -792,6 +777,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictOnlyKeywordsOnSensTwoTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -831,6 +817,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictOnlyKeywordsOnSensTwoFalse() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -870,6 +857,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictOnlyKeywordsOnSensThreeTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -909,6 +897,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictOnlyKeywordsOnSensThreeFalse() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -948,6 +937,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictSizeComplexityTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1004,6 +994,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictSizeComplexityFalseOneValue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1060,6 +1051,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictSizeComplexityFalseBothValues() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1116,6 +1108,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictSizeKeywordsTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1124,19 +1117,15 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue1 = generateAndFillArray(1);
         fvArrayValue1[0] = 1;
         
-
         float[] fvArrayValue2 = generateAndFillArray(2);
         fvArrayValue2[0] = 2;
         
-
         float[] fvArrayValue3 = generateAndFillArray(3);
         fvArrayValue3[0] = 3;
         
-
         float[] fvArrayValue4 = generateAndFillArray(4);
         fvArrayValue4[0] = 4;
         
-
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[0] = 5;
 
@@ -1170,6 +1159,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictSizeKeywordsFalseOneValue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1178,19 +1168,15 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue1 = generateAndFillArray(1);
         fvArrayValue1[0] = 1;
         
-
         float[] fvArrayValue2 = generateAndFillArray(2);
         fvArrayValue2[0] = 2;
         
-
         float[] fvArrayValue3 = generateAndFillArray(3);
         fvArrayValue3[0] = 3;
         
-
         float[] fvArrayValue4 = generateAndFillArray(4);
         fvArrayValue4[0] = 4;
         
-
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[0] = 5;
 
@@ -1224,6 +1210,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictSizeKeywordsFalseBothValues() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1232,19 +1219,15 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue1 = generateAndFillArray(1);
         fvArrayValue1[0] = 1;
         
-
         float[] fvArrayValue2 = generateAndFillArray(2);
         fvArrayValue2[0] = 2;
         
-
         float[] fvArrayValue3 = generateAndFillArray(3);
         fvArrayValue3[0] = 3;
         
-
         float[] fvArrayValue4 = generateAndFillArray(4);
         fvArrayValue4[0] = 4;
         
-
         float[] fvArrayValue5 = generateAndFillArray(5);
         fvArrayValue5[0] = 5;
 
@@ -1278,6 +1261,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictComplexityKeywordsTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1328,6 +1312,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictComplexityKeywordsFalseOneValue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1378,6 +1363,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictComplexityKeywordsFalseBothValues() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1428,6 +1414,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictAllFlagsTrue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1438,7 +1425,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         fvArrayValue1[0] = 1;
         fvArrayValue1[4] = 1;
         
-
         float[] fvArrayValue2 = generateAndFillArray(2);
         fvArrayValue2[0] = 2;
         fvArrayValue2[4] = 2;
@@ -1487,6 +1473,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 1, 0);
     }
 
+    @Test
     public void testPredictAllFlagsFalseOneValue() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1497,7 +1484,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         fvArrayValue1[0] = 1;
         fvArrayValue1[4] = 1;
         
-
         float[] fvArrayValue2 = generateAndFillArray(2);
         fvArrayValue2[0] = 2;
         fvArrayValue2[4] = 2;
@@ -1546,6 +1532,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictAllFlagsFalseTwoValues() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1555,7 +1542,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue1 = generateAndFillArray(1);
         fvArrayValue1[0] = 1;
         fvArrayValue1[4] = 1;
-        
 
         float[] fvArrayValue2 = generateAndFillArray(2);
         fvArrayValue2[0] = 2;
@@ -1605,6 +1591,7 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         assertEquals(model.predict(passedInFv.getMock()), 0, 0);
     }
 
+    @Test
     public void testPredictAllFlagsFalseThreeValues() {
         List<FeaturesVector> fvList = new ArrayList<>();
 
@@ -1614,7 +1601,6 @@ public class UserSettingsModelTest extends LightJavaCodeInsightFixtureTestCase {
         float[] fvArrayValue1 = generateAndFillArray(1);
         fvArrayValue1[0] = 1;
         fvArrayValue1[4] = 1;
-        
 
         float[] fvArrayValue2 = generateAndFillArray(2);
         fvArrayValue2[0] = 2;
