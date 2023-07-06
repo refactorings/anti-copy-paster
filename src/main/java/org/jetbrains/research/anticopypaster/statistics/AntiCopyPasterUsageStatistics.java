@@ -74,6 +74,8 @@ public class AntiCopyPasterUsageStatistics implements PersistentStateComponent<A
         public void onPaste() {
             pasteCount += 1;
         }
+
+        public void saveToMongoDB() { SaveToMongoDB.saveStatistics(notificationCount, extractMethodAppliedCount, extractMethodRejectedCount, copyCount, pasteCount); }
     }
 }
 
