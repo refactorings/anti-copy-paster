@@ -3,6 +3,7 @@ package org.jetbrains.research.anticopypaster.ide;
 import com.intellij.codeInsight.editorActions.CopyPastePreProcessor;
 import com.intellij.ide.DataManager;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
@@ -77,7 +78,8 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             return text;
         }
 
-        @Nullable Caret caret = CommonDataKeys.CARET.getData(DataManager.getInstance().getDataContext());
+        DataContext dataContext = DataManager.getInstance().getDataContext(editor.getContentComponent());
+        @Nullable Caret caret = CommonDataKeys.CARET.getData(dataContext);
         int offset = caret == null ? 0 : caret.getOffset();
         PsiMethod destinationMethod = findMethodByOffset(file, offset);
 

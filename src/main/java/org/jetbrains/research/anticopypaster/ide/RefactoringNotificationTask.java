@@ -2,6 +2,8 @@ package org.jetbrains.research.anticopypaster.ide;
 
 import com.intellij.CommonBundle;
 import com.intellij.notification.*;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
@@ -206,12 +208,9 @@ public class RefactoringNotificationTask extends TimerTask {
 
     public void notify(Project project, String content, Runnable callback) {
         final Notification notification = notificationGroup.createNotification(content, NotificationType.INFORMATION);
-        notification.setListener(new NotificationListener.Adapter() {
-            @Override
-            protected void hyperlinkActivated(@NotNull Notification notification, @NotNull HyperlinkEvent e) {
-                callback.run();
-            }
-        });
+        notification.addAction(NotificationAction.createSimple(
+                AntiCopyPasterBundle.message("anticopypaster.recommendation.notification.action"),
+                callback));
         notification.notify(project);
         AntiCopyPasterUsageStatistics.getInstance(project).notificationShown();
     }
