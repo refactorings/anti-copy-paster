@@ -4,6 +4,10 @@ import com.intellij.ide.util.PropertiesComponent;
 
 import java.io.IOException;
 import java.net.Socket;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.UUID;
 
 import com.mongodb.MongoClientSettings;
@@ -18,8 +22,11 @@ import org.bson.Document;
 
 public class SaveToMongoDB {
 
-    // TODO: Finish handling connection details.
-    private static final String CONNECTION_STRING = "mongodb://127.0.0.1:27018";
+    // TODO: Finish handling connection details, username and password should be retrieved from the frontend
+    private static String CONNECTION_STRING;
+    private static  String username;
+    private static  String password;
+    private static final String hostPort = "155.246.39.61:27018";
     private static final String DATABASE_NAME = "anticopypaster";
     private static final String USER_STATISTICS_COLLECTION = "AntiCopyPaster_User_Statistics";
 
@@ -31,7 +38,7 @@ public class SaveToMongoDB {
         }
 
         MongoClientSettings settings = MongoClientSettings.builder()
-                        .applyConnectionString(new ConnectionString(CONNECTION_STRING))
+                        .applyConnectionString(new ConnectionString(Objects.requireNonNull(makeConnectionString())))
                                 .build();
 
         try (MongoClient mongoClient = MongoClients.create(settings)) {
@@ -52,6 +59,18 @@ public class SaveToMongoDB {
         }
         catch (MongoException e) { System.out.println("MongoDB exception occurred."); e.printStackTrace(); }
         catch (Exception e) { System.out.println("Unexpected exception occurred."); e.printStackTrace(); }
+    }
+    private static String makeConnectionString() {
+        try {
+            CONNECTION_STRING = "mongodb://" + URLEncoder.encode(username, StandardCharsets.UTF_8) + ":" +
+                    URLEncoder.encode(password, StandardCharsets.UTF_8) + "@" + hostPort + "/?authSource=admin";
+            return CONNECTION_STRING;
+        } catch (Exception e) {
+            System.out.println("Error encoding username or password.");
+            e.printStackTrace();
+            // Handle the exception appropriately, such as throwing a custom exception or returning a default value
+            return null;
+        }
     }
 
     private static String getUserID() {
