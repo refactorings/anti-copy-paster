@@ -1,6 +1,7 @@
 package org.jetbrains.research.anticopypaster.statistics;
 
 import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
@@ -10,6 +11,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Stores information about the plugin usage on the project level in the ./idea/anticopypaster-plugin.xml file.
  */
+@Service(Service.Level.PROJECT)
 @State(name = "AntiCopyPasterUsageStatistics", storages = {@Storage("anticopypaster-plugin-usage.xml")})
 public class AntiCopyPasterUsageStatistics implements PersistentStateComponent<AntiCopyPasterUsageStatistics.PluginState> {
     private PluginState usageState = new PluginState();

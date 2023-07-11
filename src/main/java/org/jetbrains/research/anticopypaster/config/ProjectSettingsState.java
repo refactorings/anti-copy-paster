@@ -1,6 +1,7 @@
 package org.jetbrains.research.anticopypaster.config;
 
 import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
@@ -11,11 +12,12 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumMap;
 
+@Service(Service.Level.PROJECT)
 @State(
         name = "org.jetbrains.research.anticopypaster.config.ProjectSettingsState",
         storages = @Storage("anticopypaster-plugin.xml")
 )
-public class ProjectSettingsState implements PersistentStateComponent<ProjectSettingsState> {
+public final class ProjectSettingsState implements PersistentStateComponent<ProjectSettingsState> {
 
     // PRIMARY SETTINGS STATES
     public boolean useMLModel = false;
