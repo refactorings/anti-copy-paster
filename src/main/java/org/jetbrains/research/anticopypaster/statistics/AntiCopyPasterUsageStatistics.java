@@ -22,6 +22,7 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
     private static final long TRANSMISSION_INTERVAL = TimeUnit.MILLISECONDS.convert(3, TimeUnit.DAYS);
 
     private PluginState usageState = new PluginState();
+    private static Project p;
 
     @Override
     public @Nullable PluginState getState() {
@@ -34,6 +35,7 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
     }
 
     public static AntiCopyPasterUsageStatistics getInstance(Project project) {
+        p = project;
         return project.getService(AntiCopyPasterUsageStatistics.class);
     }
 
@@ -61,7 +63,7 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
     public void dispose() {
         long now = System.currentTimeMillis();
         if (now - usageState.lastTransmissionTime >= TRANSMISSION_INTERVAL) {
-            usageState.saveToMongoDB();
+            usageState.saveToMongoDB(p);
             usageState.lastTransmissionTime = now;
         }
     }
@@ -94,7 +96,7 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
             pasteCount += 1;
         }
 
-        public void saveToMongoDB() { SaveToMongoDB.saveStatistics(notificationCount, extractMethodAppliedCount, extractMethodRejectedCount, copyCount, pasteCount); }
+        public void saveToMongoDB(Project project) { SaveToMongoDB.saveStatistics(project, notificationCount, extractMethodAppliedCount, extractMethodRejectedCount, copyCount, pasteCount); }
     }
 }
 

@@ -50,6 +50,9 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public Boolean[] measureSizeByLines = {true, true}, measureSizeBySymbols = {false, false}, measureSizeBySymbolsPerLine = {false, false};
     public Boolean[] measureTotalSize = {true, true}, measureMethodDeclarationSize = {false, false};
 
+    // Statistics collection database credentials
+    public String statisticsUsername = null, statisticsPassword = null;
+
     public ProjectSettingsState() {}
 
     public static ProjectSettingsState getInstance(Project project) {

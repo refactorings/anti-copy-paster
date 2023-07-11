@@ -2,14 +2,12 @@ package org.jetbrains.research.anticopypaster.statistics;
 
 import com.intellij.ide.util.PropertiesComponent;
 
-import java.io.IOException;
-import java.net.Socket;
-
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.UUID;
 
+import com.intellij.openapi.project.Project;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoException;
 import com.mongodb.client.MongoClients;
@@ -19,23 +17,19 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.UpdateOptions;
 import org.bson.Document;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
 public class SaveToMongoDB {
 
-    // TODO: Finish handling connection details, username and password should be retrieved from the frontend
-    private static String CONNECTION_STRING;
     private static  String username;
     private static  String password;
     private static final String hostPort = "155.246.39.61:27018";
     private static final String DATABASE_NAME = "anticopypaster";
     private static final String USER_STATISTICS_COLLECTION = "AntiCopyPaster_User_Statistics";
 
-    public static void saveStatistics(int notificationCount, int extractMethodAppliedCount, int extractMethodRejectedCount, int copyCount, int pasteCount) {
+    public static void saveStatistics(Project project, int notificationCount, int extractMethodAppliedCount, int extractMethodRejectedCount, int copyCount, int pasteCount) {
 
-        if (!isSSHTunnelRunning("127.0.0.1", 27018)) {
-            System.out.println("Cannot save user statistics to database. SSH tunnel has not been established.");
-            return;
-        }
+        getUsernameAndPassword(project);
 
         MongoClientSettings settings = MongoClientSettings.builder()
                         .applyConnectionString(new ConnectionString(Objects.requireNonNull(makeConnectionString())))
@@ -57,20 +51,25 @@ public class SaveToMongoDB {
 
             statisticsCollection.updateOne(query, new Document("$set", updatedDocument), new UpdateOptions().upsert(true));
         }
-        catch (MongoException e) { System.out.println("MongoDB exception occurred."); e.printStackTrace(); }
-        catch (Exception e) { System.out.println("Unexpected exception occurred."); e.printStackTrace(); }
+        catch (MongoException e) { System.err.println("MongoDB exception occurred."); e.printStackTrace(); }
+        catch (Exception e) { System.err.println("Unexpected exception occurred."); e.printStackTrace(); }
     }
     private static String makeConnectionString() {
         try {
-            CONNECTION_STRING = "mongodb://" + URLEncoder.encode(username, StandardCharsets.UTF_8) + ":" +
+            return "mongodb://" + URLEncoder.encode(username, StandardCharsets.UTF_8) + ":" +
                     URLEncoder.encode(password, StandardCharsets.UTF_8) + "@" + hostPort + "/?authSource=admin";
-            return CONNECTION_STRING;
         } catch (Exception e) {
-            System.out.println("Error encoding username or password.");
+            System.err.println("Error encoding username or password.");
             e.printStackTrace();
             // Handle the exception appropriately, such as throwing a custom exception or returning a default value
             return null;
         }
+    }
+
+    private static void getUsernameAndPassword(Project project) {
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
+        username = settings.statisticsUsername;
+        password = settings.statisticsPassword;
     }
 
     private static String getUserID() {
@@ -82,14 +81,6 @@ public class SaveToMongoDB {
         userId = UUID.randomUUID().toString();
         PropertiesComponent.getInstance().setValue("UniqueUserID", userId);
         return userId;
-    }
-
-    public static boolean isSSHTunnelRunning(String tunnelHost, int tunnelPort) {
-        try (Socket socket = new Socket(tunnelHost, tunnelPort)) {
-            return true;
-        } catch (IOException e) {
-            return false;
-        }
     }
 
 }
