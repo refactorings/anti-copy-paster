@@ -22,6 +22,7 @@ dependencies {
     implementation("org.apache.commons:commons-lang3:3.0")
     implementation("org.pmml4s:pmml4s_2.13:0.9.10")
     implementation("org.mongodb:mongodb-driver-sync:4.10.1")
+    implementation("com.github.mwiede:jsch:0.2.9")
     /**
      * This file is commented out as it uses the TensorFlow API. By removing that dependency,
      * the plugin will be a fifth of the size and much more lightweight, but this won't
