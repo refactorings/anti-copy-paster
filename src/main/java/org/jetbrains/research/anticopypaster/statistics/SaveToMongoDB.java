@@ -27,7 +27,7 @@ public class SaveToMongoDB {
 
     private static  String username;
     private static  String password;
-    private static final String sshHost = "155.246.39.61:27018";
+    private static final String sshHost = "155.246.39.61";
     private static final int sshPort = 22;
     private static final String mongodbHost = "localhost";
     private static final int mongodbPort = 27017;
