@@ -39,6 +39,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         boolean modified = settingsComponent.getUseMLModel() != settings.useMLModel;
         modified |= settingsComponent.getMinimumDuplicateMethods() != settings.minimumDuplicateMethods;
+        modified |= settingsComponent.getTimeBuffer() != settings.timeBuffer;
         modified |= settingsComponent.getKeywordsSensitivity() != settings.keywordsSensitivity;
         modified |= settingsComponent.getKeywordsEnabled() != settings.keywordsEnabled;
         modified |= settingsComponent.getKeywordsRequired() != settings.keywordsRequired;
@@ -59,6 +60,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         settings.useMLModel = settingsComponent.getUseMLModel();
         settings.minimumDuplicateMethods = settingsComponent.getMinimumDuplicateMethods();
+        settings.timeBuffer = settingsComponent.getTimeBuffer();
         settings.keywordsSensitivity = settingsComponent.getKeywordsSensitivity();
         settings.keywordsEnabled = settingsComponent.getKeywordsEnabled();
         settings.keywordsRequired = settingsComponent.getKeywordsRequired();
@@ -78,6 +80,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         settingsComponent.setUseMLModel(settings.useMLModel);
         settingsComponent.setMinimumDuplicateMethods(settings.minimumDuplicateMethods);
+        settingsComponent.setTimeBuffer(settings.timeBuffer);
         settingsComponent.setKeywordsSensitivity(settings.keywordsSensitivity);
         settingsComponent.setKeywordsEnabled(settings.keywordsEnabled);
         settingsComponent.setKeywordsRequired(settings.keywordsRequired);
