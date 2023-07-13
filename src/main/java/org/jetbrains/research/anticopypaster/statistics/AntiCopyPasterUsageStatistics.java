@@ -16,10 +16,10 @@ import java.util.concurrent.TimeUnit;
  */
 @Service(Service.Level.PROJECT)
 @State(name = "AntiCopyPasterUsageStatistics", storages = {@Storage("anticopypaster-plugin-usage.xml")})
-public final class AntiCopyPasterUsageStatistics implements PersistentStateComponent<AntiCopyPasterUsageStatistics.PluginState>, Disposable {
+public final class AntiCopyPasterUsageStatistics implements PersistentStateComponent<AntiCopyPasterUsageStatistics.PluginState> {
 
     /** Specifies the minimum time between usage statistics transmissions to the server. */
-    private static final long TRANSMISSION_INTERVAL = TimeUnit.MILLISECONDS.convert(3, TimeUnit.DAYS);
+    public static final long TRANSMISSION_INTERVAL = TimeUnit.MILLISECONDS.convert(3, TimeUnit.DAYS);
 
     private PluginState usageState = new PluginState();
     private static Project p;
@@ -57,15 +57,6 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
 
     public void onPaste() {
         usageState.onPaste();
-    }
-
-    @Override
-    public void dispose() {
-        long now = System.currentTimeMillis();
-        if (now - usageState.lastTransmissionTime >= TRANSMISSION_INTERVAL) {
-            usageState.saveToMongoDB(p);
-            usageState.lastTransmissionTime = now;
-        }
     }
 
     public static class PluginState {

@@ -23,5 +23,7 @@
                 instance="org.jetbrains.research.anticopypaster.config.ProjectSettingsConfigurable"
                 id="org.jetbrains.research.anticopypaster.config.ProjectSettingsConfigurable"
                 displayName="AntiCopyPaster"/>
+        <postStartupActivity
+                implementation="org.jetbrains.research.anticopypaster.ide.AntiCopyPasteStartupActivity"/>
     </extensions>
 </idea-plugin>
