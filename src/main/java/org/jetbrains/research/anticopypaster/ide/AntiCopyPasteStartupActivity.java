@@ -8,7 +8,7 @@ import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStati
 
 import static org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics.TRANSMISSION_INTERVAL;
 
-public class AntiCopyPasteStartupActivity implements StartupActivity {
+public class AntiCopyPasteStartupActivity implements StartupActivity.DumbAware {
 
     // TODO: Update implementation for 2023.1+
 
