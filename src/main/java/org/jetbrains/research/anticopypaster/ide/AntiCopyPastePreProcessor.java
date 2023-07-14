@@ -66,6 +66,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         if (rnt == null) {
             rnt = new RefactoringNotificationTask(inspection, timer, project);
             refactoringNotificationTask.add(rnt);
+            setCheckingForRefactoringOpportunities(rnt);
         }
 
         AntiCopyPasterUsageStatistics.getInstance(project).onPaste();

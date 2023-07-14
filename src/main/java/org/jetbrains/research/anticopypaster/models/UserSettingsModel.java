@@ -14,9 +14,6 @@ public class UserSettingsModel extends PredictionModel{
     /*private static final String FILE_PATH = ProjectManager.getInstance().getOpenProjects()[0]
             .getBasePath() + "/.idea/custom_metrics.txt";*/
 
-    private final int DEFAULT_SENSITIVITY = 50;
-    private MetricsGatherer metricsGatherer;
-
     private Flag keywordsMetrics;
     private Flag sizeMetrics;
     private Flag complexityMetrics;
@@ -41,8 +38,7 @@ public class UserSettingsModel extends PredictionModel{
     thresholds
      */
     public void initMetricsGathererAndMetricsFlags(MetricsGatherer mg){
-        this.metricsGatherer = mg;
-        this.metricsGatherer.setProject(project);
+        mg.setProject(project);
 
         List<FeaturesVector> methodMetrics = mg.getMethodsMetrics();
         this.keywordsMetrics = new KeywordsMetrics(methodMetrics, project);
