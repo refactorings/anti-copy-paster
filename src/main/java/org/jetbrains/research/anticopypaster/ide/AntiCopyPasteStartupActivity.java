@@ -15,7 +15,7 @@ public class AntiCopyPasteStartupActivity implements StartupActivity.DumbAware {
     @Override
     public void runActivity(@NotNull Project project) {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
-        if (settings.statisticsUsername.isEmpty() || settings.statisticsPassword.isEmpty())
+        if (settings.statisticsUsername == null || settings.statisticsUsername.isEmpty() || !settings.statisticsPasswordIsSet)
             return;
 
         AntiCopyPasterUsageStatistics.PluginState usageState =

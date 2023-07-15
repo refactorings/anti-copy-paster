@@ -1,5 +1,8 @@
 package org.jetbrains.research.anticopypaster.config.credentials;
 
+import com.intellij.credentialStore.CredentialAttributes;
+import com.intellij.credentialStore.Credentials;
+import com.intellij.ide.passwordSafe.PasswordSafe;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nullable;
@@ -7,6 +10,8 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
 import javax.swing.*;
+
+import static com.intellij.remoteServer.util.CloudConfigurationUtil.createCredentialAttributes;
 
 public class CredentialsDialogWrapper extends DialogWrapper {
 
@@ -41,8 +46,14 @@ public class CredentialsDialogWrapper extends DialogWrapper {
         if (pressedOK) {
             ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
 
+            // Securely store credentials.
+            CredentialAttributes credentialAttributes = createCredentialAttributes("mongoDBStatistics", credentialsComponent.getUsername());
+            Credentials credentials = new Credentials(credentialsComponent.getUsername(), credentialsComponent.getPassword());
+            PasswordSafe.getInstance().set(credentialAttributes, credentials);
+
+            // Non-securely store username and the existence of a password.
             settings.statisticsUsername = credentialsComponent.getUsername();
-            settings.statisticsPassword = credentialsComponent.getPassword();
+            if (!credentialsComponent.getPassword().isEmpty()) { settings.statisticsPasswordIsSet = true; }
         }
     }
 

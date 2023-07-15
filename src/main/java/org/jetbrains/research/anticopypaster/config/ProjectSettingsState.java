@@ -51,7 +51,8 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public Boolean[] measureTotalSize = {true, true}, measureMethodDeclarationSize = {false, false};
 
     // Statistics collection database credentials
-    public String statisticsUsername = null, statisticsPassword = null;
+    public String statisticsUsername = null;
+    public boolean statisticsPasswordIsSet = false;
 
     public ProjectSettingsState() {}
 

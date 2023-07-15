@@ -1,5 +1,8 @@
 package org.jetbrains.research.anticopypaster.statistics;
 
+import com.intellij.credentialStore.CredentialAttributes;
+import com.intellij.credentialStore.Credentials;
+import com.intellij.ide.passwordSafe.PasswordSafe;
 import com.intellij.ide.util.PropertiesComponent;
 
 import com.jcraft.jsch.*;
@@ -23,6 +26,8 @@ import com.mongodb.client.model.UpdateOptions;
 import org.bson.Document;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
+import static com.intellij.remoteServer.util.CloudConfigurationUtil.createCredentialAttributes;
+
 public class SaveToMongoDB {
 
     private static  String username;
@@ -36,8 +41,7 @@ public class SaveToMongoDB {
     private static final String USER_STATISTICS_COLLECTION = "AntiCopyPaster_User_Statistics";
 
     public static void saveStatistics(Project project, int notificationCount, int extractMethodAppliedCount, int extractMethodRejectedCount, int copyCount, int pasteCount) {
-        //Get password and username from ProjectSettingsState
-        //TODO: possibly add extra security to how username and passwords are stored
+        //Get password and username from PasswordSafe
         getUsernameAndPassword(project);
         try {
             //First establish an SSH connection with the stevens server
@@ -100,8 +104,12 @@ public class SaveToMongoDB {
 
     private static void getUsernameAndPassword(Project project) {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
-        username = settings.statisticsUsername;
-        password = settings.statisticsPassword;
+        CredentialAttributes credentialAttributes = createCredentialAttributes("mongoDBStatistics", settings.statisticsUsername);
+        Credentials credentials = PasswordSafe.getInstance().get(credentialAttributes);
+        if (credentials != null) {
+            username = credentials.getUserName();
+            password = credentials.getPasswordAsString();
+        }
     }
 
     private static String getUserID() {
