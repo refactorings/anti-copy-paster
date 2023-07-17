@@ -1,6 +1,5 @@
 package org.jetbrains.research.anticopypaster.statistics;
 
-import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
@@ -87,7 +86,7 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
             pasteCount += 1;
         }
 
-        public void saveToMongoDB(Project project) { SaveToMongoDB.saveStatistics(project, notificationCount, extractMethodAppliedCount, extractMethodRejectedCount, copyCount, pasteCount); }
+        public void saveToMongoDB(Project project) { AntiCopyPasterTelemetry.saveStatistics(project, notificationCount, extractMethodAppliedCount, extractMethodRejectedCount, copyCount, pasteCount); }
     }
 }
 

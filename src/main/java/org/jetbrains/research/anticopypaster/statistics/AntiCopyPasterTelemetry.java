@@ -5,6 +5,7 @@ import com.intellij.credentialStore.Credentials;
 import com.intellij.ide.passwordSafe.PasswordSafe;
 import com.intellij.ide.util.PropertiesComponent;
 
+import com.intellij.openapi.startup.StartupActivity;
 import com.jcraft.jsch.*;
 
 import java.net.URLEncoder;
@@ -24,11 +25,13 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.UpdateOptions;
 import org.bson.Document;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
 import static com.intellij.remoteServer.util.CloudConfigurationUtil.createCredentialAttributes;
+import static org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics.TRANSMISSION_INTERVAL;
 
-public class SaveToMongoDB {
+public class AntiCopyPasterTelemetry implements StartupActivity.DumbAware {
 
     private static  String username;
     private static  String password;
@@ -39,6 +42,22 @@ public class SaveToMongoDB {
     private static final int forwardPort = 27017;
     private static final String DATABASE_NAME = "anticopypaster";
     private static final String USER_STATISTICS_COLLECTION = "AntiCopyPaster_User_Statistics";
+
+    // TODO: Update implementation for 2023.1+
+    @Override
+    public void runActivity(@NotNull Project project) {
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
+        if (settings.statisticsUsername == null || settings.statisticsUsername.isEmpty() || !settings.statisticsPasswordIsSet)
+            return;
+
+        AntiCopyPasterUsageStatistics.PluginState usageState =
+                AntiCopyPasterUsageStatistics.getInstance(project).getState();
+        long now = System.currentTimeMillis();
+        if (usageState != null && now - usageState.lastTransmissionTime >= TRANSMISSION_INTERVAL) {
+            usageState.saveToMongoDB(project);
+            usageState.lastTransmissionTime = now;
+        }
+    }
 
     public static void saveStatistics(Project project, int notificationCount, int extractMethodAppliedCount, int extractMethodRejectedCount, int copyCount, int pasteCount) {
         //Get password and username from PasswordSafe
