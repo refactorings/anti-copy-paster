@@ -13,10 +13,6 @@
     <depends>com.intellij.modules.lang</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <projectService
-                serviceImplementation="org.jetbrains.research.anticopypaster.config.ProjectSettingsState"/>
-        <projectService
-                serviceImplementation="org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics"/>
         <copyPastePreProcessor
                 implementation="org.jetbrains.research.anticopypaster.ide.AntiCopyPastePreProcessor"/>
         <notificationGroup
@@ -27,5 +23,7 @@
                 instance="org.jetbrains.research.anticopypaster.config.ProjectSettingsConfigurable"
                 id="org.jetbrains.research.anticopypaster.config.ProjectSettingsConfigurable"
                 displayName="AntiCopyPaster"/>
+        <postStartupActivity
+                implementation="org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterTelemetry"/>
     </extensions>
 </idea-plugin>

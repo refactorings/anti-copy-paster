@@ -5,6 +5,7 @@ import com.intellij.openapi.project.Project;
 
 import com.intellij.ui.JBIntSpinner;
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
+import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialogWrapper;
 
 public class ProjectSettingsComponent {
 
@@ -28,12 +29,18 @@ public class ProjectSettingsComponent {
     private JSpinner timeBufferSelecter;
     private JTextPane waitTextPane;
     private JTextPane secondsBeforeTriggeringRefactoringTextPane;
+    private JButton statisticsCollectionButton;
 
     public ProjectSettingsComponent(Project project) {
         advancedSettingsButton.addActionListener(e -> {
             AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
             boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
             advancedDialog.saveSettings(displayAndResolveAdvanced);
+        });
+        statisticsCollectionButton.addActionListener(e -> {
+            CredentialsDialogWrapper credentialsDialog = new CredentialsDialogWrapper(project);
+            boolean displayAndResolveCredentials = credentialsDialog.showAndGet();
+            credentialsDialog.saveSettings(displayAndResolveCredentials);
         });
         addConditionallyEnabledMetricGroup(keywordsEnabledCheckBox,keywordsSlider,keywordsRequiredCheckBox);
         addConditionallyEnabledMetricGroup(couplingEnabledCheckBox,couplingSlider,couplingRequiredCheckBox);
