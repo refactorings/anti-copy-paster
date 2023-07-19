@@ -1,6 +1,9 @@
 package org.jetbrains.research.anticopypaster.config.advanced;
 
+import com.intellij.icons.AllIcons;
+
 import javax.swing.*;
+import static org.jetbrains.research.anticopypaster.config.ProjectSettingsComponent.createLinkListener;
 import java.util.EnumMap;
 
 public class AdvancedProjectSettingsComponent {
@@ -70,6 +73,10 @@ public class AdvancedProjectSettingsComponent {
     private JCheckBox requiredSubmetricCheckBox15;
     private JScrollPane mainScroll;
     private JPanel masterPanel;
+    private JPanel helpLinkJPanel;
+    private JLabel helpLabel;
+    private JLabel contextHelp1;
+    private JLabel contextHelp2;
 
     public JPanel getPanel() {
         return masterPanel;
@@ -115,6 +122,22 @@ public class AdvancedProjectSettingsComponent {
         addConditionallyEnabledCheckboxGroup(measureSizeOfSegmentCheckBox, requiredSubmetricCheckBox14);
         addConditionallyEnabledCheckboxGroup(measureSizeOfMethodCheckBox, requiredSubmetricCheckBox15);
 
+        createUIComponents();
+
+    }
+
+    private void createUIComponents() {
+        // Initialize main help interface
+        helpLabel = new JLabel();
+        //TODO: PlACEHOLDER - replace with help page on website
+        createLinkListener(helpLabel, "www.google.com");
+        helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
+
+        // Create context help interface
+        contextHelp1 = new JLabel();
+        //TODO: PlACEHOLDER - replace with help page on website
+        createLinkListener(contextHelp1, "www.bing.com");
+        contextHelp1.setIcon(AllIcons.General.ContextHelp);
     }
 
     public enum JavaKeywords {

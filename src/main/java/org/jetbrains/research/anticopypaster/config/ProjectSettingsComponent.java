@@ -1,11 +1,20 @@
 package org.jetbrains.research.anticopypaster.config;
 
 import javax.swing.*;
+
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.project.Project;
 
 import com.intellij.ui.JBIntSpinner;
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialogWrapper;
+
+import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 public class ProjectSettingsComponent {
 
@@ -30,6 +39,12 @@ public class ProjectSettingsComponent {
     private JTextPane waitTextPane;
     private JTextPane secondsBeforeTriggeringRefactoringTextPane;
     private JButton statisticsCollectionButton;
+    private JLabel helpLabel;
+    private JLabel generalPreferencesLabel;
+    private JLabel manualHeuristicsLabel;
+    private JLabel recommendationSettingsLabel;
+    private JLabel copyLabel;
+    private JLabel clockLabel;
 
     public ProjectSettingsComponent(Project project) {
         advancedSettingsButton.addActionListener(e -> {
@@ -47,6 +62,7 @@ public class ProjectSettingsComponent {
         addConditionallyEnabledMetricGroup(complexityEnabledCheckBox, complexitySlider, complexityRequiredCheckBox);
         addConditionallyEnabledMetricGroup(sizeEnabledCheckBox, sizeSlider, sizeRequiredCheckBox);
 
+        createUIComponents();
     }
     private void addConditionallyEnabledMetricGroup(JCheckBox ind, JSlider depslid, JCheckBox dep) {
         ind.addActionListener(e -> {
@@ -186,5 +202,43 @@ public class ProjectSettingsComponent {
     private void createUIComponents() {
         minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);
         timeBufferSelecter = new JBIntSpinner(10, 1, 300);
+
+        // Set misc. icons
+        recommendationSettingsLabel = new JLabel();
+        recommendationSettingsLabel.setIcon(AllIcons.General.Gear);
+        generalPreferencesLabel = new JLabel();
+        generalPreferencesLabel.setIcon(AllIcons.General.Gear);
+        manualHeuristicsLabel = new JLabel();
+        manualHeuristicsLabel.setIcon(AllIcons.General.Settings);
+        advancedSettingsButton = new JButton();
+        advancedSettingsButton.setIcon(AllIcons.General.ExternalTools);
+        statisticsCollectionButton = new JButton();
+        statisticsCollectionButton.setIcon(AllIcons.General.Web);
+
+        copyLabel = new JLabel();
+        copyLabel.setIcon(AllIcons.General.InlineCopy);
+        clockLabel = new JLabel();
+        clockLabel.setIcon(AllIcons.Vcs.History);
+
+        // Initialize help interface
+        helpLabel = new JLabel();
+        //TODO: PlACEHOLDER - replace with help page on website
+        createLinkListener(helpLabel, "www.google.com");
+        helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
+    }
+
+    public static void createLinkListener(JLabel label, String url) {
+        label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        label.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                try {
+                    URI uri = new URI(url);
+                    Desktop.getDesktop().browse(uri);
+                } catch (IOException | URISyntaxException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        });
     }
 }
