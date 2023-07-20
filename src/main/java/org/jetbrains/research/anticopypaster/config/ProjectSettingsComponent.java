@@ -45,6 +45,7 @@ public class ProjectSettingsComponent {
     private JLabel recommendationSettingsLabel;
     private JLabel copyLabel;
     private JLabel clockLabel;
+    private JLabel manualHeuristicsHelp;
 
     public ProjectSettingsComponent(Project project) {
         advancedSettingsButton.addActionListener(e -> {
@@ -225,6 +226,11 @@ public class ProjectSettingsComponent {
         //TODO: PlACEHOLDER - replace with help page on website
         createLinkListener(helpLabel, "www.google.com");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
+
+        manualHeuristicsHelp = new JLabel();
+        //TODO: PLACEHOLDER
+        createLinkListener(manualHeuristicsHelp, "www.google.com");
+        manualHeuristicsHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
     public static void createLinkListener(JLabel label, String url) {

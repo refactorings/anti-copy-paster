@@ -75,8 +75,8 @@ public class AdvancedProjectSettingsComponent {
     private JPanel masterPanel;
     private JPanel helpLinkJPanel;
     private JLabel helpLabel;
-    private JLabel contextHelp1;
-    private JLabel contextHelp2;
+    private JButton selectAllButton;
+    private JButton selectNoneButton;
 
     public JPanel getPanel() {
         return masterPanel;
@@ -101,6 +101,8 @@ public class AdvancedProjectSettingsComponent {
 
     public AdvancedProjectSettingsComponent() {
 
+        createUIComponents();
+
         addConditionallyEnabledCheckboxGroup(totalKeywordCountInCheckBox, requiredSubmetricCheckBox);
         addConditionallyEnabledCheckboxGroup(keywordDensityPerLineCheckBox, requiredSubmetricCheckBox1);
 
@@ -122,22 +124,31 @@ public class AdvancedProjectSettingsComponent {
         addConditionallyEnabledCheckboxGroup(measureSizeOfSegmentCheckBox, requiredSubmetricCheckBox14);
         addConditionallyEnabledCheckboxGroup(measureSizeOfMethodCheckBox, requiredSubmetricCheckBox15);
 
-        createUIComponents();
-
     }
 
     private void createUIComponents() {
+
+        // Initialize "Select All" and "Select None" buttons
+        selectAllButton = new JButton();
+        selectNoneButton = new JButton();
+        selectAllButton.setIcon(AllIcons.Actions.Selectall);
+        selectNoneButton.setIcon(AllIcons.Actions.Unselectall);
+        selectAllButton.addActionListener(e -> {
+            EnumMap<JavaKeywords, Boolean> allTrueMap = new EnumMap<>(JavaKeywords.class);
+            for (JavaKeywords keyword : JavaKeywords.values()) { allTrueMap.put(keyword, true); }
+            setActiveKeywords(allTrueMap);
+        });
+        selectNoneButton.addActionListener(e -> {
+            EnumMap<JavaKeywords, Boolean> allFalseMap = new EnumMap<>(JavaKeywords.class);
+            for (JavaKeywords keyword : JavaKeywords.values()) { allFalseMap.put(keyword, false); }
+            setActiveKeywords(allFalseMap);
+        });
+
         // Initialize main help interface
         helpLabel = new JLabel();
         //TODO: PlACEHOLDER - replace with help page on website
         createLinkListener(helpLabel, "www.google.com");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
-
-        // Create context help interface
-        contextHelp1 = new JLabel();
-        //TODO: PlACEHOLDER - replace with help page on website
-        createLinkListener(contextHelp1, "www.bing.com");
-        contextHelp1.setIcon(AllIcons.General.ContextHelp);
     }
 
     public enum JavaKeywords {
