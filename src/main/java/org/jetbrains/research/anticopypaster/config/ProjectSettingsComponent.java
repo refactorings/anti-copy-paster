@@ -40,12 +40,9 @@ public class ProjectSettingsComponent {
     private JTextPane secondsBeforeTriggeringRefactoringTextPane;
     private JButton statisticsCollectionButton;
     private JLabel helpLabel;
+    private JLabel recommendationSettingsLabel;
     private JLabel generalPreferencesLabel;
     private JLabel manualHeuristicsLabel;
-    private JLabel recommendationSettingsLabel;
-    private JLabel copyLabel;
-    private JLabel clockLabel;
-    private JLabel manualHeuristicsHelp;
 
     public ProjectSettingsComponent(Project project) {
         advancedSettingsButton.addActionListener(e -> {
@@ -205,37 +202,21 @@ public class ProjectSettingsComponent {
         timeBufferSelecter = new JBIntSpinner(10, 1, 300);
 
         // Set misc. icons
-        recommendationSettingsLabel = new JLabel();
-        recommendationSettingsLabel.setIcon(AllIcons.General.Gear);
-        generalPreferencesLabel = new JLabel();
-        generalPreferencesLabel.setIcon(AllIcons.General.Gear);
         manualHeuristicsLabel = new JLabel();
         manualHeuristicsLabel.setIcon(AllIcons.General.Settings);
         advancedSettingsButton = new JButton();
         advancedSettingsButton.setIcon(AllIcons.General.ExternalTools);
-        statisticsCollectionButton = new JButton();
-        statisticsCollectionButton.setIcon(AllIcons.General.Web);
-
-        copyLabel = new JLabel();
-        copyLabel.setIcon(AllIcons.General.InlineCopy);
-        clockLabel = new JLabel();
-        clockLabel.setIcon(AllIcons.Vcs.History);
 
         // Initialize help interface
         helpLabel = new JLabel();
         //TODO: PlACEHOLDER - replace with help page on website
         createLinkListener(helpLabel, "www.google.com");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
-
-        manualHeuristicsHelp = new JLabel();
-        //TODO: PLACEHOLDER
-        createLinkListener(manualHeuristicsHelp, "www.google.com");
-        manualHeuristicsHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
-    public static void createLinkListener(JLabel label, String url) {
-        label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        label.addMouseListener(new MouseAdapter() {
+    public static void createLinkListener(JComponent component, String url) {
+        component.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        component.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
                 try {
