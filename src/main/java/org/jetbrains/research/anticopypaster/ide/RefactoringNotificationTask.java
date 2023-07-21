@@ -58,18 +58,7 @@ public class RefactoringNotificationTask extends TimerTask {
         this.inspection = inspection;
         this.timer = timer;
         this.p = p;
-        if(debugMetrics && this.logFilePath == null){
-            var filepathHolder = new Object(){String filepath = "";};
-            // Using ProjectManager outside runReadAction causes issues,
-            // this allows us to get the location of the baseFilePath
-            ApplicationManager.getApplication().runReadAction(() -> {
-                //p = ProjectManager.getInstance().getOpenProjects()[0];
-                String basePath = p.getBasePath();
-                filepathHolder.filepath = basePath +
-                        "/.idea/anticopypaster-refactoringSuggestionsLog.log";
-            });
-            this.logFilePath = filepathHolder.filepath;
-        }
+        this.logFilePath = p.getBasePath() + "/.idea/anticopypaster-refactoringSuggestionsLog.log";
     }
 
     private PredictionModel getOrInitModel() {

@@ -37,7 +37,6 @@ public class MetricsGatherer {
     public MetricsGatherer(Project project){
         this.methodsMetrics = new ArrayList<>();
         this.project = project;
-        //this.project = project == null ? ProjectManager.getInstance().getOpenProjects()[0] : project;
         gatherMetrics();
     }
 
@@ -45,16 +44,13 @@ public class MetricsGatherer {
      * Getter for the methodsMetrics.
      * @return the list of featuresVectors made by the gatherer.
      */
-    public List<FeaturesVector> getMethodsMetrics(){
+    public List<FeaturesVector> getMethodsMetrics() {
         return this.methodsMetrics;
     }
     /**
      * Gathers all the metrics from every method within the IntelliJ Project.
      */
-    private void gatherMetrics(){
-        // Gets the first currently opened project
-        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
-
+    private void gatherMetrics() {
         var vfCollectionWrapper = new Object(){ Collection<VirtualFile> vfCollection = null; };
         ApplicationManager.getApplication().runReadAction(() -> {
             // Gets all Java files from the Project
@@ -77,7 +73,7 @@ public class MetricsGatherer {
         }
 
         // Gets all the PsiMethods, as well as their start and end lines.
-        for(PsiFile psiFile: pfList) {
+        for (PsiFile psiFile: pfList) {
             // wrappers are used to get information out of runReadActions.
             // PsiTree's can't be accessed outside a read action, or it
             // can cause race conditions.

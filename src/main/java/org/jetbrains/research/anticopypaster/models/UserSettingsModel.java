@@ -11,27 +11,17 @@ import java.util.List;
 
 public class UserSettingsModel extends PredictionModel{
 
-    /*private static final String FILE_PATH = ProjectManager.getInstance().getOpenProjects()[0]
-            .getBasePath() + "/.idea/custom_metrics.txt";*/
-
-    private final int DEFAULT_SENSITIVITY = 50;
     private MetricsGatherer metricsGatherer;
-
     private Flag keywordsMetrics;
     private Flag sizeMetrics;
     private Flag complexityMetrics;
     private Flag couplingMetrics;
     private Project project;
 
-    public UserSettingsModel(MetricsGatherer mg, Project project){
-        //The metricsGatherer instantiation calls a function that can't be used
-        //outside the context of an installed plugin, so in order to unit test
-        //our model, the metrics gatherer is passed in from the constructor
-        this.project = project == null ? ProjectManager.getInstance().getOpenProjects()[0] : project;
-        //this.project = project;
-        if(mg != null){
+    public UserSettingsModel(MetricsGatherer mg, Project project) {
+        this.project = project;
+        if (mg != null)
             initMetricsGathererAndMetricsFlags(mg);
-        }
     }
 
     /**
@@ -40,7 +30,7 @@ public class UserSettingsModel extends PredictionModel{
     gatherer regather metrics and update the values in the sensitivity 
     thresholds
      */
-    public void initMetricsGathererAndMetricsFlags(MetricsGatherer mg){
+    public void initMetricsGathererAndMetricsFlags(MetricsGatherer mg) {
         this.metricsGatherer = mg;
         this.metricsGatherer.setProject(project);
 
@@ -49,8 +39,6 @@ public class UserSettingsModel extends PredictionModel{
         this.complexityMetrics = new ComplexityMetrics(methodMetrics, project);
         this.sizeMetrics = new SizeMetrics(methodMetrics, project);
         this.couplingMetrics = new CouplingMetrics(methodMetrics, project);
-
-        System.out.println();
     }
 
     /**
