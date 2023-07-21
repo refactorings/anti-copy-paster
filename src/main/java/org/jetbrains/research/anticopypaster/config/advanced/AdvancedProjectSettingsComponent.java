@@ -77,6 +77,7 @@ public class AdvancedProjectSettingsComponent {
     private JLabel helpLabel;
     private JButton selectAllButton;
     private JButton selectNoneButton;
+    private JLabel enabledKeywordsHelp;
 
     public JPanel getPanel() {
         return masterPanel;
@@ -149,6 +150,9 @@ public class AdvancedProjectSettingsComponent {
         //TODO: PlACEHOLDER - replace with help page on website
         createLinkListener(helpLabel, "www.google.com");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
+
+        enabledKeywordsHelp = new JLabel();
+        enabledKeywordsHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
     public enum JavaKeywords {

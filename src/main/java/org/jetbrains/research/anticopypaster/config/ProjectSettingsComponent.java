@@ -43,6 +43,10 @@ public class ProjectSettingsComponent {
     private JLabel recommendationSettingsLabel;
     private JLabel generalPreferencesLabel;
     private JLabel manualHeuristicsLabel;
+    private JLabel duplicateMethodsHelp;
+    private JLabel waitTimeHelp;
+    private JLabel statisticsButtonHelp;
+    private JLabel advancedButtonHelp;
 
     public ProjectSettingsComponent(Project project) {
         advancedSettingsButton.addActionListener(e -> {
@@ -212,6 +216,15 @@ public class ProjectSettingsComponent {
         //TODO: PlACEHOLDER - replace with help page on website
         createLinkListener(helpLabel, "www.google.com");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
+
+        duplicateMethodsHelp = new JLabel();
+        duplicateMethodsHelp.setIcon(AllIcons.General.ContextHelp);
+        waitTimeHelp = new JLabel();
+        waitTimeHelp.setIcon(AllIcons.General.ContextHelp);
+        advancedButtonHelp = new JLabel();
+        advancedButtonHelp.setIcon(AllIcons.General.ContextHelp);
+        statisticsButtonHelp = new JLabel();
+        statisticsButtonHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
     public static void createLinkListener(JComponent component, String url) {

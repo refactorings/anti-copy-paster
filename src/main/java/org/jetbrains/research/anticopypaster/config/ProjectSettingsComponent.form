@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <form xmlns="http://www.intellij.com/uidesigner/form/" version="1" bind-to-class="org.jetbrains.research.anticopypaster.config.ProjectSettingsComponent">
-  <grid id="27dc6" binding="mainPanel" layout-manager="GridLayoutManager" row-count="16" column-count="2" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
+  <grid id="27dc6" binding="mainPanel" layout-manager="GridLayoutManager" row-count="16" column-count="1" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
     <margin top="0" left="0" bottom="0" right="0"/>
     <constraints>
-      <xy x="20" y="20" width="588" height="804"/>
+      <xy x="20" y="20" width="588" height="938"/>
     </constraints>
     <properties>
       <preferredSize width="448" height="535"/>
@@ -12,7 +12,7 @@
     <children>
       <component id="580d1" class="javax.swing.JLabel" binding="recommendationSettingsLabel">
         <constraints>
-          <grid row="1" column="0" row-span="1" col-span="2" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
+          <grid row="1" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
         </constraints>
         <properties>
           <text value="Recommendation settings:"/>
@@ -20,7 +20,7 @@
       </component>
       <component id="379f0" class="javax.swing.JRadioButton" binding="useModelControlRadioButton">
         <constraints>
-          <grid row="2" column="0" row-span="1" col-span="2" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="1" use-parent-layout="false"/>
+          <grid row="2" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="1" use-parent-layout="false"/>
         </constraints>
         <properties>
           <text value="Use IntelliJent model"/>
@@ -28,7 +28,7 @@
       </component>
       <component id="bedec" class="javax.swing.JRadioButton" binding="useManualControlRadioButton">
         <constraints>
-          <grid row="3" column="0" row-span="1" col-span="2" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="1" use-parent-layout="false"/>
+          <grid row="3" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="1" use-parent-layout="false"/>
         </constraints>
         <properties>
           <text value="Use manual recommendation heuristics"/>
@@ -37,7 +37,7 @@
       <grid id="36115" layout-manager="GridLayoutManager" row-count="1" column-count="1" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
-          <grid row="8" column="0" row-span="1" col-span="2" vsize-policy="0" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false">
+          <grid row="8" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false">
             <minimum-size width="-1" height="20"/>
             <preferred-size width="-1" height="20"/>
             <maximum-size width="-1" height="20"/>
@@ -50,7 +50,7 @@
       <grid id="2ff57" layout-manager="GridLayoutManager" row-count="1" column-count="2" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
-          <grid row="9" column="0" row-span="1" col-span="2" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
+          <grid row="9" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
         </constraints>
         <properties/>
         <border type="none"/>
@@ -74,7 +74,7 @@
       <grid id="6022" layout-manager="GridLayoutManager" row-count="1" column-count="2" same-size-horizontally="true" same-size-vertically="false" hgap="-1" vgap="-1">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
-          <grid row="10" column="0" row-span="1" col-span="2" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
+          <grid row="10" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
         </constraints>
         <properties/>
         <border type="none"/>
@@ -101,7 +101,7 @@
                 </constraints>
                 <properties>
                   <enabled value="false"/>
-                  <text value="&lt;html&gt;Select how many keywords should be &lt;br/&gt;flagged before refactoring is suggested&lt;/html&gt;"/>
+                  <text value="&lt;html&gt;Select how many keywords the segment&lt;br/&gt;should contain before refactoring is suggested.&lt;/html&gt;"/>
                 </properties>
               </component>
               <vspacer id="ac9c7">
@@ -194,7 +194,7 @@
       <grid id="a2e7c" layout-manager="GridLayoutManager" row-count="1" column-count="2" same-size-horizontally="true" same-size-vertically="false" hgap="-1" vgap="-1">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
-          <grid row="11" column="0" row-span="1" col-span="2" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
+          <grid row="11" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
         </constraints>
         <properties/>
         <border type="none"/>
@@ -221,7 +221,7 @@
                 </constraints>
                 <properties>
                   <enabled value="false"/>
-                  <text value="&lt;html&gt;Select how many references are made &lt;br/&gt;outside of this class before refactoring &lt;br/&gt;is suggested&lt;/html&gt;"/>
+                  <text value="&lt;html&gt;Select how many references are made &lt;br/&gt;outside of this class before refactoring &lt;br/&gt;is suggested.&lt;/html&gt;"/>
                 </properties>
               </component>
               <vspacer id="c441c">
@@ -314,7 +314,7 @@
       <grid id="7a60f" layout-manager="GridLayoutManager" row-count="1" column-count="2" same-size-horizontally="true" same-size-vertically="false" hgap="-1" vgap="-1">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
-          <grid row="12" column="0" row-span="1" col-span="2" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
+          <grid row="12" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
         </constraints>
         <properties/>
         <border type="none"/>
@@ -341,7 +341,7 @@
                 </constraints>
                 <properties>
                   <enabled value="false"/>
-                  <text value="&lt;html&gt;Select the sensitivity of complexity for &lt;br/&gt;refactoring to be suggested&lt;/html&gt;"/>
+                  <text value="&lt;html&gt;Select the sensitivity of complexity for &lt;br/&gt;refactoring to be suggested.&lt;/html&gt;"/>
                 </properties>
               </component>
               <vspacer id="1be1c">
@@ -434,7 +434,7 @@
       <grid id="3f88a" layout-manager="GridLayoutManager" row-count="1" column-count="2" same-size-horizontally="true" same-size-vertically="false" hgap="-1" vgap="-1">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
-          <grid row="13" column="0" row-span="1" col-span="2" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
+          <grid row="13" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
         </constraints>
         <properties/>
         <border type="none"/>
@@ -461,7 +461,7 @@
                 </constraints>
                 <properties>
                   <enabled value="false"/>
-                  <text value="&lt;html&gt;Select how many duplicate lines of &lt;br/&gt;code are permitted before refactoring is &lt;br/&gt;suggested&lt;/html&gt;"/>
+                  <text value="&lt;html&gt;Select how many duplicate lines of &lt;br/&gt;code are permitted before refactoring is &lt;br/&gt;suggested.&lt;/html&gt;"/>
                 </properties>
               </component>
               <vspacer id="96e19">
@@ -551,18 +551,10 @@
           </grid>
         </children>
       </grid>
-      <component id="5df23" class="javax.swing.JButton" binding="advancedSettingsButton" custom-create="true" default-binding="true">
-        <constraints>
-          <grid row="14" column="0" row-span="1" col-span="2" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
-        </constraints>
-        <properties>
-          <text value="Advanced Settings"/>
-        </properties>
-      </component>
       <grid id="7613a" layout-manager="GridLayoutManager" row-count="1" column-count="2" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
-          <grid row="5" column="0" row-span="1" col-span="2" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
+          <grid row="5" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
         </constraints>
         <properties/>
         <border type="none"/>
@@ -583,10 +575,10 @@
           </component>
         </children>
       </grid>
-      <grid id="f8d0a" layout-manager="GridLayoutManager" row-count="1" column-count="2" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
+      <grid id="f8d0a" layout-manager="GridLayoutManager" row-count="1" column-count="3" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
-          <grid row="6" column="0" row-span="1" col-span="2" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
+          <grid row="6" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="1" use-parent-layout="false"/>
         </constraints>
         <properties/>
         <border type="none"/>
@@ -601,20 +593,27 @@
           </component>
           <component id="cea90" class="javax.swing.JTextPane" default-binding="true">
             <constraints>
-              <grid row="0" column="1" row-span="1" col-span="1" vsize-policy="1" hsize-policy="6" anchor="8" fill="0" indent="0" use-parent-layout="false">
-                <preferred-size width="350" height="20"/>
-              </grid>
+              <grid row="0" column="1" row-span="1" col-span="1" vsize-policy="1" hsize-policy="1" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
               <text value="methods must contain duplicate code to trigger refactoring."/>
             </properties>
           </component>
+          <component id="98697" class="javax.swing.JLabel" binding="duplicateMethodsHelp" custom-create="true">
+            <constraints>
+              <grid row="0" column="2" row-span="1" col-span="1" vsize-policy="0" hsize-policy="6" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
+            </constraints>
+            <properties>
+              <text value=""/>
+              <toolTipText value="&lt;html&gt;Refactoring will only be prompted if pasted code is contained in a minimum number of different methods.&lt;br&gt;Selecting 0 will set no minimum.&lt;/html&gt;"/>
+            </properties>
+          </component>
         </children>
       </grid>
-      <grid id="601f0" layout-manager="GridLayoutManager" row-count="1" column-count="3" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
+      <grid id="601f0" layout-manager="GridLayoutManager" row-count="1" column-count="4" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
-          <grid row="7" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
+          <grid row="7" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="1" use-parent-layout="false"/>
         </constraints>
         <properties/>
         <border type="none"/>
@@ -637,17 +636,24 @@
           </component>
           <component id="1b2c7" class="javax.swing.JTextPane" binding="secondsBeforeTriggeringRefactoringTextPane" default-binding="true">
             <constraints>
-              <grid row="0" column="2" row-span="1" col-span="1" vsize-policy="1" hsize-policy="6" anchor="0" fill="1" indent="0" use-parent-layout="false">
-                <preferred-size width="350" height="20"/>
-              </grid>
+              <grid row="0" column="2" row-span="1" col-span="1" vsize-policy="1" hsize-policy="1" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
               <text value="seconds before triggering refactoring prompt. (Requires IDE restart to take effect.)"/>
             </properties>
           </component>
+          <component id="bb1cf" class="javax.swing.JLabel" binding="waitTimeHelp" custom-create="true">
+            <constraints>
+              <grid row="0" column="3" row-span="1" col-span="1" vsize-policy="0" hsize-policy="6" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
+            </constraints>
+            <properties>
+              <text value=""/>
+              <toolTipText value="&lt;html&gt;To prevent false positives, AntiCopyPaster waits after pasting a code segment to notify.&lt;br&gt;You will receive no notification if the pasted segment is edited in this time."/>
+            </properties>
+          </component>
         </children>
       </grid>
-      <grid id="dcb9b" layout-manager="GridLayoutManager" row-count="1" column-count="2" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
+      <grid id="dcb9b" layout-manager="GridLayoutManager" row-count="1" column-count="6" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
         <margin top="0" left="0" bottom="0" right="0"/>
         <constraints>
           <grid row="14" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
@@ -657,17 +663,43 @@
         <children>
           <component id="4871d" class="javax.swing.JButton" binding="statisticsCollectionButton">
             <constraints>
-              <grid row="0" column="1" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
+              <grid row="0" column="4" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
               <text value="Statistics Collection"/>
             </properties>
           </component>
+          <component id="19602" class="javax.swing.JLabel" binding="statisticsButtonHelp" custom-create="true">
+            <constraints>
+              <grid row="0" column="5" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
+            </constraints>
+            <properties>
+              <text value=""/>
+              <toolTipText value="&lt;html&gt;Configure remote collection&lt;br&gt;of user statistics.&lt;/html&gt;"/>
+            </properties>
+          </component>
+          <component id="5df23" class="javax.swing.JButton" binding="advancedSettingsButton" custom-create="true" default-binding="true">
+            <constraints>
+              <grid row="0" column="0" row-span="1" col-span="2" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
+            </constraints>
+            <properties>
+              <text value="Advanced Settings"/>
+            </properties>
+          </component>
           <hspacer id="4fd36">
             <constraints>
-              <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="1" hsize-policy="6" anchor="0" fill="1" indent="0" use-parent-layout="false"/>
+              <grid row="0" column="3" row-span="1" col-span="1" vsize-policy="1" hsize-policy="6" anchor="0" fill="1" indent="0" use-parent-layout="false"/>
             </constraints>
           </hspacer>
+          <component id="384b8" class="javax.swing.JLabel" binding="advancedButtonHelp" custom-create="true">
+            <constraints>
+              <grid row="0" column="2" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
+            </constraints>
+            <properties>
+              <text value=""/>
+              <toolTipText value="&lt;html&gt;Customize the manual heuristic metrics.&lt;/html&gt;"/>
+            </properties>
+          </component>
         </children>
       </grid>
       <grid id="bf4bf" layout-manager="GridLayoutManager" row-count="2" column-count="1" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
