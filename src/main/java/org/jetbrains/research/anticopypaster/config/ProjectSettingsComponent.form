@@ -15,7 +15,7 @@
           <grid row="1" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
         </constraints>
         <properties>
-          <text value="Recommendation settings:"/>
+          <text resource-bundle="AntiCopyPasterBundle" key="settings.recommendationSettingsLabel"/>
         </properties>
       </component>
       <component id="379f0" class="javax.swing.JRadioButton" binding="useModelControlRadioButton">
@@ -23,7 +23,7 @@
           <grid row="2" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="1" use-parent-layout="false"/>
         </constraints>
         <properties>
-          <text value="Use IntelliJent model"/>
+          <text resource-bundle="AntiCopyPasterBundle" key="settings.useModelControlLabel"/>
         </properties>
       </component>
       <component id="bedec" class="javax.swing.JRadioButton" binding="useManualControlRadioButton">
@@ -31,7 +31,7 @@
           <grid row="3" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="1" use-parent-layout="false"/>
         </constraints>
         <properties>
-          <text value="Use manual recommendation heuristics"/>
+          <text resource-bundle="AntiCopyPasterBundle" key="settings.useManualHeuristicsLabel"/>
         </properties>
       </component>
       <grid id="36115" layout-manager="GridLayoutManager" row-count="1" column-count="1" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
@@ -60,7 +60,7 @@
               <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
-              <text value="Manual Heuristics"/>
+              <text resource-bundle="AntiCopyPasterBundle" key="settings.manualHeuristicsLabel"/>
             </properties>
           </component>
           <component id="d8e97" class="javax.swing.JSeparator">
@@ -92,7 +92,7 @@
                   <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                 </constraints>
                 <properties>
-                  <text value="Keywords"/>
+                  <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.keywords"/>
                 </properties>
               </component>
               <component id="9f0c" class="javax.swing.JLabel">
@@ -101,7 +101,7 @@
                 </constraints>
                 <properties>
                   <enabled value="false"/>
-                  <text value="&lt;html&gt;Select how many keywords the segment&lt;br/&gt;should contain before refactoring is suggested.&lt;/html&gt;"/>
+                  <text resource-bundle="AntiCopyPasterBundle" key="settings.keywordsDescription"/>
                 </properties>
               </component>
               <vspacer id="ac9c7">
@@ -143,7 +143,7 @@
                       <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="9" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Few"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.few"/>
                     </properties>
                   </component>
                   <hspacer id="fb3f">
@@ -156,7 +156,7 @@
                       <grid row="0" column="2" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="9" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Many"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.many"/>
                     </properties>
                   </component>
                 </children>
@@ -174,7 +174,7 @@
                       <grid row="0" column="1" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Required metric"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="settings.requiredMetric"/>
                     </properties>
                   </component>
                   <component id="8d3a8" class="javax.swing.JCheckBox" binding="keywordsEnabledCheckBox">
@@ -182,7 +182,7 @@
                       <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Enabled metric"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="settings.enabledMetric"/>
                     </properties>
                   </component>
                 </children>
@@ -212,7 +212,7 @@
                   <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                 </constraints>
                 <properties>
-                  <text value="Coupling"/>
+                  <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.coupling"/>
                 </properties>
               </component>
               <component id="52555" class="javax.swing.JLabel">
@@ -221,7 +221,7 @@
                 </constraints>
                 <properties>
                   <enabled value="false"/>
-                  <text value="&lt;html&gt;Select how many references are made &lt;br/&gt;outside of this class before refactoring &lt;br/&gt;is suggested.&lt;/html&gt;"/>
+                  <text resource-bundle="AntiCopyPasterBundle" key="settings.couplingDescription"/>
                 </properties>
               </component>
               <vspacer id="c441c">
@@ -263,7 +263,7 @@
                       <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="9" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Few"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.few"/>
                     </properties>
                   </component>
                   <hspacer id="727d7">
@@ -276,7 +276,7 @@
                       <grid row="0" column="2" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="9" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Many"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.many"/>
                     </properties>
                   </component>
                 </children>
@@ -294,7 +294,7 @@
                       <grid row="0" column="1" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Required metric"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="settings.requiredMetric"/>
                     </properties>
                   </component>
                   <component id="a95d2" class="javax.swing.JCheckBox" binding="couplingEnabledCheckBox">
@@ -302,7 +302,7 @@
                       <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Enabled metric"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="settings.enabledMetric"/>
                     </properties>
                   </component>
                 </children>
@@ -332,7 +332,7 @@
                   <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                 </constraints>
                 <properties>
-                  <text value="Complexity"/>
+                  <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.complexity"/>
                 </properties>
               </component>
               <component id="6166d" class="javax.swing.JLabel">
@@ -341,7 +341,7 @@
                 </constraints>
                 <properties>
                   <enabled value="false"/>
-                  <text value="&lt;html&gt;Select the sensitivity of complexity for &lt;br/&gt;refactoring to be suggested.&lt;/html&gt;"/>
+                  <text resource-bundle="AntiCopyPasterBundle" key="settings.complexityDescription"/>
                 </properties>
               </component>
               <vspacer id="1be1c">
@@ -383,7 +383,7 @@
                       <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="9" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Simple"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.simple"/>
                     </properties>
                   </component>
                   <hspacer id="7f8c2">
@@ -396,7 +396,7 @@
                       <grid row="0" column="2" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="9" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Complex"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.complex"/>
                     </properties>
                   </component>
                 </children>
@@ -414,7 +414,7 @@
                       <grid row="0" column="1" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Required metric"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="settings.requiredMetric"/>
                     </properties>
                   </component>
                   <component id="52e29" class="javax.swing.JCheckBox" binding="complexityEnabledCheckBox">
@@ -422,7 +422,7 @@
                       <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Enabled metric"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="settings.enabledMetric"/>
                     </properties>
                   </component>
                 </children>
@@ -452,7 +452,7 @@
                   <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                 </constraints>
                 <properties>
-                  <text value="Size"/>
+                  <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.size"/>
                 </properties>
               </component>
               <component id="7fb0e" class="javax.swing.JLabel">
@@ -461,7 +461,7 @@
                 </constraints>
                 <properties>
                   <enabled value="false"/>
-                  <text value="&lt;html&gt;Select how many duplicate lines of &lt;br/&gt;code are permitted before refactoring is &lt;br/&gt;suggested.&lt;/html&gt;"/>
+                  <text resource-bundle="AntiCopyPasterBundle" key="settings.sizeDescription"/>
                 </properties>
               </component>
               <vspacer id="96e19">
@@ -503,7 +503,7 @@
                       <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="9" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Small"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.small"/>
                     </properties>
                   </component>
                   <hspacer id="6ec49">
@@ -516,7 +516,7 @@
                       <grid row="0" column="2" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="9" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Large"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="vocabulary.large"/>
                     </properties>
                   </component>
                 </children>
@@ -534,7 +534,7 @@
                       <grid row="0" column="1" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Required metric"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="settings.requiredMetric"/>
                     </properties>
                   </component>
                   <component id="85dfc" class="javax.swing.JCheckBox" binding="sizeEnabledCheckBox">
@@ -542,7 +542,7 @@
                       <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
                     </constraints>
                     <properties>
-                      <text value="Enabled metric"/>
+                      <text resource-bundle="AntiCopyPasterBundle" key="settings.enabledMetric"/>
                     </properties>
                   </component>
                 </children>
@@ -564,7 +564,7 @@
               <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
-              <text value="General Preferences"/>
+              <text resource-bundle="AntiCopyPasterBundle" key="settings.generalPreferencesLabel"/>
             </properties>
           </component>
           <component id="c5326" class="javax.swing.JSeparator">
@@ -596,7 +596,7 @@
               <grid row="0" column="1" row-span="1" col-span="1" vsize-policy="1" hsize-policy="1" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
-              <text value="methods must contain duplicate code to trigger refactoring."/>
+              <text resource-bundle="AntiCopyPasterBundle" key="settings.methodDuplicatesDescription"/>
             </properties>
           </component>
           <component id="98697" class="javax.swing.JLabel" binding="duplicateMethodsHelp" custom-create="true">
@@ -605,7 +605,7 @@
             </constraints>
             <properties>
               <text value=""/>
-              <toolTipText value="&lt;html&gt;Refactoring will only be prompted if pasted code is contained in a minimum number of different methods.&lt;br&gt;Selecting 0 will set no minimum.&lt;/html&gt;"/>
+              <toolTipText resource-bundle="AntiCopyPasterBundle" key="settings.tooltip.methodDuplicates"/>
             </properties>
           </component>
         </children>
@@ -631,7 +631,7 @@
               <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="1" hsize-policy="1" anchor="0" fill="1" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
-              <text value="Wait"/>
+              <text resource-bundle="AntiCopyPasterBundle" key="settings.promptDelayDescription.one"/>
             </properties>
           </component>
           <component id="1b2c7" class="javax.swing.JTextPane" binding="secondsBeforeTriggeringRefactoringTextPane" default-binding="true">
@@ -639,7 +639,7 @@
               <grid row="0" column="2" row-span="1" col-span="1" vsize-policy="1" hsize-policy="1" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
-              <text value="seconds before triggering refactoring prompt. (Requires IDE restart to take effect.)"/>
+              <text resource-bundle="AntiCopyPasterBundle" key="settings.promptDelayDescription.two"/>
             </properties>
           </component>
           <component id="bb1cf" class="javax.swing.JLabel" binding="waitTimeHelp" custom-create="true">
@@ -648,7 +648,7 @@
             </constraints>
             <properties>
               <text value=""/>
-              <toolTipText value="&lt;html&gt;To prevent false positives, AntiCopyPaster waits after pasting a code segment to notify.&lt;br&gt;You will receive no notification if the pasted segment is edited in this time."/>
+              <toolTipText resource-bundle="AntiCopyPasterBundle" key="settings.tooltip.promptDelay"/>
             </properties>
           </component>
         </children>
@@ -666,7 +666,7 @@
               <grid row="0" column="4" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
-              <text value="Statistics Collection"/>
+              <text resource-bundle="AntiCopyPasterBundle" key="settings.statisticsButton"/>
             </properties>
           </component>
           <component id="19602" class="javax.swing.JLabel" binding="statisticsButtonHelp" custom-create="true">
@@ -675,7 +675,7 @@
             </constraints>
             <properties>
               <text value=""/>
-              <toolTipText value="&lt;html&gt;Configure remote collection&lt;br&gt;of user statistics.&lt;/html&gt;"/>
+              <toolTipText resource-bundle="AntiCopyPasterBundle" key="settings.tooltip.statisticsCollection"/>
             </properties>
           </component>
           <component id="5df23" class="javax.swing.JButton" binding="advancedSettingsButton" custom-create="true" default-binding="true">
@@ -683,7 +683,7 @@
               <grid row="0" column="0" row-span="1" col-span="2" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
-              <text value="Advanced Settings"/>
+              <text resource-bundle="AntiCopyPasterBundle" key="settings.advancedButton"/>
             </properties>
           </component>
           <hspacer id="4fd36">
@@ -697,7 +697,7 @@
             </constraints>
             <properties>
               <text value=""/>
-              <toolTipText value="&lt;html&gt;Customize the manual heuristic metrics.&lt;/html&gt;"/>
+              <toolTipText resource-bundle="AntiCopyPasterBundle" key="settings.tooltip.advancedSettings"/>
             </properties>
           </component>
         </children>
@@ -716,7 +716,7 @@
             </constraints>
             <properties>
               <foreground color="-12864546"/>
-              <text value="Learn more about AntiCopyPaster"/>
+              <text resource-bundle="AntiCopyPasterBundle" key="settings.learnmore"/>
             </properties>
             <clientProperties>
               <html.disable class="java.lang.Boolean" value="false"/>

@@ -47,8 +47,11 @@ public class ProjectSettingsComponent {
     private JLabel waitTimeHelp;
     private JLabel statisticsButtonHelp;
     private JLabel advancedButtonHelp;
+    private JPanel testPanel;
 
     public ProjectSettingsComponent(Project project) {
+
+        // Set listeners for buttons
         advancedSettingsButton.addActionListener(e -> {
             AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
             boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
@@ -241,4 +244,5 @@ public class ProjectSettingsComponent {
             }
         });
     }
+
 }
