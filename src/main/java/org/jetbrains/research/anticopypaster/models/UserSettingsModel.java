@@ -30,9 +30,8 @@ public class UserSettingsModel extends PredictionModel{
     gatherer regather metrics and update the values in the sensitivity 
     thresholds
      */
-    public void initMetricsGathererAndMetricsFlags(MetricsGatherer mg) {
-        this.metricsGatherer = mg;
-        this.metricsGatherer.setProject(project);
+    public void initMetricsGathererAndMetricsFlags(MetricsGatherer mg){
+        mg.setProject(project);
 
         List<FeaturesVector> methodMetrics = mg.getMethodsMetrics();
         this.keywordsMetrics = new KeywordsMetrics(methodMetrics, project);

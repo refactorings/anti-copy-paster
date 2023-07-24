@@ -1,7 +1,6 @@
 package org.jetbrains.research.anticopypaster.utils;
 
 import com.intellij.openapi.project.Project;
-import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.metrics.features.Feature;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 

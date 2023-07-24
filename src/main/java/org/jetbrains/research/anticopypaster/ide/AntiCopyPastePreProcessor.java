@@ -15,6 +15,7 @@ import com.intellij.psi.PsiMethod;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.checkers.FragmentCorrectnessChecker;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 import java.util.ArrayList;
@@ -107,8 +108,11 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
      * Sets the regular checking for Extract Method refactoring opportunities.
      */
     private void setCheckingForRefactoringOpportunities(RefactoringNotificationTask task) {
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(ProjectManager.getInstance().getOpenProjects()[0]);
+        int scheduleDelayInMs = settings.timeBuffer * 1000;
+
         try {
-            timer.schedule(task, 15000, 15000);
+            timer.schedule(task, scheduleDelayInMs, scheduleDelayInMs);
         } catch (Exception ex) {
             LOG.error("[ACP] Failed to schedule the checking for refactorings.", ex.getMessage());
         }

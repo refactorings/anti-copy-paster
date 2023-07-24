@@ -21,6 +21,7 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.apache.commons:commons-lang3:3.12.0")
     implementation("org.pmml4s:pmml4s_3:1.0.1")
+    implementation("org.mongodb:mongodb-driver-sync:4.10.1")
     /**
      * This file is commented out as it uses the TensorFlow API. By removing that dependency,
      * the plugin will be a fifth of the size and much more lightweight, but this won't

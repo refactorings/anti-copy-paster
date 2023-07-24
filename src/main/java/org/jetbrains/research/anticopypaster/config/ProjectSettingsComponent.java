@@ -5,6 +5,7 @@ import com.intellij.openapi.project.Project;
 
 import com.intellij.ui.JBIntSpinner;
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
+import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialogWrapper;
 
 public class ProjectSettingsComponent {
 
@@ -25,12 +26,21 @@ public class ProjectSettingsComponent {
     private JCheckBox complexityRequiredCheckBox;
     private JButton advancedSettingsButton;
     private JSpinner minimumMethodSelector;
+    private JSpinner timeBufferSelecter;
+    private JTextPane waitTextPane;
+    private JTextPane secondsBeforeTriggeringRefactoringTextPane;
+    private JButton statisticsCollectionButton;
 
     public ProjectSettingsComponent(Project project) {
         advancedSettingsButton.addActionListener(e -> {
             AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
             boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
             advancedDialog.saveSettings(displayAndResolveAdvanced);
+        });
+        statisticsCollectionButton.addActionListener(e -> {
+            CredentialsDialogWrapper credentialsDialog = new CredentialsDialogWrapper(project);
+            boolean displayAndResolveCredentials = credentialsDialog.showAndGet();
+            credentialsDialog.saveSettings(displayAndResolveCredentials);
         });
         addConditionallyEnabledMetricGroup(keywordsEnabledCheckBox,keywordsSlider,keywordsRequiredCheckBox);
         addConditionallyEnabledMetricGroup(couplingEnabledCheckBox,couplingSlider,couplingRequiredCheckBox);
@@ -72,6 +82,10 @@ public class ProjectSettingsComponent {
     public int getMinimumDuplicateMethods() { return (int) minimumMethodSelector.getValue(); }
 
     public void setMinimumDuplicateMethods(int minimumMethods) { minimumMethodSelector.setValue(minimumMethods); }
+
+    public int getTimeBuffer() { return (int) timeBufferSelecter.getValue(); }
+
+    public void setTimeBuffer(int timeBuffer) { timeBufferSelecter.setValue(timeBuffer); }
 
     public int getKeywordsSensitivity() {
         return keywordsSlider.getValue();
@@ -171,5 +185,6 @@ public class ProjectSettingsComponent {
 
     private void createUIComponents() {
         minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);
+        timeBufferSelecter = new JBIntSpinner(10, 1, 300);
     }
 }

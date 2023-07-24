@@ -112,40 +112,24 @@ public enum Feature {
             return "the average count of the " + name.substring(7, 7 + name.length() - "Keyword".length() - "CountPerLine".length()) + " keyword";
         }
 
-        switch (this) {
-            case MethodDeclarationSymbols:
-                return "the total size of the enclosing method in symbols";
-            case MethodDeclarationSymbolsPerLine:
-                return "the per-line-averaged size of the enclosing method in symbols";
-            case MethodDeclarationArea:
-                return "the total nesting area of the enclosing method";
-            case MethodDeclarationAreaPerLine:
-                return "the per-line-averaged nesting area of the enclosing method";
-            case TotalSymbols:
-                return "the total size of the code fragment in symbols";
-            case SymbolsPerLine:
-                return "the per-line-averaged size of the code fragment in symbols";
-            case Area:
-                return "the total nested area of the code fragment";
-            case AreaPerLine:
-                return "the per-line-averaged nested area of the code fragment";
-            case TotalLinesOfCode:
-                return "the total number of lines of code";
-            case TotalConnectivity:
-                return "the total coupling with the enclosing class";
-            case TotalConnectivityPerLine:
-                return "the average coupling with the enclosing class";
-            case FieldConnectivity:
-                return "the total coupling with the enclosing class by fields";
-            case FieldConnectivityPerLine:
-                return "the average coupling with the enclosing class by fields";
-            case MethodConnectivity:
-                return "the total coupling with the enclosing class by methods";
-            case MethodConnectivityPerLine:
-                return "the average coupling with the enclosing class by methods";
-            default:
-                return "";
-        }
+        return switch (this) {
+            case MethodDeclarationSymbols -> "the total size of the enclosing method in symbols";
+            case MethodDeclarationSymbolsPerLine -> "the per-line-averaged size of the enclosing method in symbols";
+            case MethodDeclarationArea -> "the total nesting area of the enclosing method";
+            case MethodDeclarationAreaPerLine -> "the per-line-averaged nesting area of the enclosing method";
+            case TotalSymbols -> "the total size of the code fragment in symbols";
+            case SymbolsPerLine -> "the per-line-averaged size of the code fragment in symbols";
+            case Area -> "the total nested area of the code fragment";
+            case AreaPerLine -> "the per-line-averaged nested area of the code fragment";
+            case TotalLinesOfCode -> "the total number of lines of code";
+            case TotalConnectivity -> "the total coupling with the enclosing class";
+            case TotalConnectivityPerLine -> "the average coupling with the enclosing class";
+            case FieldConnectivity -> "the total coupling with the enclosing class by fields";
+            case FieldConnectivityPerLine -> "the average coupling with the enclosing class by fields";
+            case MethodConnectivity -> "the total coupling with the enclosing class by methods";
+            case MethodConnectivityPerLine -> "the average coupling with the enclosing class by methods";
+            default -> "";
+        };
     }
 
     public int getId() {

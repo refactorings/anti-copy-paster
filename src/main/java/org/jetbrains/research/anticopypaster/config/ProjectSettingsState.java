@@ -1,6 +1,7 @@
 package org.jetbrains.research.anticopypaster.config;
 
 import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
@@ -11,15 +12,17 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumMap;
 
+@Service(Service.Level.PROJECT)
 @State(
         name = "org.jetbrains.research.anticopypaster.config.ProjectSettingsState",
         storages = @Storage("anticopypaster-plugin.xml")
 )
-public class ProjectSettingsState implements PersistentStateComponent<ProjectSettingsState> {
+public final class ProjectSettingsState implements PersistentStateComponent<ProjectSettingsState> {
 
     // PRIMARY SETTINGS STATES
     public boolean useMLModel = false;
     public int minimumDuplicateMethods = 2;
+    public int timeBuffer = 10;
     public boolean keywordsEnabled = true, couplingEnabled = true, sizeEnabled = true, complexityEnabled = true,
             keywordsRequired = true,couplingRequired = true, sizeRequired = true, complexityRequired = true;
     public int keywordsSensitivity = 50, couplingSensitivity = 50, sizeSensitivity = 50, complexitySensitivity = 50;
@@ -47,6 +50,10 @@ public class ProjectSettingsState implements PersistentStateComponent<ProjectSet
     // Size Metric
     public Boolean[] measureSizeByLines = {true, true}, measureSizeBySymbols = {false, false}, measureSizeBySymbolsPerLine = {false, false};
     public Boolean[] measureTotalSize = {true, true}, measureMethodDeclarationSize = {false, false};
+
+    // Statistics collection database credentials
+    public String statisticsUsername = null;
+    public boolean statisticsPasswordIsSet = false;
 
     public ProjectSettingsState() {}
 
