@@ -23,6 +23,8 @@ import com.mongodb.client.model.UpdateOptions;
 import org.bson.Document;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.intellij.remoteServer.util.CloudConfigurationUtil.createCredentialAttributes;
 import static org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics.TRANSMISSION_INTERVAL;
@@ -34,6 +36,7 @@ public class AntiCopyPasterTelemetry implements StartupActivity.DumbAware {
     private static final String REMOTE_HOST = "155.246.39.61";
     private static final String DATABASE_NAME = "anticopypaster";
     private static final String USER_STATISTICS_COLLECTION = "AntiCopyPaster_User_Statistics";
+    private static final Logger LOGGER = LoggerFactory.getLogger(AntiCopyPasterTelemetry.class);
 
     // TODO: Update implementation for 2023.1+
     @Override
@@ -75,11 +78,7 @@ public class AntiCopyPasterTelemetry implements StartupActivity.DumbAware {
 
             statisticsCollection.updateOne(query, new Document("$set", updatedDocument), new UpdateOptions().upsert(true));
         } catch (MongoException e) {
-            System.err.println("MongoDB exception occurred.");
-            e.printStackTrace();
-        } catch (Exception e) {
-            System.err.println("Unexpected exception occurred.");
-            e.printStackTrace();
+            LOGGER.error("Couldn't write to statistics database", e);
         }
     }
 
