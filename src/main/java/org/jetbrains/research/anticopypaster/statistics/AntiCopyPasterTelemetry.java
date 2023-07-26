@@ -5,7 +5,7 @@ import com.intellij.credentialStore.Credentials;
 import com.intellij.ide.passwordSafe.PasswordSafe;
 import com.intellij.ide.util.PropertiesComponent;
 
-import com.intellij.openapi.startup.StartupActivity;
+import com.intellij.openapi.startup.ProjectActivity;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -20,8 +20,11 @@ import com.mongodb.ConnectionString;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.UpdateOptions;
+import kotlin.Unit;
+import kotlin.coroutines.Continuation;
 import org.bson.Document;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +32,7 @@ import org.slf4j.LoggerFactory;
 import static com.intellij.remoteServer.util.CloudConfigurationUtil.createCredentialAttributes;
 import static org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics.TRANSMISSION_INTERVAL;
 
-public class AntiCopyPasterTelemetry implements StartupActivity.DumbAware {
+public class AntiCopyPasterTelemetry implements ProjectActivity {
 
     private static String username;
     private static String password;
@@ -38,20 +41,20 @@ public class AntiCopyPasterTelemetry implements StartupActivity.DumbAware {
     private static final String USER_STATISTICS_COLLECTION = "AntiCopyPaster_User_Statistics";
     private static final Logger LOGGER = LoggerFactory.getLogger(AntiCopyPasterTelemetry.class);
 
-    // TODO: Update implementation for 2023.1+
+    @Nullable
     @Override
-    public void runActivity(@NotNull Project project) {
+    public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
-        if (settings.statisticsUsername == null || settings.statisticsUsername.isEmpty() || !settings.statisticsPasswordIsSet)
-            return;
-
-        AntiCopyPasterUsageStatistics.PluginState usageState =
-                AntiCopyPasterUsageStatistics.getInstance(project).getState();
-        long now = System.currentTimeMillis();
-        if (usageState != null && now - usageState.lastTransmissionTime >= TRANSMISSION_INTERVAL) {
-            usageState.saveToMongoDB(project);
-            usageState.lastTransmissionTime = now;
+        if (settings.statisticsUsername != null && !settings.statisticsUsername.isEmpty() && settings.statisticsPasswordIsSet) {
+            AntiCopyPasterUsageStatistics.PluginState usageState =
+                    AntiCopyPasterUsageStatistics.getInstance(project).getState();
+            long now = System.currentTimeMillis();
+            if (usageState != null && now - usageState.lastTransmissionTime >= TRANSMISSION_INTERVAL) {
+                usageState.saveToMongoDB(project);
+                usageState.lastTransmissionTime = now;
+            }
         }
+        return Unit.INSTANCE;
     }
 
     public static void saveStatistics(Project project, int notificationCount, int extractMethodAppliedCount, int extractMethodRejectedCount, int copyCount, int pasteCount) {
