@@ -18,8 +18,7 @@ import java.util.List;
 
 /**
  * This class is used to gather metrics from every method within the currently
- * open IntelliJ Project. If multiple IntelliJ Projects are currently in use,
- * only the first project will be scoured.
+ * open IntelliJ Project, provided on declaration.
  */
 public class MetricsGatherer {
     /**
@@ -36,7 +35,6 @@ public class MetricsGatherer {
     public MetricsGatherer(Project project){
         this.methodsMetrics = new ArrayList<>();
         this.project = project;
-        //this.project = project == null ? ProjectManager.getInstance().getOpenProjects()[0] : project;
         gatherMetrics();
     }
 
@@ -48,12 +46,9 @@ public class MetricsGatherer {
         return this.methodsMetrics;
     }
     /**
-     * Gathers all the metrics from every method within the IntelliJ Project.
+     * Gathers all the metrics from every method within the open IntelliJ Project.
      */
     private void gatherMetrics(){
-        // Gets the first currently opened project
-        //Project project = ProjectManager.getInstance().getOpenProjects()[0];
-
         var vfCollectionWrapper = new Object(){ Collection<VirtualFile> vfCollection = null; };
         ApplicationManager.getApplication().runReadAction(() -> {
             // Gets all Java files from the Project

@@ -46,7 +46,6 @@ public abstract class Flag{
     public Flag(List<FeaturesVector> featuresVectorList, Project project){
         this.featuresVectorList = featuresVectorList;
         this.lastCalculatedMetric = null;
-        // For unit testing when project is null
         this.project = project;
         setSelectedMetrics();
         calculateThreshold();

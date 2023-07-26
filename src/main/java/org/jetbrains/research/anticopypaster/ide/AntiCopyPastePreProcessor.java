@@ -31,14 +31,13 @@ import static org.jetbrains.research.anticopypaster.utils.PsiUtil.getCountOfCode
 public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     private final DuplicatesInspection inspection = new DuplicatesInspection();
     private final Timer timer = new Timer(true);
-    //private final RefactoringNotificationTask refactoringNotificationTask = new RefactoringNotificationTask(inspection, timer);
     private final ArrayList<RefactoringNotificationTask> refactoringNotificationTask = new ArrayList<>();
 
     private static final Logger LOG = Logger.getInstance(AntiCopyPastePreProcessor.class);
 
     public AntiCopyPastePreProcessor() {
         refactoringNotificationTask.add(new RefactoringNotificationTask(inspection, timer, ProjectManager.getInstance().getOpenProjects()[0]));
-        setCheckingForRefactoringOpportunities(refactoringNotificationTask.get(0));
+        setCheckingForRefactoringOpportunities(refactoringNotificationTask.get(0), ProjectManager.getInstance().getOpenProjects()[0]);
     }
 
     /**
@@ -66,7 +65,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         if (rnt == null) {
             rnt = new RefactoringNotificationTask(inspection, timer, project);
             refactoringNotificationTask.add(rnt);
-            setCheckingForRefactoringOpportunities(rnt);
+            setCheckingForRefactoringOpportunities(rnt, project);
         }
 
         AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
@@ -98,8 +97,11 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         return text;
     }
 
-    //Checks if a RefactoringNotificationTask with the given project exists yet in the refactoringNotificationTask array
-    private RefactoringNotificationTask getRefactoringTask(Project project) {
+    /**
+     * Finds the RefactoringNotificationTask in the refactoringNotificationTask ArrayList that is associated with the
+     * given project. Returns the RefactoringNotificationTask if it exists, and null if it does not.
+     * */
+     private RefactoringNotificationTask getRefactoringTask(Project project) {
         for (RefactoringNotificationTask t:refactoringNotificationTask) {
             if (t.getProject() == project) {
                 return t;
@@ -111,8 +113,8 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     /**
      * Sets the regular checking for Extract Method refactoring opportunities.
      */
-    private void setCheckingForRefactoringOpportunities(RefactoringNotificationTask task) {
-        ProjectSettingsState settings = ProjectSettingsState.getInstance(ProjectManager.getInstance().getOpenProjects()[0]);
+    private void setCheckingForRefactoringOpportunities(RefactoringNotificationTask task, Project project) {
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         int scheduleDelayInMs = settings.timeBuffer * 1000;
 
         try {

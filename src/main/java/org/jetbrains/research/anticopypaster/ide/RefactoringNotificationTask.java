@@ -60,7 +60,6 @@ public class RefactoringNotificationTask extends TimerTask {
             // Using ProjectManager outside runReadAction causes issues,
             // this allows us to get the location of the baseFilePath
             ApplicationManager.getApplication().runReadAction(() -> {
-                //p = ProjectManager.getInstance().getOpenProjects()[0];
                 String basePath = p.getBasePath();
                 filepathHolder.filepath = basePath +
                         "/.idea/anticopypaster-refactoringSuggestionsLog.log";
