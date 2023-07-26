@@ -20,7 +20,6 @@ import java.util.EnumMap;
 public final class ProjectSettingsState implements PersistentStateComponent<ProjectSettingsState> {
 
     // PRIMARY SETTINGS STATES
-    public boolean useMLModel = false;
     public int minimumDuplicateMethods = 2;
     public int timeBuffer = 10;
     public boolean keywordsEnabled = true, couplingEnabled = true, sizeEnabled = true, complexityEnabled = true,

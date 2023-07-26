@@ -10,8 +10,6 @@ import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialo
 public class ProjectSettingsComponent {
 
     private JPanel mainPanel;
-    private JRadioButton useModelControlRadioButton;
-    private JRadioButton useManualControlRadioButton;
     private JSlider keywordsSlider;
     private JCheckBox keywordsEnabledCheckBox;
     private JCheckBox keywordsRequiredCheckBox;
@@ -26,9 +24,7 @@ public class ProjectSettingsComponent {
     private JCheckBox complexityRequiredCheckBox;
     private JButton advancedSettingsButton;
     private JSpinner minimumMethodSelector;
-    private JSpinner timeBufferSelecter;
-    private JTextPane waitTextPane;
-    private JTextPane secondsBeforeTriggeringRefactoringTextPane;
+    private JSpinner timeBufferSelector;
     private JButton statisticsCollectionButton;
 
     public ProjectSettingsComponent(Project project) {
@@ -67,25 +63,16 @@ public class ProjectSettingsComponent {
     }
 
     public JComponent getPreferredFocusedComponent() {
-        return useModelControlRadioButton;
-    }
-
-    public boolean getUseMLModel() {
-        return useModelControlRadioButton.isSelected();
-    }
-
-    public void setUseMLModel(boolean useMLModel) {
-        useModelControlRadioButton.setSelected(useMLModel);
-        useManualControlRadioButton.setSelected(!useMLModel);
+        return minimumMethodSelector;
     }
 
     public int getMinimumDuplicateMethods() { return (int) minimumMethodSelector.getValue(); }
 
     public void setMinimumDuplicateMethods(int minimumMethods) { minimumMethodSelector.setValue(minimumMethods); }
 
-    public int getTimeBuffer() { return (int) timeBufferSelecter.getValue(); }
+    public int getTimeBuffer() { return (int) timeBufferSelector.getValue(); }
 
-    public void setTimeBuffer(int timeBuffer) { timeBufferSelecter.setValue(timeBuffer); }
+    public void setTimeBuffer(int timeBuffer) { timeBufferSelector.setValue(timeBuffer); }
 
     public int getKeywordsSensitivity() {
         return keywordsSlider.getValue();
@@ -185,6 +172,6 @@ public class ProjectSettingsComponent {
 
     private void createUIComponents() {
         minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);
-        timeBufferSelecter = new JBIntSpinner(10, 1, 300);
+        timeBufferSelector = new JBIntSpinner(10, 1, 300);
     }
 }
