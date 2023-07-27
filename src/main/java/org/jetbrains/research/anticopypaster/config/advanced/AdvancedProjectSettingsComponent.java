@@ -147,8 +147,8 @@ public class AdvancedProjectSettingsComponent {
 
         // Initialize main help interface
         helpLabel = new JLabel();
-        //TODO: PlACEHOLDER - replace with help page on website
-        createLinkListener(helpLabel, "www.google.com");
+        //TODO: Replace with custom help page
+        createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/index.html");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
 
         enabledKeywordsHelp = new JLabel();

@@ -58,6 +58,7 @@ public class CredentialsDialogWrapper extends DialogWrapper {
         }
     }
 
+    // Pull from saved state to preset dialog state upon opening
     public void setFields() {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         credentialsComponent.setUsernameField(settings.statisticsUsername);

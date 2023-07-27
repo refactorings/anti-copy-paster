@@ -39,6 +39,7 @@ public class AdvancedProjectSettingsDialogWrapper extends DialogWrapper {
         return settingsComponent.getPreferredFocusedComponent();
     }
 
+    // Save dialog inputs to ProjectSettingsState saved state
     public void saveSettings(boolean pressedOK) {
         if (pressedOK) {
             ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
@@ -66,6 +67,7 @@ public class AdvancedProjectSettingsDialogWrapper extends DialogWrapper {
         }
     }
 
+    // Pull from saved state to preset dialog state upon opening
     public void setFields() {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
 

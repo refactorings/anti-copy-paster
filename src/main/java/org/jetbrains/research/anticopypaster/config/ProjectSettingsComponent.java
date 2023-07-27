@@ -216,8 +216,7 @@ public class ProjectSettingsComponent {
 
         // Initialize help interface
         helpLabel = new JLabel();
-        //TODO: PlACEHOLDER - replace with help page on website
-        createLinkListener(helpLabel, "www.google.com");
+        createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
 
         duplicateMethodsHelp = new JLabel();

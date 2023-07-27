@@ -15,6 +15,7 @@ public final class AntiCopyPasterBundle {
     private AntiCopyPasterBundle() {
     }
 
+    // Provide key to retrieve corresponding text from properties file
     public static String message(@PropertyKey(resourceBundle = BUNDLE) String key, Object... params) {
         return AbstractBundle.message(getBundle(), key, params);
     }

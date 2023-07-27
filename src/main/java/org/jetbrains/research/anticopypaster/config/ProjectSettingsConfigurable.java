@@ -61,6 +61,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         return modified;
     }
 
+    // Save dialog inputs to ProjectSettingsState saved state
     @Override
     public void apply() {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
@@ -81,6 +82,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.complexityRequired = settingsComponent.getComplexityRequired();
     }
 
+    // Pull from saved state to preset dialog state upon opening
     @Override
     public void reset() {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
