@@ -1,6 +1,9 @@
 package org.jetbrains.research.anticopypaster.config.advanced;
 
+import com.intellij.icons.AllIcons;
+
 import javax.swing.*;
+import static org.jetbrains.research.anticopypaster.config.ProjectSettingsComponent.createLinkListener;
 import java.util.EnumMap;
 
 public class AdvancedProjectSettingsComponent {
@@ -70,6 +73,11 @@ public class AdvancedProjectSettingsComponent {
     private JCheckBox requiredSubmetricCheckBox15;
     private JScrollPane mainScroll;
     private JPanel masterPanel;
+    private JPanel helpLinkJPanel;
+    private JLabel helpLabel;
+    private JButton selectAllButton;
+    private JButton selectNoneButton;
+    private JLabel enabledKeywordsHelp;
 
     public JPanel getPanel() {
         return masterPanel;
@@ -94,6 +102,8 @@ public class AdvancedProjectSettingsComponent {
 
     public AdvancedProjectSettingsComponent() {
 
+        createUIComponents();
+
         addConditionallyEnabledCheckboxGroup(totalKeywordCountInCheckBox, requiredSubmetricCheckBox);
         addConditionallyEnabledCheckboxGroup(keywordDensityPerLineCheckBox, requiredSubmetricCheckBox1);
 
@@ -115,6 +125,34 @@ public class AdvancedProjectSettingsComponent {
         addConditionallyEnabledCheckboxGroup(measureSizeOfSegmentCheckBox, requiredSubmetricCheckBox14);
         addConditionallyEnabledCheckboxGroup(measureSizeOfMethodCheckBox, requiredSubmetricCheckBox15);
 
+    }
+
+    private void createUIComponents() {
+
+        // Initialize "Select All" and "Select None" buttons
+        selectAllButton = new JButton();
+        selectNoneButton = new JButton();
+        selectAllButton.setIcon(AllIcons.Actions.Selectall);
+        selectNoneButton.setIcon(AllIcons.Actions.Unselectall);
+        selectAllButton.addActionListener(e -> {
+            EnumMap<JavaKeywords, Boolean> allTrueMap = new EnumMap<>(JavaKeywords.class);
+            for (JavaKeywords keyword : JavaKeywords.values()) { allTrueMap.put(keyword, true); }
+            setActiveKeywords(allTrueMap);
+        });
+        selectNoneButton.addActionListener(e -> {
+            EnumMap<JavaKeywords, Boolean> allFalseMap = new EnumMap<>(JavaKeywords.class);
+            for (JavaKeywords keyword : JavaKeywords.values()) { allFalseMap.put(keyword, false); }
+            setActiveKeywords(allFalseMap);
+        });
+
+        // Initialize main help interface
+        helpLabel = new JLabel();
+        //TODO: PlACEHOLDER - replace with help page on website
+        createLinkListener(helpLabel, "www.google.com");
+        helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
+
+        enabledKeywordsHelp = new JLabel();
+        enabledKeywordsHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
     public enum JavaKeywords {

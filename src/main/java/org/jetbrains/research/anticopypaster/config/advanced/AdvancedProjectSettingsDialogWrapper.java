@@ -4,6 +4,7 @@ import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nullable;
 
+import org.jetbrains.research.anticopypaster.AntiCopyPasterBundle;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
 import java.util.EnumMap;
@@ -18,7 +19,7 @@ public class AdvancedProjectSettingsDialogWrapper extends DialogWrapper {
         super(true);
         this.project = project;
 
-        setTitle("AntiCopyPaster Advanced Settings");
+        setTitle(AntiCopyPasterBundle.message("settings.advanced.title"));
         setResizable(true);
 
         init();

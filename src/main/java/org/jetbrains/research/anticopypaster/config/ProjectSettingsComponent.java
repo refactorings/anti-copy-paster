@@ -1,11 +1,20 @@
 package org.jetbrains.research.anticopypaster.config;
 
 import javax.swing.*;
+
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.project.Project;
 
 import com.intellij.ui.JBIntSpinner;
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialogWrapper;
+
+import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 public class ProjectSettingsComponent {
 
@@ -30,8 +39,19 @@ public class ProjectSettingsComponent {
     private JTextPane waitTextPane;
     private JTextPane secondsBeforeTriggeringRefactoringTextPane;
     private JButton statisticsCollectionButton;
+    private JLabel helpLabel;
+    private JLabel recommendationSettingsLabel;
+    private JLabel generalPreferencesLabel;
+    private JLabel manualHeuristicsLabel;
+    private JLabel duplicateMethodsHelp;
+    private JLabel waitTimeHelp;
+    private JLabel statisticsButtonHelp;
+    private JLabel advancedButtonHelp;
+    private JPanel testPanel;
 
     public ProjectSettingsComponent(Project project) {
+
+        // Set listeners for buttons
         advancedSettingsButton.addActionListener(e -> {
             AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
             boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
@@ -47,6 +67,7 @@ public class ProjectSettingsComponent {
         addConditionallyEnabledMetricGroup(complexityEnabledCheckBox, complexitySlider, complexityRequiredCheckBox);
         addConditionallyEnabledMetricGroup(sizeEnabledCheckBox, sizeSlider, sizeRequiredCheckBox);
 
+        createUIComponents();
     }
     private void addConditionallyEnabledMetricGroup(JCheckBox ind, JSlider depslid, JCheckBox dep) {
         ind.addActionListener(e -> {
@@ -186,5 +207,42 @@ public class ProjectSettingsComponent {
     private void createUIComponents() {
         minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);
         timeBufferSelecter = new JBIntSpinner(10, 1, 300);
+
+        // Set misc. icons
+        manualHeuristicsLabel = new JLabel();
+        manualHeuristicsLabel.setIcon(AllIcons.General.Settings);
+        advancedSettingsButton = new JButton();
+        advancedSettingsButton.setIcon(AllIcons.General.ExternalTools);
+
+        // Initialize help interface
+        helpLabel = new JLabel();
+        //TODO: PlACEHOLDER - replace with help page on website
+        createLinkListener(helpLabel, "www.google.com");
+        helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
+
+        duplicateMethodsHelp = new JLabel();
+        duplicateMethodsHelp.setIcon(AllIcons.General.ContextHelp);
+        waitTimeHelp = new JLabel();
+        waitTimeHelp.setIcon(AllIcons.General.ContextHelp);
+        advancedButtonHelp = new JLabel();
+        advancedButtonHelp.setIcon(AllIcons.General.ContextHelp);
+        statisticsButtonHelp = new JLabel();
+        statisticsButtonHelp.setIcon(AllIcons.General.ContextHelp);
     }
+
+    public static void createLinkListener(JComponent component, String url) {
+        component.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        component.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                try {
+                    URI uri = new URI(url);
+                    Desktop.getDesktop().browse(uri);
+                } catch (IOException | URISyntaxException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        });
+    }
+
 }
