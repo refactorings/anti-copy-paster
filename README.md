@@ -8,7 +8,7 @@ suggests extracting duplicates into a new method as soon as they are introduced 
 
 ## How To Install
 
-AntiCopyPaster requires IntelliJ IDEA version 2023.1 to work. To install the plugin:
+AntiCopyPaster requires IntelliJ IDEA version 2023.2 to work. To install the plugin:
 
 1. Download the pre-built version of the plugin from 
    [here](https://sourceforge.net/projects/anti-copy-paster/files/latest/download).
