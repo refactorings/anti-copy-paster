@@ -1,4 +1,0 @@
-Test header
-Low
-High
-Medium

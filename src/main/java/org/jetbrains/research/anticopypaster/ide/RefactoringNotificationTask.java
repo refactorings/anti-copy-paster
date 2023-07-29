@@ -13,7 +13,6 @@ import com.intellij.psi.PsiMethod;
 import com.intellij.refactoring.extractMethod.ExtractMethodProcessor;
 import com.intellij.refactoring.extractMethod.PrepareFailedException;
 
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.research.anticopypaster.AntiCopyPasterBundle;
 import org.jetbrains.research.anticopypaster.checkers.FragmentCorrectnessChecker;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
@@ -24,7 +23,6 @@ import org.jetbrains.research.anticopypaster.utils.MetricsGatherer;
 import org.jetbrains.research.anticopypaster.metrics.MetricCalculator;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 
-import javax.swing.event.HyperlinkEvent;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -55,17 +53,7 @@ public class RefactoringNotificationTask extends TimerTask {
         this.inspection = inspection;
         this.timer = timer;
         this.p = p;
-        if(debugMetrics && this.logFilePath == null){
-            var filepathHolder = new Object(){String filepath = "";};
-            // Using ProjectManager outside runReadAction causes issues,
-            // this allows us to get the location of the baseFilePath
-            ApplicationManager.getApplication().runReadAction(() -> {
-                String basePath = p.getBasePath();
-                filepathHolder.filepath = basePath +
-                        "/.idea/anticopypaster-refactoringSuggestionsLog.log";
-            });
-            this.logFilePath = filepathHolder.filepath;
-        }
+        this.logFilePath = p.getBasePath() + "/.idea/anticopypaster-refactoringSuggestionsLog.log";
     }
 
     private PredictionModel getOrInitModel() {
@@ -204,12 +192,9 @@ public class RefactoringNotificationTask extends TimerTask {
 
     public void notify(Project project, String content, Runnable callback) {
         final Notification notification = notificationGroup.createNotification(content, NotificationType.INFORMATION);
-        notification.setListener(new NotificationListener.Adapter() {
-            @Override
-            protected void hyperlinkActivated(@NotNull Notification notification, @NotNull HyperlinkEvent e) {
-                callback.run();
-            }
-        });
+        notification.addAction(NotificationAction.createSimple(
+                AntiCopyPasterBundle.message("anticopypaster.recommendation.notification.action"),
+                callback));
         notification.notify(project);
         AntiCopyPasterUsageStatistics.getInstance(project).notificationShown();
     }

@@ -20,11 +20,10 @@ import java.util.EnumMap;
 public final class ProjectSettingsState implements PersistentStateComponent<ProjectSettingsState> {
 
     // PRIMARY SETTINGS STATES
-    public boolean useMLModel = false;
     public int minimumDuplicateMethods = 2;
     public int timeBuffer = 10;
     public boolean keywordsEnabled = true, couplingEnabled = true, sizeEnabled = true, complexityEnabled = true,
-            keywordsRequired = true,couplingRequired = true, sizeRequired = true, complexityRequired = true;
+            keywordsRequired = true, couplingRequired = true, sizeRequired = true, complexityRequired = true;
     public int keywordsSensitivity = 50, couplingSensitivity = 50, sizeSensitivity = 50, complexitySensitivity = 50;
 
     // ADVANCED SETTINGS STATES
@@ -54,8 +53,6 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     // Statistics collection database credentials
     public String statisticsUsername = null;
     public boolean statisticsPasswordIsSet = false;
-
-    public ProjectSettingsState() {}
 
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);

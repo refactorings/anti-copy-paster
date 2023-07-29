@@ -21,7 +21,6 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
     public static final long TRANSMISSION_INTERVAL = TimeUnit.MILLISECONDS.convert(3, TimeUnit.DAYS);
 
     private PluginState usageState = new PluginState();
-    private static Project p;
 
     @Override
     public @Nullable PluginState getState() {
@@ -34,7 +33,6 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
     }
 
     public static AntiCopyPasterUsageStatistics getInstance(Project project) {
-        p = project;
         return project.getService(AntiCopyPasterUsageStatistics.class);
     }
 
