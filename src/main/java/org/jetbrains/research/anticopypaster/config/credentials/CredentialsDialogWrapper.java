@@ -49,6 +49,7 @@ public class CredentialsDialogWrapper extends DialogWrapper {
 
             // Securely store credentials.
             CredentialAttributes credentialAttributes = createCredentialAttributes("mongoDBStatistics", credentialsComponent.getUsername());
+            if (credentialAttributes == null)   return;
             Credentials credentials = new Credentials(credentialsComponent.getUsername(), credentialsComponent.getPassword());
             PasswordSafe.getInstance().set(credentialAttributes, credentials);
 

@@ -47,7 +47,6 @@ public class ProjectSettingsComponent {
     private JLabel waitTimeHelp;
     private JLabel statisticsButtonHelp;
     private JLabel advancedButtonHelp;
-    private JPanel testPanel;
 
     public ProjectSettingsComponent(Project project) {
 
@@ -214,9 +213,9 @@ public class ProjectSettingsComponent {
         advancedSettingsButton = new JButton();
         advancedSettingsButton.setIcon(AllIcons.General.ExternalTools);
 
-        // Initialize help interface
+        // Set link and icons for help features
         helpLabel = new JLabel();
-        createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/");
+        createLinkListener(helpLabel, "https://arxiv.org/abs/2112.15230");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
 
         duplicateMethodsHelp = new JLabel();
