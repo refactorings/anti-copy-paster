@@ -215,7 +215,7 @@ public class ProjectSettingsComponent {
 
         // Set link and icons for help features
         helpLabel = new JLabel();
-        createLinkListener(helpLabel, "https://arxiv.org/abs/2112.15230");
+        createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/index.html");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
 
         duplicateMethodsHelp = new JLabel();

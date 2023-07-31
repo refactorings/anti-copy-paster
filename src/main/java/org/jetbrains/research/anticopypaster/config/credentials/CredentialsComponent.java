@@ -42,8 +42,7 @@ public class CredentialsComponent {
         passwordLabel.setIcon(AllIcons.Diff.Lock);
 
         // Initialize help interface
-        //TODO: PlACEHOLDER - replace with custom help page
-        createLinkListener(learnMore, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/index.html");
+        createLinkListener(learnMore, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/pages/statistics.html");
         learnMore.setIcon(AllIcons.Ide.External_link_arrow);
         infoLabel.setIcon(AllIcons.General.Note);
     }
