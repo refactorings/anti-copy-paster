@@ -10,7 +10,7 @@ public class CredentialsComponent {
     private JPasswordField passwordField;
     private JTextField usernameField;
     private JPanel mainPanel;
-    private JTextPane byEnteringYourCredentialsTextPane;
+    private JLabel byEnteringYourCredentialsLabel;
     private JLabel learnMore;
     private JLabel passwordLabel;
     private JLabel infoLabel;
