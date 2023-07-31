@@ -48,4 +48,4 @@ https://github.com/JetBrains-Research/extract-method-experiments.
 
 ## Contacts
 
-If you have any questions or propositions, do not hesitate to contact Eman AlOmar at alomar@stevens.edu.
+If you have any questions or propositions, do not hesitate to contact Eman AlOmar at ealomar@stevens.edu.
