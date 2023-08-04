@@ -3,6 +3,7 @@ package org.jetbrains.research.anticopypaster.config;
 import javax.swing.*;
 
 import com.intellij.icons.AllIcons;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 
 import com.intellij.ui.JBIntSpinner;
@@ -19,8 +20,6 @@ import java.net.URISyntaxException;
 public class ProjectSettingsComponent {
 
     private JPanel mainPanel;
-    private JRadioButton useModelControlRadioButton;
-    private JRadioButton useManualControlRadioButton;
     private JSlider keywordsSlider;
     private JCheckBox keywordsEnabledCheckBox;
     private JCheckBox keywordsRequiredCheckBox;
@@ -35,18 +34,15 @@ public class ProjectSettingsComponent {
     private JCheckBox complexityRequiredCheckBox;
     private JButton advancedSettingsButton;
     private JSpinner minimumMethodSelector;
-    private JSpinner timeBufferSelecter;
-    private JTextPane waitTextPane;
-    private JTextPane secondsBeforeTriggeringRefactoringTextPane;
+    private JSpinner timeBufferSelector;
     private JButton statisticsCollectionButton;
     private JLabel helpLabel;
-    private JLabel recommendationSettingsLabel;
-    private JLabel generalPreferencesLabel;
-    private JLabel manualHeuristicsLabel;
     private JLabel duplicateMethodsHelp;
     private JLabel waitTimeHelp;
     private JLabel statisticsButtonHelp;
     private JLabel advancedButtonHelp;
+
+    private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
     public ProjectSettingsComponent(Project project) {
 
@@ -68,6 +64,7 @@ public class ProjectSettingsComponent {
 
         createUIComponents();
     }
+
     private void addConditionallyEnabledMetricGroup(JCheckBox ind, JSlider depslid, JCheckBox dep) {
         ind.addActionListener(e -> {
                     if (ind.isSelected()) {
@@ -82,30 +79,22 @@ public class ProjectSettingsComponent {
                 }
         );
     }
+
     public JPanel getPanel() {
         return mainPanel;
     }
 
     public JComponent getPreferredFocusedComponent() {
-        return useModelControlRadioButton;
-    }
-
-    public boolean getUseMLModel() {
-        return useModelControlRadioButton.isSelected();
-    }
-
-    public void setUseMLModel(boolean useMLModel) {
-        useModelControlRadioButton.setSelected(useMLModel);
-        useManualControlRadioButton.setSelected(!useMLModel);
+        return minimumMethodSelector;
     }
 
     public int getMinimumDuplicateMethods() { return (int) minimumMethodSelector.getValue(); }
 
     public void setMinimumDuplicateMethods(int minimumMethods) { minimumMethodSelector.setValue(minimumMethods); }
 
-    public int getTimeBuffer() { return (int) timeBufferSelecter.getValue(); }
+    public int getTimeBuffer() { return (int) timeBufferSelector.getValue(); }
 
-    public void setTimeBuffer(int timeBuffer) { timeBufferSelecter.setValue(timeBuffer); }
+    public void setTimeBuffer(int timeBuffer) { timeBufferSelector.setValue(timeBuffer); }
 
     public int getKeywordsSensitivity() {
         return keywordsSlider.getValue();
@@ -205,19 +194,12 @@ public class ProjectSettingsComponent {
 
     private void createUIComponents() {
         minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);
-        timeBufferSelecter = new JBIntSpinner(10, 1, 300);
-
-        // Set misc. icons
-        manualHeuristicsLabel = new JLabel();
-        manualHeuristicsLabel.setIcon(AllIcons.General.Settings);
-        advancedSettingsButton = new JButton();
-        advancedSettingsButton.setIcon(AllIcons.General.ExternalTools);
+        timeBufferSelector = new JBIntSpinner(10, 1, 300);
 
         // Set link and icons for help features
         helpLabel = new JLabel();
         createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/index.html");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
-
         duplicateMethodsHelp = new JLabel();
         duplicateMethodsHelp.setIcon(AllIcons.General.ContextHelp);
         waitTimeHelp = new JLabel();
@@ -237,10 +219,9 @@ public class ProjectSettingsComponent {
                     URI uri = new URI(url);
                     Desktop.getDesktop().browse(uri);
                 } catch (IOException | URISyntaxException ex) {
-                    ex.printStackTrace();
+                    LOG.error("Failed to open link", ex);
                 }
             }
         });
     }
-
 }

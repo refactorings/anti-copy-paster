@@ -64,5 +64,4 @@ public class CredentialsDialogWrapper extends DialogWrapper {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         credentialsComponent.setUsernameField(settings.statisticsUsername);
     }
-
 }

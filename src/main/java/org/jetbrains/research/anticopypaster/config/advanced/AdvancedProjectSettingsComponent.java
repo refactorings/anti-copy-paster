@@ -1,8 +1,12 @@
 package org.jetbrains.research.anticopypaster.config.advanced;
 
 import com.intellij.icons.AllIcons;
+import com.intellij.ui.components.JBScrollPane;
+import com.intellij.util.ui.JBUI;
 
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+
 import static org.jetbrains.research.anticopypaster.config.ProjectSettingsComponent.createLinkListener;
 import java.util.EnumMap;
 
@@ -60,7 +64,6 @@ public class AdvancedProjectSettingsComponent {
     private JCheckBox requiredSubmetricCheckBox9;
     private JCheckBox numberOfSymbolsInCheckBox;
     private JCheckBox requiredSubmetricCheckBox10;
-    private JPanel mainPanel;
     private JCheckBox methodDeclarationAreaCheckBox;
     private JCheckBox methodDeclarationDepthDensityCheckBox;
     private JCheckBox requiredSubmetricCheckBox11;
@@ -128,6 +131,9 @@ public class AdvancedProjectSettingsComponent {
     }
 
     private void createUIComponents() {
+        // Hide the scrolling pane's border by making it the color of the background
+        mainScroll = new JBScrollPane();
+        mainScroll.setBorder(JBUI.Borders.customLine(JBUI.CurrentTheme.ToolWindow.background()));
 
         // Initialize "Select All" and "Select None" buttons
         selectAllButton = new JButton();
@@ -334,5 +340,4 @@ public class AdvancedProjectSettingsComponent {
     public Boolean[] getSizeBySymbolDensitySubmetricInfo() { return new Boolean[] {densityOfSymbolsInCheckBox.isSelected(), requiredSubmetricCheckBox13.isSelected()}; }
     public Boolean[] getMeasureSizeOfSegmentInfo() { return new Boolean[] {measureSizeOfSegmentCheckBox.isSelected(), requiredSubmetricCheckBox14.isSelected()}; }
     public Boolean[] getMeasureSizeOfMethodInfo() { return new Boolean[] {measureSizeOfMethodCheckBox.isSelected(), requiredSubmetricCheckBox15.isSelected()}; }
-
 }

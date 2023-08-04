@@ -6,11 +6,9 @@ import javax.swing.*;
 import static org.jetbrains.research.anticopypaster.config.ProjectSettingsComponent.createLinkListener;
 
 public class CredentialsComponent {
-    private JPanel CredentialsPanel;
     private JPasswordField passwordField;
     private JTextField usernameField;
     private JPanel mainPanel;
-    private JLabel byEnteringYourCredentialsLabel;
     private JLabel learnMore;
     private JLabel passwordLabel;
     private JLabel infoLabel;
@@ -29,7 +27,7 @@ public class CredentialsComponent {
         return usernameField.getText();
     }
     public String getPassword() {
-        return passwordField.getText();
+        return String.valueOf(passwordField.getPassword());
     }
 
     public void setUsernameField(String username) {
