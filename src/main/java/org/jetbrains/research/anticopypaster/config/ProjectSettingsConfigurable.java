@@ -57,6 +57,10 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= settingsComponent.getComplexitySensitivity() != settings.complexitySensitivity;
         modified |= settingsComponent.getComplexityEnabled() != settings.complexityEnabled;
         modified |= settingsComponent.getComplexityRequired() != settings.complexityRequired;
+        modified |= settingsComponent.getModel1() != settings.model1;
+        modified |= settingsComponent.getModel2() != settings.model2;
+        modified |= settingsComponent.getModel3() != settings.model3;
+        modified |= settingsComponent.getModel4() != settings.model4;
         return modified;
     }
 
@@ -78,6 +82,10 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.complexitySensitivity = settingsComponent.getComplexitySensitivity();
         settings.complexityEnabled = settingsComponent.getComplexityEnabled();
         settings.complexityRequired = settingsComponent.getComplexityRequired();
+        settings.model1 = settingsComponent.getModel1();
+        settings.model2 = settingsComponent.getModel2();
+        settings.model3 = settingsComponent.getModel3();
+        settings.model4 = settingsComponent.getModel4();
     }
 
     // Pull from saved state to preset dialog state upon opening
@@ -98,6 +106,10 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setComplexitySensitivity(settings.complexitySensitivity);
         settingsComponent.setComplexityEnabled(settings.complexityEnabled);
         settingsComponent.setComplexityRequired(settings.complexityRequired);
+        settingsComponent.setModel1(settings.model1);
+        settingsComponent.setModel2(settings.model2);
+        settingsComponent.setModel3(settings.model3);
+        settingsComponent.setModel4(settings.model4);
     }
 
     @Override

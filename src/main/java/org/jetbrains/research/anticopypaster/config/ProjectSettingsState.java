@@ -23,7 +23,8 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public int minimumDuplicateMethods = 2;
     public int timeBuffer = 10;
     public boolean keywordsEnabled = true, couplingEnabled = true, sizeEnabled = true, complexityEnabled = true,
-            keywordsRequired = true, couplingRequired = true, sizeRequired = true, complexityRequired = true;
+            keywordsRequired = true, couplingRequired = true, sizeRequired = true, complexityRequired = true,
+            model1 = false, model2 = false, model3 = false, model4 = false;
     public int keywordsSensitivity = 50, couplingSensitivity = 50, sizeSensitivity = 50, complexitySensitivity = 50;
 
     // ADVANCED SETTINGS STATES
