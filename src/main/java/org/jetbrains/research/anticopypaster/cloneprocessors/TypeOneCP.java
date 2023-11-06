@@ -1,8 +1,6 @@
 package org.jetbrains.research.anticopypaster.cloneprocessors;
 
-import com.intellij.psi.PsiCodeBlock;
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiFile;
+import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 
 import java.util.ArrayList;
@@ -18,17 +16,24 @@ public class TypeOneCP implements CloneProcessor {
         if (fragment == null) return null;
         PsiElement fragCurrent = fragment;
         PsiElement dupeCurrent = start;
-        while (fragCurrent != null && fragCurrent != block.getRBrace()) {
+        while (fragCurrent != null) {
             if (dupeCurrent == null) return null;
             if (!CloneProcessor.exactMatch(fragCurrent, dupeCurrent)) return null;
             fragCurrent = fragCurrent.getNextSibling();
+            if (fragCurrent == block.getRBrace()) break;
             dupeCurrent = dupeCurrent.getNextSibling();
         }
-        return dupeCurrent.getPrevSibling();
+        return dupeCurrent;
     }
 
     @Override
     public List<Clone> getClonesOfType(PsiFile file, PsiCodeBlock pastedCode) {
+        // Get all declared variables in fragment
+        ArrayList<Variable> fragVars = new ArrayList<>();
+        PsiTreeUtil.findChildrenOfType(file, PsiLocalVariable.class).forEach((var) ->
+            fragVars.add(new Variable(var.getName(), var.getTypeElement().getText()))
+        );
+        // Get clones
         ArrayList<Clone> results = new ArrayList<>();
         PsiElement blockStart = pastedCode.getStatements()[0];
         Collection<PsiElement> matches = PsiTreeUtil.findChildrenOfType(file, blockStart.getClass());
