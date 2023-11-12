@@ -5,6 +5,7 @@ import com.intellij.psi.*;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.cloneprocessors.TypeOneCP;
+import org.jetbrains.research.anticopypaster.cloneprocessors.TypeTwoCP;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +31,7 @@ public final class DuplicatesInspection {
             if (block.isEmpty()) return new InspectionResult(results);
             // Process Type 1
             results.addAll(new TypeOneCP().getClonesOfType(file, block));
+            results.addAll(new TypeTwoCP().getClonesOfType(file, block));
         } catch (IncorrectOperationException ex) {
             LOG.error(ex);
             return new InspectionResult(results);
