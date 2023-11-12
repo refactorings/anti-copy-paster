@@ -1,6 +1,8 @@
 package org.jetbrains.research.anticopypaster.cloneprocessors;
 
-import com.intellij.psi.*;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.util.PsiTreeUtil;
 
 import java.util.ArrayList;
@@ -8,7 +10,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Stack;
 
-public class TypeOneCP implements CloneProcessor {
+public class TypeTwoCP implements CloneProcessor {
     /**
      * Check for a clone of the fragment starting at the given element.
      * @return The last member element of the clone
@@ -31,12 +33,6 @@ public class TypeOneCP implements CloneProcessor {
 
     @Override
     public List<Clone> getClonesOfType(PsiFile file, PsiCodeBlock pastedCode) {
-        // Get all declared variables in fragment
-        ArrayList<Variable> fragVars = new ArrayList<>();
-        PsiTreeUtil.findChildrenOfType(file, PsiLocalVariable.class).forEach((var) ->
-            fragVars.add(new Variable(var.getName(), var.getTypeElement().getText()))
-        );
-        // Get clones
         ArrayList<Clone> results = new ArrayList<>();
         PsiElement blockStart = pastedCode.getStatements()[0];
         Collection<PsiElement> matches = PsiTreeUtil.findChildrenOfType(file, blockStart.getClass());
