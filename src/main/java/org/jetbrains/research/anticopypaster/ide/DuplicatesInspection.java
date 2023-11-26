@@ -31,6 +31,7 @@ public final class DuplicatesInspection {
             if (block.isEmpty()) return new InspectionResult(results);
             // Process Type 1
             results.addAll(new TypeOneCP().getClonesOfType(file, block));
+            // Process Type 2
             results.addAll(new TypeTwoCP().getClonesOfType(file, block));
         } catch (IncorrectOperationException ex) {
             LOG.error(ex);

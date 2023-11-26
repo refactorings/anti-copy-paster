@@ -31,18 +31,13 @@ public class TypeOneCP implements CloneProcessor {
 
     @Override
     public List<Clone> getClonesOfType(PsiFile file, PsiCodeBlock pastedCode) {
-        // Get all declared variables in fragment
-        ArrayList<Variable> fragVars = new ArrayList<>();
-        PsiTreeUtil.findChildrenOfType(file, PsiLocalVariable.class).forEach((var) ->
-            fragVars.add(new Variable(var.getName(), var.getTypeElement().getText()))
-        );
         // Get clones
         ArrayList<Clone> results = new ArrayList<>();
         PsiElement blockStart = pastedCode.getStatements()[0];
         Collection<PsiElement> matches = PsiTreeUtil.findChildrenOfType(file, blockStart.getClass());
         for (PsiElement match : matches) {
             PsiElement end = isDuplicateAt(pastedCode, blockStart, match);
-            if (end != null) results.add(new Clone(match, end, new ArrayList<>()));
+            if (end != null) results.add(new Clone(match, end, new ArrayList<>(), new Stack<>()));
         }
         return results;
     }

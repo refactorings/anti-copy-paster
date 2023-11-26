@@ -64,7 +64,44 @@ public interface CloneProcessor {
      * @return If the variable is in scope
      */
     static boolean isInScope(String varName, Stack<Variable> scope) {
-        return scope.stream().noneMatch((var) -> var.identifier().equals(varName));
+        return scope.stream().anyMatch((var) -> var.identifier().equals(varName));
+    }
+
+    /**
+     * Recursive tree descent helper to find variable references in statement children.
+     * TODO Make sure redefined variables don't trigger live-out detection
+     * @param curr Current element
+     * @param scope Scope to consider
+     * @param out Live-out variables
+     */
+    private static void findLiveOut(PsiElement curr, Stack<Variable> scope, Set<String> out) {
+        if (curr == null) return;
+        if (curr instanceof PsiReferenceExpression refExp && !refExp.isQualified()) {
+            if (isInScope(refExp.getReferenceName(), scope))
+                out.add(refExp.getReferenceName());
+            return;
+        }
+        for (PsiElement child : curr.getChildren())
+            findLiveOut(child, scope, out);
+    }
+
+    /**
+     * Determines which variables are live after a given code segment executes.
+     * @param last Last element of the code segment
+     * @param scope Variables declared in the code segment at the top level
+     * @return The live-out variables
+     */
+    static List<Variable> liveOut(PsiElement last, Stack<Variable> scope) {
+        Set<String> out = new HashSet<>();
+        while ((last = last.getNextSibling()) != null) {
+            findLiveOut(last, scope, out);
+        }
+        return new ArrayList<>(
+            out.stream().map((name) ->
+                scope.stream().filter((var) ->
+                    var.identifier().equals(name)
+                ).findFirst().get()
+        ).toList());
     }
 
     /**
@@ -80,12 +117,12 @@ public interface CloneProcessor {
         List<PsiElement> childrenB = viableChildren(b);
         // No need to traverse if different number of children.
         if (childrenA.size() != childrenB.size()) return false;
-        if (childrenA.size() == 0) return a.textMatches(b);
+        if (childrenA.isEmpty()) return a.textMatches(b);
         // Next level of scoped variables
         Stack<Variable> inScopeChildren = new Stack<>();
         inScopeChildren.addAll(inScope);
         // Detect if we need to add a new variable to scope from the current element
-        updateScope(a, inScope, inScopeChildren);
+        updateScope(b, inScope, inScopeChildren);
         // Process children
         for (int i = 0; i < childrenA.size(); i++) {
             if (!exactMatch(childrenA.get(i), childrenB.get(i), inScopeChildren))

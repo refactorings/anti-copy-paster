@@ -3,19 +3,15 @@ package org.jetbrains.research.anticopypaster.cloneprocessors;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Stack;
+import java.util.*;
 
 public class TypeTwoCP implements CloneProcessor {
     /**
      * Check for a clone of the fragment starting at the given element.
      * @return The last member element of the clone
      */
-    private PsiElement isDuplicateAt(PsiCodeBlock block, PsiElement fragment, PsiElement start, Stack<PsiElement> pStackA, Stack<PsiElement> pStackB) {
+    private PsiElement isDuplicateAt(PsiCodeBlock block, PsiElement fragment, PsiElement start, Stack<Variable> inScope, Stack<PsiElement> pStackA, Stack<PsiElement> pStackB) {
         if (fragment == null) return null;
-        Stack<Variable> inScope = new Stack<>();
         PsiElement fragCurrent = fragment;
         PsiElement dupeCurrent = start;
         while (fragCurrent != null) {
@@ -42,7 +38,7 @@ public class TypeTwoCP implements CloneProcessor {
         List<PsiElement> childrenB = CloneProcessor.viableChildren(b);
         // No need to traverse if different number of children
         if (childrenA.size() != childrenB.size()) return false;
-        if (childrenA.size() == 0) return a.textMatches(b);
+        if (childrenA.isEmpty()) return a.textMatches(b);
         // Next level of scoped variables
         Stack<Variable> inScopeChildren = new Stack<>();
         inScopeChildren.addAll(inScope);
@@ -77,9 +73,12 @@ public class TypeTwoCP implements CloneProcessor {
         for (PsiElement match : matches) {
             Stack<PsiElement> pStackA = new Stack<>();
             Stack<PsiElement> pStackB = new Stack<>();
-            PsiElement end = isDuplicateAt(pastedCode, blockStart, match, pStackA, pStackB);
+            Stack<Variable> inScope = new Stack<>();
+            PsiElement end = isDuplicateAt(pastedCode, blockStart, match, inScope, pStackA, pStackB);
             if (end != null) {
-                results.add(new Clone(match, end, new ArrayList<>()));
+                results.add(new Clone(match, end, CloneProcessor.liveOut(end, inScope), pStackB));
+                System.out.print("Live-out: ");
+                System.out.println(Arrays.toString(CloneProcessor.liveOut(end, inScope).toArray()));
                 if (pStacks.isEmpty()) pStacks.add(pStackA);
                 pStacks.add(pStackB);
             }
