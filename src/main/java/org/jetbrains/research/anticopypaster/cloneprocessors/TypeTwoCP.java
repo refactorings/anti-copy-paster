@@ -10,13 +10,13 @@ public class TypeTwoCP implements CloneProcessor {
      * Check for a clone of the fragment starting at the given element.
      * @return The last member element of the clone
      */
-    private PsiElement isDuplicateAt(PsiCodeBlock block, PsiElement fragment, PsiElement start, Stack<Variable> inScope, Stack<PsiElement> pStackA, Stack<PsiElement> pStackB) {
+    private PsiElement isDuplicateAt(PsiCodeBlock block, PsiElement fragment, PsiElement start, Stack<Variable> inScope, Set<Variable> liveIn, Stack<PsiElement> pStackA, Stack<PsiElement> pStackB) {
         if (fragment == null) return null;
         PsiElement fragCurrent = fragment;
         PsiElement dupeCurrent = start;
         while (fragCurrent != null) {
             if (dupeCurrent == null) return null;
-            if (!matchStack(fragCurrent, dupeCurrent, inScope, pStackA, pStackB))
+            if (!matchStack(fragCurrent, dupeCurrent, inScope, liveIn, pStackA, pStackB))
                 return null;
             fragCurrent = fragCurrent.getNextSibling();
             if (fragCurrent == block.getRBrace()) break;
@@ -31,7 +31,7 @@ public class TypeTwoCP implements CloneProcessor {
      * @param inScope The variables in-scope at the present element
      * @return Whether the elements match
      */
-    static boolean matchStack(PsiElement a, PsiElement b, Stack<Variable> inScope, Stack<PsiElement> pStackA, Stack<PsiElement> pStackB) {
+    static boolean matchStack(PsiElement a, PsiElement b, Stack<Variable> inScope, Set<Variable> liveIn, Stack<PsiElement> pStackA, Stack<PsiElement> pStackB) {
         if (a == null || b == null) return false;
         // Filter children of each element
         List<PsiElement> childrenA = CloneProcessor.viableChildren(a);
@@ -43,7 +43,7 @@ public class TypeTwoCP implements CloneProcessor {
         Stack<Variable> inScopeChildren = new Stack<>();
         inScopeChildren.addAll(inScope);
         // Detect if we need to add a new variable to scope from the current element
-        CloneProcessor.updateScope(a, inScope, inScopeChildren);
+        CloneProcessor.updateScope(b, inScope, inScopeChildren, liveIn);
         // Build parameter stack
         if ((a instanceof PsiReferenceExpression refExpA && !refExpA.isQualified()
             && b instanceof PsiReferenceExpression refExpB && !refExpB.isQualified()
@@ -58,7 +58,7 @@ public class TypeTwoCP implements CloneProcessor {
         }
         // Process children
         for (int i = 0; i < childrenA.size(); i++) {
-            if (!matchStack(childrenA.get(i), childrenB.get(i), inScopeChildren, pStackA, pStackB))
+            if (!matchStack(childrenA.get(i), childrenB.get(i), inScopeChildren, liveIn, pStackA, pStackB))
                 return false;
         }
         return true;
@@ -74,9 +74,12 @@ public class TypeTwoCP implements CloneProcessor {
             Stack<PsiElement> pStackA = new Stack<>();
             Stack<PsiElement> pStackB = new Stack<>();
             Stack<Variable> inScope = new Stack<>();
-            PsiElement end = isDuplicateAt(pastedCode, blockStart, match, inScope, pStackA, pStackB);
+            Set<Variable> liveIn = new HashSet<>();
+            PsiElement end = isDuplicateAt(pastedCode, blockStart, match, inScope, liveIn, pStackA, pStackB);
             if (end != null) {
                 results.add(new Clone(match, end, CloneProcessor.liveOut(end, inScope), pStackB));
+                System.out.print("Live-in: ");
+                System.out.println(Arrays.toString(liveIn.toArray()));
                 System.out.print("Live-out: ");
                 System.out.println(Arrays.toString(CloneProcessor.liveOut(end, inScope).toArray()));
                 if (pStacks.isEmpty()) pStacks.add(pStackA);

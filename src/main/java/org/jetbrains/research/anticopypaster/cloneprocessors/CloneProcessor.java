@@ -35,7 +35,7 @@ public interface CloneProcessor {
      * @param inScope Variables currently in-scope
      * @param inScopeChildren Variables next-in-scope (next block level)
      */
-    static void updateScope(PsiElement anElement, Stack<Variable> inScope, Stack<Variable> inScopeChildren) {
+    static void updateScope(PsiElement anElement, Stack<Variable> inScope, Stack<Variable> inScopeChildren, Set<Variable> liveIn) {
         if (anElement instanceof PsiDeclarationStatement stmt) {
             processStatementDecls(stmt, inScope);
             processStatementDecls(stmt, inScopeChildren);
@@ -54,6 +54,10 @@ public interface CloneProcessor {
                 if (pVar != null)
                     inScopeChildren.add(new Variable(pVar.getName(), pVar.getType().getPresentableText()));
             });
+        } else if (anElement instanceof PsiReferenceExpression refExp && !refExp.isQualified()) {
+            if (!isInScope(refExp.getReferenceName(), inScope) && refExp.getType() != null) {
+                liveIn.add(new Variable(refExp.getReferenceName(), refExp.getType().getPresentableText()));
+            }
         }
     }
 
@@ -110,7 +114,7 @@ public interface CloneProcessor {
      * @param inScope The variables in-scope at the present element
      * @return Whether the elements match
      */
-    static boolean exactMatch(PsiElement a, PsiElement b, Stack<Variable> inScope) {
+    static boolean exactMatch(PsiElement a, PsiElement b, Stack<Variable> inScope, Set<Variable> liveIn) {
         if (a == null || b == null) return false;
         // Filter children of each element.
         List<PsiElement> childrenA = viableChildren(a);
@@ -122,10 +126,10 @@ public interface CloneProcessor {
         Stack<Variable> inScopeChildren = new Stack<>();
         inScopeChildren.addAll(inScope);
         // Detect if we need to add a new variable to scope from the current element
-        updateScope(b, inScope, inScopeChildren);
+        updateScope(b, inScope, inScopeChildren, liveIn);
         // Process children
         for (int i = 0; i < childrenA.size(); i++) {
-            if (!exactMatch(childrenA.get(i), childrenB.get(i), inScopeChildren))
+            if (!exactMatch(childrenA.get(i), childrenB.get(i), inScopeChildren, liveIn))
                 return false;
         }
         return true;
