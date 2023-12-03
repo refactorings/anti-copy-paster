@@ -10,10 +10,8 @@ public class TypeOneCP implements CloneProcessor {
      * Check for a clone of the fragment starting at the given element.
      * @return The last member element of the clone
      */
-    private PsiElement isDuplicateAt(PsiCodeBlock block, PsiElement fragment, PsiElement start) {
+    private PsiElement isDuplicateAt(PsiCodeBlock block, PsiElement fragment, PsiElement start, MatchState ma, MatchState mb) {
         if (fragment == null) return null;
-        MatchState ma = new MatchState();
-        MatchState mb = new MatchState();
         PsiElement fragCurrent = fragment;
         PsiElement dupeCurrent = start;
         while (fragCurrent != null) {
@@ -34,8 +32,10 @@ public class TypeOneCP implements CloneProcessor {
         PsiElement blockStart = pastedCode.getStatements()[0];
         Collection<PsiElement> matches = PsiTreeUtil.findChildrenOfType(file, blockStart.getClass());
         for (PsiElement match : matches) {
-            PsiElement end = isDuplicateAt(pastedCode, blockStart, match);
-            if (end != null) results.add(new Clone(match, end, new ArrayList<>(), new Stack<>()));
+            MatchState ma = new MatchState();
+            MatchState mb = new MatchState();
+            PsiElement end = isDuplicateAt(pastedCode, blockStart, match, ma, mb);
+            if (end != null) results.add(new Clone(match, end, CloneProcessor.liveOut(end, mb.scope()), mb.parameters()));
         }
         return results;
     }
