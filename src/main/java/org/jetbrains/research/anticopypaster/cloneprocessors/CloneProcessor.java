@@ -19,13 +19,14 @@ public interface CloneProcessor {
     /**
      * Adds all declarations from a declaration statement into the provided stack.
      * @param stmt Statement containing the declarations
-     * @param stack Variable stack
+     * @param ms Current match state
      */
-    private static void processStatementDecls(PsiDeclarationStatement stmt, Stack<Variable> stack) {
+    private static void processStatementDecls(PsiDeclarationStatement stmt, MatchState ms) {
         PsiElement[] decls = stmt.getDeclaredElements();
         for (PsiElement decl : decls) {
             if (!(decl instanceof PsiLocalVariable localVar)) continue;
-            stack.add(new Variable(localVar.getName(), localVar.getTypeElement().getText()));
+            ms.aliasMap().put(localVar.getName(), ms.aliasMap().size());
+            ms.scope().add(new Variable(localVar.getName(), localVar.getTypeElement().getText()));
         }
     }
 
@@ -37,15 +38,15 @@ public interface CloneProcessor {
      */
     static void updateScope(PsiElement anElement, MatchState currentState, MatchState childrenState) {
         if (anElement instanceof PsiDeclarationStatement stmt) {
-            processStatementDecls(stmt, currentState.scope());
-            processStatementDecls(stmt, childrenState.scope());
+            processStatementDecls(stmt, currentState);
+            processStatementDecls(stmt, childrenState);
         } else if (anElement instanceof PsiForeachStatement forEachStmt) {
             PsiParameter param = forEachStmt.getIterationParameter();
             childrenState.scope().add(new Variable(param.getName(), param.getType().getPresentableText()));
         } else if (anElement instanceof PsiForStatement forStmt) {
             PsiStatement stmt = forStmt.getInitialization();
             if (stmt != null)
-                processStatementDecls((PsiDeclarationStatement) stmt, childrenState.scope());
+                processStatementDecls((PsiDeclarationStatement) stmt, childrenState);
         } else if (anElement instanceof PsiIfStatement ifStmt) {
             Collection<PsiTypeTestPattern> tests = PsiTreeUtil.findChildrenOfType(
                     ifStmt.getCondition(), PsiTypeTestPattern.class);

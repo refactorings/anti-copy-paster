@@ -39,6 +39,21 @@ public class TypeTwoCP implements CloneProcessor {
     }
 
     /**
+     * If the given element can be aliased, look up its alias ID.
+     * @param e The element to examine
+     * @param ms The current match state
+     * @return The appropriate alias ID, or null if not appropriate
+     */
+    static int aliasId(PsiElement e, MatchState ms) {
+        if (e instanceof PsiIdentifier ident &&
+                CloneProcessor.isInScope(ident.getText(), ms.scope())) {
+            Integer id = ms.aliasMap().get(ident.getText());
+            return id == null ? -1 : id;
+        }
+        return -1;
+    }
+
+    /**
      * Determines if two elements are an exact match except for identifiers,
      * literals, whitespace or comments. In other words, type two clone detection.
      * @param a The first element to compare
@@ -54,7 +69,12 @@ public class TypeTwoCP implements CloneProcessor {
         List<PsiElement> childrenB = CloneProcessor.viableChildren(b);
         // No need to traverse if different number of children
         if (childrenA.size() != childrenB.size()) return false;
-        if (childrenA.isEmpty()) return a.textMatches(b);
+        if (childrenA.isEmpty()) {
+            // Check for aliased variable equivalence
+            int idA = aliasId(a, ma);
+            int idB = aliasId(b, mb);
+            return a.textMatches(b) || (idA == idB && idA >= 0);
+        }
         // Next level of scoped variables
         MatchState childMa = ma.extend();
         MatchState childMb = mb.extend();
@@ -89,11 +109,11 @@ public class TypeTwoCP implements CloneProcessor {
             PsiElement end = isDuplicateAt(pastedCode, blockStart, match, ma, mb);
             if (end != null) {
                 results.add(new Clone(match, end, CloneProcessor.liveOut(end, mb.scope()), mb.parameters()));
-                System.out.print("Live-in: ");
-                System.out.println(Arrays.toString(mb.liveIn().toArray()));
-                System.out.print("Live-out: ");
-                System.out.println(Arrays.toString(CloneProcessor.liveOut(end, mb.scope()).toArray()));
-                if (pStacks.isEmpty()) pStacks.add(ma.parameters());
+                if (pStacks.isEmpty()) {
+                    System.out.println(ma);
+                    pStacks.add(ma.parameters());
+                }
+                System.out.println(mb);
                 pStacks.add(mb.parameters());
             }
         }
