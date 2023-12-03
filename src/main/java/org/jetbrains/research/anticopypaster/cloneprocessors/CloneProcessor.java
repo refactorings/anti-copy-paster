@@ -32,31 +32,31 @@ public interface CloneProcessor {
     /**
      * Updates the stacks for currently in-scope and next-in-scope variables.
      * @param anElement Element to process
-     * @param inScope Variables currently in-scope
-     * @param inScopeChildren Variables next-in-scope (next block level)
+     * @param currentState Variables currently in-scope
+     * @param childrenState Variables next-in-scope (next block level)
      */
-    static void updateScope(PsiElement anElement, Stack<Variable> inScope, Stack<Variable> inScopeChildren, Set<Variable> liveIn) {
+    static void updateScope(PsiElement anElement, MatchState currentState, MatchState childrenState) {
         if (anElement instanceof PsiDeclarationStatement stmt) {
-            processStatementDecls(stmt, inScope);
-            processStatementDecls(stmt, inScopeChildren);
+            processStatementDecls(stmt, currentState.scope());
+            processStatementDecls(stmt, childrenState.scope());
         } else if (anElement instanceof PsiForeachStatement forEachStmt) {
             PsiParameter param = forEachStmt.getIterationParameter();
-            inScopeChildren.add(new Variable(param.getName(), param.getType().getPresentableText()));
+            childrenState.scope().add(new Variable(param.getName(), param.getType().getPresentableText()));
         } else if (anElement instanceof PsiForStatement forStmt) {
             PsiStatement stmt = forStmt.getInitialization();
             if (stmt != null)
-                processStatementDecls((PsiDeclarationStatement) stmt, inScopeChildren);
+                processStatementDecls((PsiDeclarationStatement) stmt, childrenState.scope());
         } else if (anElement instanceof PsiIfStatement ifStmt) {
             Collection<PsiTypeTestPattern> tests = PsiTreeUtil.findChildrenOfType(
                     ifStmt.getCondition(), PsiTypeTestPattern.class);
             tests.forEach((test) -> {
                 PsiPatternVariable pVar = test.getPatternVariable();
                 if (pVar != null)
-                    inScopeChildren.add(new Variable(pVar.getName(), pVar.getType().getPresentableText()));
+                    childrenState.scope().add(new Variable(pVar.getName(), pVar.getType().getPresentableText()));
             });
         } else if (anElement instanceof PsiReferenceExpression refExp && !refExp.isQualified()) {
-            if (!isInScope(refExp.getReferenceName(), inScope) && refExp.getType() != null) {
-                liveIn.add(new Variable(refExp.getReferenceName(), refExp.getType().getPresentableText()));
+            if (!isInScope(refExp.getReferenceName(), currentState.scope()) && refExp.getType() != null) {
+                currentState.liveIn().add(new Variable(refExp.getReferenceName(), refExp.getType().getPresentableText()));
             }
         }
     }
@@ -111,10 +111,13 @@ public interface CloneProcessor {
     /**
      * Determines if two elements are an exact text match through tree traversal
      * by type 1 standards (no whitespace or comments count).
-     * @param inScope The variables in-scope at the present element
+     * @param a The first element to compare
+     * @param b The second element to compare
+     * @param ma The match state for the first element
+     * @param mb The match state for the second element
      * @return Whether the elements match
      */
-    static boolean exactMatch(PsiElement a, PsiElement b, Stack<Variable> inScope, Set<Variable> liveIn) {
+    static boolean exactMatch(PsiElement a, PsiElement b, MatchState ma, MatchState mb) {
         if (a == null || b == null) return false;
         // Filter children of each element.
         List<PsiElement> childrenA = viableChildren(a);
@@ -123,13 +126,14 @@ public interface CloneProcessor {
         if (childrenA.size() != childrenB.size()) return false;
         if (childrenA.isEmpty()) return a.textMatches(b);
         // Next level of scoped variables
-        Stack<Variable> inScopeChildren = new Stack<>();
-        inScopeChildren.addAll(inScope);
+        MatchState childMa = ma.extend();
+        MatchState childMb = mb.extend();
         // Detect if we need to add a new variable to scope from the current element
-        updateScope(b, inScope, inScopeChildren, liveIn);
+        CloneProcessor.updateScope(a, ma, childMa);
+        CloneProcessor.updateScope(b, mb, childMb);
         // Process children
         for (int i = 0; i < childrenA.size(); i++) {
-            if (!exactMatch(childrenA.get(i), childrenB.get(i), inScopeChildren, liveIn))
+            if (!exactMatch(childrenA.get(i), childrenB.get(i), childMa, childMb))
                 return false;
         }
         return true;
