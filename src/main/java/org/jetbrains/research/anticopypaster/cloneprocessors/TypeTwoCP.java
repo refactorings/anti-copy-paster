@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.cloneprocessors;
 
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiUtil;
 
 import java.util.*;
 
@@ -25,6 +26,8 @@ public class TypeTwoCP implements CloneProcessor {
         return dupeCurrent;
     }
 
+
+
     /**
      * Determines if the provided element can be extracted as a parameter.
      * @param e The element to examine
@@ -32,10 +35,27 @@ public class TypeTwoCP implements CloneProcessor {
      * @return Whether the element can be extracted
      */
     static boolean canBeParam(PsiElement e, MatchState ms) {
+        boolean binOpParam = true;
+        if (e instanceof PsiBinaryExpression bin_e) {
+            // TODO: add check if psielement is a psiParenthesizedExpression
+            PsiReferenceExpression[] PsiRefExps = Arrays.stream(bin_e.getChildren())
+                        .filter(
+                                (psiElement -> psiElement instanceof PsiReferenceExpression)
+                        ).toList();
+            for (PsiReferenceExpression element : PsiRefExps) {
+                String ident = element.getReferenceName();
+                if (CloneProcessor.isInScope(ident, ms.scope())) {
+                    binOpParam = false;
+                    break;
+                }
+            }
+        }
+
         return (e instanceof PsiReferenceExpression refExp
                 && !refExp.isQualified()
                 && !CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope()))
-               || e instanceof PsiLiteralExpression;
+                || e instanceof PsiLiteralExpression
+                || binOpParam;
     }
 
     /**
