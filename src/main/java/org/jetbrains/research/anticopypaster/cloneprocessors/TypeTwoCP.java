@@ -25,9 +25,7 @@ public class TypeTwoCP implements CloneProcessor {
         }
         return dupeCurrent;
     }
-
-
-
+    
     /**
      * Determines if the provided element can be extracted as a parameter.
      * @param e The element to examine
@@ -35,27 +33,16 @@ public class TypeTwoCP implements CloneProcessor {
      * @return Whether the element can be extracted
      */
     static boolean canBeParam(PsiElement e, MatchState ms) {
-        boolean binOpParam = true;
         if (e instanceof PsiBinaryExpression bin_e) {
-            // TODO: add check if psielement is a psiParenthesizedExpression
-            PsiReferenceExpression[] PsiRefExps = Arrays.stream(bin_e.getChildren())
-                        .filter(
-                                (psiElement -> psiElement instanceof PsiReferenceExpression)
-                        ).toList();
-            for (PsiReferenceExpression element : PsiRefExps) {
-                String ident = element.getReferenceName();
-                if (CloneProcessor.isInScope(ident, ms.scope())) {
-                    binOpParam = false;
-                    break;
-                }
-            }
+            Collection<PsiIdentifier> idents = PsiTreeUtil.findChildrenOfType(bin_e, PsiIdentifier.class);
+
+            return idents.stream().noneMatch(ident -> CloneProcessor.isInScope(ident.getText(), ms.scope()));
         }
 
         return (e instanceof PsiReferenceExpression refExp
                 && !refExp.isQualified()
                 && !CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope()))
-                || e instanceof PsiLiteralExpression
-                || binOpParam;
+                || e instanceof PsiLiteralExpression;
     }
 
     /**
