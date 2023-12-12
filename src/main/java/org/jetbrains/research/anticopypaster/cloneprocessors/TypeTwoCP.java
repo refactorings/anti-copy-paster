@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.cloneprocessors;
 
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiUtil;
 
 import java.util.*;
 
@@ -24,7 +25,7 @@ public class TypeTwoCP implements CloneProcessor {
         }
         return dupeCurrent;
     }
-
+    
     /**
      * Determines if the provided element can be extracted as a parameter.
      * @param e The element to examine
@@ -32,10 +33,16 @@ public class TypeTwoCP implements CloneProcessor {
      * @return Whether the element can be extracted
      */
     static boolean canBeParam(PsiElement e, MatchState ms) {
+        if (e instanceof PsiBinaryExpression bin_e) {
+            Collection<PsiIdentifier> idents = PsiTreeUtil.findChildrenOfType(bin_e, PsiIdentifier.class);
+
+            return idents.stream().noneMatch(ident -> CloneProcessor.isInScope(ident.getText(), ms.scope()));
+        }
+
         return (e instanceof PsiReferenceExpression refExp
                 && !refExp.isQualified()
                 && !CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope()))
-               || e instanceof PsiLiteralExpression;
+                || e instanceof PsiLiteralExpression;
     }
 
     /**
