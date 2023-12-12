@@ -7,6 +7,26 @@ import java.util.*;
 
 public interface CloneProcessor {
     /**
+     * Converts primitive type labels to boxed versions in order to be
+     * generic-safe.
+     * @param type Type label to convert if necessary
+     * @return The boxed type, or the original label if it isn't primitive
+     */
+    static String objectTypeIfPrimitive(String type) {
+        return switch (type) {
+            case "byte" -> "Byte";
+            case "short" -> "Short";
+            case "int" -> "Integer";
+            case "long" -> "Long";
+            case "float" -> "Float";
+            case "double" -> "Double";
+            case "boolean" -> "Boolean";
+            case "char" -> "Character";
+            default -> type;
+        };
+    }
+
+    /**
      * Gets all the children of an element that aren't whitespace or comments.
      * @return The viable children for tree matching.
      */

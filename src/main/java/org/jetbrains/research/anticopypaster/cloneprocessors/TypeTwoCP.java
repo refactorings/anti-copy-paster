@@ -2,7 +2,6 @@ package org.jetbrains.research.anticopypaster.cloneprocessors;
 
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.psi.util.PsiUtil;
 
 import java.util.*;
 
@@ -39,10 +38,10 @@ public class TypeTwoCP implements CloneProcessor {
             return idents.stream().noneMatch(ident -> CloneProcessor.isInScope(ident.getText(), ms.scope()));
         }
 
-        return (e instanceof PsiReferenceExpression refExp
+        return e instanceof PsiLiteralExpression ||
+                (e instanceof PsiReferenceExpression refExp
                 && !refExp.isQualified()
-                && !CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope()))
-                || e instanceof PsiLiteralExpression;
+                && !CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope()));
     }
 
     /**
@@ -88,6 +87,12 @@ public class TypeTwoCP implements CloneProcessor {
         // Detect if we need to add a new variable to scope from the current element
         CloneProcessor.updateScope(a, ma, childMa);
         CloneProcessor.updateScope(b, mb, childMb);
+        // See if we have a type parameter
+        if (a instanceof PsiTypeElement typeA && b instanceof PsiTypeElement typeB) {
+            ma.typeParams().add(CloneProcessor.objectTypeIfPrimitive(typeA.getText()));
+            mb.typeParams().add(CloneProcessor.objectTypeIfPrimitive(typeB.getText()));
+            return true;
+        }
         // Build parameter stack
         if (canBeParam(a, ma) && canBeParam(b, mb)) {
             ma.parameters().add(a);
