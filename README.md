@@ -51,6 +51,20 @@ These categories can be individually configured further in the plugin's advanced
 The tool validation and embedded models are available here:
 https://github.com/JetBrains-Research/extract-method-experiments.
 
+### How to cite?
+Please, use the following bibtex entry:
+
+```tex
+@inproceedings{alomar2022anticopypaster,
+  title={AntiCopyPaster 2.0: Whitebox just-in-time code duplicates extraction},
+  author={Eman Abdullah AlOmar, Benjamin Knobloch, Thomas Kain, Christopher Kalish, Mohamed Wiem Mkaouer, Ali Ouni},
+  booktitle={346th International Conference on Software Engineering (ICSE 2024)},
+  pages={1--5},
+  year={2024}
+}
+```
+
+
 ## Contacts
 
 If you have any questions or propositions, do not hesitate to contact Eman AlOmar at ealomar@stevens.edu.
