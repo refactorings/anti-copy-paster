@@ -4,6 +4,7 @@ import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class TypeTwoCP implements CloneProcessor {
     /**
@@ -29,19 +30,26 @@ public class TypeTwoCP implements CloneProcessor {
      * Determines if the provided element can be extracted as a parameter.
      * @param e The element to examine
      * @param ms The match state in which it was found
-     * @return Whether the element can be extracted
+     * @return null if the element can't be extracted, or the list of lambda args it needs
      */
-    static boolean canBeParam(PsiElement e, MatchState ms) {
-        if (e instanceof PsiBinaryExpression bin_e) {
-            Collection<PsiIdentifier> idents = PsiTreeUtil.findChildrenOfType(bin_e, PsiIdentifier.class);
-
-            return idents.stream().noneMatch(ident -> CloneProcessor.isInScope(ident.getText(), ms.scope()));
+    static Set<String> canBeParam(PsiElement e, MatchState ms) {
+        if (e instanceof PsiPolyadicExpression polyE) {
+            Collection<PsiIdentifier> idents = PsiTreeUtil.findChildrenOfType(polyE, PsiIdentifier.class);
+            return idents.stream().map(PsiElement::getText).filter(ident ->
+                CloneProcessor.isInScope(ident, ms.scope())
+            ).collect(Collectors.toSet());
         }
 
-        return e instanceof PsiLiteralExpression ||
-                (e instanceof PsiReferenceExpression refExp
-                && !refExp.isQualified()
-                && !CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope()));
+        if (e instanceof PsiLiteralExpression) return new HashSet<>();
+        if (e instanceof PsiReferenceExpression refExp
+                && !refExp.isQualified()) {
+            HashSet<String> lambdaArgs = new HashSet<>();
+            if (CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope()))
+                lambdaArgs.add(refExp.getReferenceName());
+            return lambdaArgs;
+        }
+
+        return null;
     }
 
     /**
@@ -70,6 +78,16 @@ public class TypeTwoCP implements CloneProcessor {
      */
     static boolean matchStack(PsiElement a, PsiElement b, MatchState ma, MatchState mb) {
         if (a == null || b == null) return false;
+        // Build parameter stack
+        Set<String> canBeParamA = canBeParam(a, ma);
+        Set<String> canBeParamB = canBeParam(b, mb);
+        if (canBeParamA != null && canBeParamB != null) {
+            ma.addParameter(a, canBeParamA);
+            mb.addParameter(b, canBeParamB);
+            // Type two clone, so we can stop here and evaluate if worth extracting
+            // to a parameter later.
+            return true;
+        }
         // Filter children of each element
         List<PsiElement> childrenA = CloneProcessor.viableChildren(a);
         List<PsiElement> childrenB = CloneProcessor.viableChildren(b);
@@ -93,14 +111,6 @@ public class TypeTwoCP implements CloneProcessor {
             mb.typeParams().add(CloneProcessor.objectTypeIfPrimitive(typeB.getText()));
             return true;
         }
-        // Build parameter stack
-        if (canBeParam(a, ma) && canBeParam(b, mb)) {
-            ma.parameters().add(a);
-            mb.parameters().add(b);
-            // Type two clone, so we can stop here and evaluate if worth extracting
-            // to a parameter later.
-            return true;
-        }
         // Process children
         for (int i = 0; i < childrenA.size(); i++) {
             if (!matchStack(childrenA.get(i), childrenB.get(i), childMa, childMb))
@@ -114,7 +124,7 @@ public class TypeTwoCP implements CloneProcessor {
         ArrayList<Clone> results = new ArrayList<>();
         PsiElement blockStart = pastedCode.getStatements()[0];
         Collection<PsiElement> matches = PsiTreeUtil.findChildrenOfType(file, blockStart.getClass());
-        ArrayList<List<PsiElement>> pStacks = new ArrayList<>();
+        ArrayList<List<MatchState.Parameter>> pStacks = new ArrayList<>();
         for (PsiElement match : matches) {
             MatchState ma = new MatchState();
             MatchState mb = new MatchState();
