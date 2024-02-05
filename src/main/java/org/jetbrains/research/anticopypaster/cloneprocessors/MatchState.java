@@ -12,12 +12,24 @@ public record MatchState(Stack<Variable> scope, Set<Variable> liveIn, List<Param
 
     public MatchState extend() {
         Stack<Variable> newStack = new Stack<>();
-        newStack.addAll(this.scope);
-        return new MatchState(newStack, this.liveIn, this.parameters, this.aliasMap, this.typeParams);
+        newStack.addAll(scope);
+        return new MatchState(newStack, liveIn, parameters, aliasMap, typeParams);
     }
 
-    public void addParameter(PsiElement extractedValue, Set<String> lambdaArgs) {
-        parameters.add(new Parameter(extractedValue, lambdaArgs));
+    public void addParameter(PsiElement extractedValue, String type, Set<String> lambdaArgs) {
+        parameters.add(new Parameter(
+                extractedValue,
+                type,
+                lambdaArgs.stream().toList(),
+                lambdaArgs.stream().map(this::typeOfParameter).toList()
+        ));
+    }
+
+    public String typeOfParameter(String identifier) {
+        return scope.stream().filter(variable -> variable.identifier().equals(identifier))
+                .findFirst()
+                .orElseThrow()
+                .type();
     }
 
     public String toString() {
@@ -29,8 +41,8 @@ public record MatchState(Stack<Variable> scope, Set<Variable> liveIn, List<Param
                 + aliasMap.toString()
                 + "\n\ttypeParams="
                 + typeParams.toString()
+                + "\n\tparameters="
+                + parameters.toString()
                 + "\n]";
     }
-
-    public record Parameter(PsiElement extractedValue, Set<String> lambdaArgs) {}
 }

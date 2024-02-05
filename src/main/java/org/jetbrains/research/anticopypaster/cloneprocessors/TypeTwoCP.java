@@ -32,24 +32,27 @@ public class TypeTwoCP implements CloneProcessor {
      * @param ms The match state in which it was found
      * @return null if the element can't be extracted, or the list of lambda args it needs
      */
-    static Set<String> canBeParam(PsiElement e, MatchState ms) {
-        if (e instanceof PsiPolyadicExpression polyE) {
+    static ParamCheckResult canBeParam(PsiElement e, MatchState ms) {
+        if (e instanceof PsiPolyadicExpression polyE && polyE.getType() != null) {
             Collection<PsiIdentifier> idents = PsiTreeUtil.findChildrenOfType(polyE, PsiIdentifier.class);
-            return idents.stream().map(PsiElement::getText).filter(ident ->
-                CloneProcessor.isInScope(ident, ms.scope())
-            ).collect(Collectors.toSet());
-        }
-
-        if (e instanceof PsiLiteralExpression) return new HashSet<>();
-        if (e instanceof PsiReferenceExpression refExp
-                && !refExp.isQualified()) {
+            return new ParamCheckResult(
+                    true,
+                    polyE.getType().getPresentableText(),
+                    idents.stream().map(PsiElement::getText).filter(ident ->
+                        CloneProcessor.isInScope(ident, ms.scope())
+                    ).collect(Collectors.toSet())
+            );
+        } else if (e instanceof PsiLiteralExpression litExp && litExp.getType() != null) {
+            return new ParamCheckResult(litExp.getType().getPresentableText());
+        } else if (e instanceof PsiReferenceExpression refExp && !refExp.isQualified()
+                && refExp.getType() != null) {
             HashSet<String> lambdaArgs = new HashSet<>();
             if (CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope()))
                 lambdaArgs.add(refExp.getReferenceName());
-            return lambdaArgs;
+            return new ParamCheckResult(refExp.getType().getPresentableText(), lambdaArgs);
         }
 
-        return null;
+        return ParamCheckResult.FAILURE;
     }
 
     /**
@@ -79,11 +82,11 @@ public class TypeTwoCP implements CloneProcessor {
     static boolean matchStack(PsiElement a, PsiElement b, MatchState ma, MatchState mb) {
         if (a == null || b == null) return false;
         // Build parameter stack
-        Set<String> canBeParamA = canBeParam(a, ma);
-        Set<String> canBeParamB = canBeParam(b, mb);
-        if (canBeParamA != null && canBeParamB != null) {
-            ma.addParameter(a, canBeParamA);
-            mb.addParameter(b, canBeParamB);
+        ParamCheckResult canBeParamA = canBeParam(a, ma);
+        ParamCheckResult canBeParamB = canBeParam(b, mb);
+        if (canBeParamA.success && canBeParamB.success) {
+            ma.addParameter(a, canBeParamA.type, canBeParamA.lambdaArgs);
+            mb.addParameter(b, canBeParamB.type, canBeParamB.lambdaArgs);
             // Type two clone, so we can stop here and evaluate if worth extracting
             // to a parameter later.
             return true;
@@ -124,21 +127,29 @@ public class TypeTwoCP implements CloneProcessor {
         ArrayList<Clone> results = new ArrayList<>();
         PsiElement blockStart = pastedCode.getStatements()[0];
         Collection<PsiElement> matches = PsiTreeUtil.findChildrenOfType(file, blockStart.getClass());
-        ArrayList<List<MatchState.Parameter>> pStacks = new ArrayList<>();
         for (PsiElement match : matches) {
             MatchState ma = new MatchState();
             MatchState mb = new MatchState();
             PsiElement end = isDuplicateAt(pastedCode, blockStart, match, ma, mb);
             if (end != null) {
-                results.add(new Clone(match, end, CloneProcessor.liveOut(end, mb.scope()), mb.parameters()));
-                if (pStacks.isEmpty()) {
-                    System.out.println(ma);
-                    pStacks.add(ma.parameters());
-                }
-                System.out.println(mb);
-                pStacks.add(mb.parameters());
+                results.add(new Clone(
+                        match,
+                        end,
+                        CloneProcessor.liveOut(end, mb.scope()),
+                        mb.parameters()
+                ));
             }
         }
         return results;
+    }
+
+    private record ParamCheckResult(boolean success, String type, Set<String> lambdaArgs) {
+        public static final ParamCheckResult FAILURE = new ParamCheckResult(false, null, null);
+        public ParamCheckResult(String type) {
+            this(true, type, new HashSet<>());
+        }
+        public ParamCheckResult(String type, Set<String> lambdaArgs) {
+            this(true, type, lambdaArgs);
+        }
     }
 }

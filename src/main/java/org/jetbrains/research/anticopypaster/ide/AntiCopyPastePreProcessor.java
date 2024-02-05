@@ -9,18 +9,14 @@ import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.RawText;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.research.anticopypaster.checkers.FragmentCorrectnessChecker;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Timer;
 
 import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOffset;
@@ -53,9 +49,6 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     @NotNull
     @Override
     public String preprocessOnPaste(Project project, PsiFile file, Editor editor, String text, RawText rawText) {
-        HashSet<String> variablesInCodeFragment = new HashSet<>();
-        HashMap<String, Integer> variablesCountsInCodeFragment = new HashMap<>();
-
         RefactoringNotificationTask rnt = getRefactoringTask(project);
 
         if (rnt == null) {
@@ -66,12 +59,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
 
         AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
 
-        if (editor == null || file == null || !FragmentCorrectnessChecker.isCorrect(project, file,
-                text,
-                variablesInCodeFragment,
-                variablesCountsInCodeFragment)) {
-            return text;
-        }
+        if (editor == null || file == null) return text;
 
         DataContext dataContext = DataManager.getInstance().getDataContext(editor.getContentComponent());
         @Nullable Caret caret = CommonDataKeys.CARET.getData(dataContext);

@@ -30,7 +30,7 @@ public final class DuplicatesInspection {
                     .createCodeBlockFromText("{" + code + "}", file.getContext());
             if (block.isEmpty()) return new InspectionResult(results);
             // Process Type 1
-            results.addAll(new TypeOneCP().getClonesOfType(file, block));
+//            results.addAll(new TypeOneCP().getClonesOfType(file, block));
             // Process Type 2
             results.addAll(new TypeTwoCP().getClonesOfType(file, block));
         } catch (IncorrectOperationException ex) {
@@ -41,13 +41,7 @@ public final class DuplicatesInspection {
         return new InspectionResult(results);
     }
 
-    public static class InspectionResult {
-        private final List<Clone> results;
-
-        public InspectionResult(List<Clone> results) {
-            this.results = results;
-        }
-
+    public record InspectionResult(List<Clone> results) {
         public int getDuplicatesCount() {
             return this.results.size();
         }

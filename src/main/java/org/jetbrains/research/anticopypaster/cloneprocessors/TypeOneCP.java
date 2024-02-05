@@ -27,7 +27,6 @@ public class TypeOneCP implements CloneProcessor {
 
     @Override
     public List<Clone> getClonesOfType(PsiFile file, PsiCodeBlock pastedCode) {
-        // Get clones
         ArrayList<Clone> results = new ArrayList<>();
         PsiElement blockStart = pastedCode.getStatements()[0];
         Collection<PsiElement> matches = PsiTreeUtil.findChildrenOfType(file, blockStart.getClass());
@@ -35,7 +34,14 @@ public class TypeOneCP implements CloneProcessor {
             MatchState ma = new MatchState();
             MatchState mb = new MatchState();
             PsiElement end = isDuplicateAt(pastedCode, blockStart, match, ma, mb);
-            if (end != null) results.add(new Clone(match, end, CloneProcessor.liveOut(end, mb.scope()), mb.parameters()));
+            if (end != null) {
+                results.add(new Clone(
+                        match,
+                        end,
+                        CloneProcessor.liveOut(end, mb.scope()),
+                        mb.parameters()
+                ));
+            }
         }
         return results;
     }
