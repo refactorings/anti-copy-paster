@@ -46,6 +46,10 @@ public class TypeTwoCP implements CloneProcessor {
             return new ParamCheckResult(litExp.getType().getPresentableText());
         } else if (e instanceof PsiReferenceExpression refExp && !refExp.isQualified()
                 && refExp.getType() != null) {
+            // Prevents extracting LHS of statements
+            if (refExp.getParent() != null
+                    && refExp.getParent().getParent() instanceof PsiExpressionStatement
+                    && refExp.getStartOffsetInParent() == 0) return ParamCheckResult.FAILURE;
             HashSet<String> lambdaArgs = new HashSet<>();
             if (CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope()))
                 lambdaArgs.add(refExp.getReferenceName());

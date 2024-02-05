@@ -11,6 +11,7 @@ import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
 
 import java.util.List;
 import java.util.TimerTask;
+import java.util.function.Function;
 
 public class ExtractionTask extends TimerTask {
     public Project project;
@@ -33,9 +34,10 @@ public class ExtractionTask extends TimerTask {
      * @param current The current element
      * @param last The last element in the body
      * @param extractedParameters The elements that should be extracted as parameters
+     * @param parameters The full Parameter information for each parameter
      * @param sb The StringBuilder to append to
      */
-    private void buildMethodBody(PsiElement current, PsiElement last, List<PsiElement> extractedParameters, StringBuilder sb) {
+    private void buildMethodBody(PsiElement current, PsiElement last, List<PsiElement> extractedParameters, List<Parameter> parameters, StringBuilder sb) {
         // Iterates through all siblings at this level
         while (current != null) {
             int idx = extractedParameters.indexOf(current);
@@ -46,11 +48,17 @@ public class ExtractionTask extends TimerTask {
                     sb.append(current.getText());
                 } else {
                     // The current element has children, descend
-                    buildMethodBody(firstChild, last, extractedParameters, sb);
+                    buildMethodBody(firstChild, last, extractedParameters, parameters, sb);
                 }
             } else {
                 sb.append("p");
                 sb.append(idx + 1);
+                Parameter p = parameters.get(idx);
+                if (p.lambdaArgs().size() > 0) {
+                    sb.append(".apply(");
+                    sb.append(String.join(", ", p.lambdaArgs()));
+                    sb.append(')');
+                }
             }
             if (current == last) break;
             current = current.getNextSibling();
@@ -104,6 +112,7 @@ public class ExtractionTask extends TimerTask {
                 clone.start(),
                 clone.end(),
                 clone.parameters().stream().map(Parameter::extractedValue).toList(),
+                clone.parameters(),
                 sb
         );
         if (returnsValue) {
