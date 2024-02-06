@@ -7,10 +7,13 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.psi.*;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.refactoring.extractMethod.ExtractMethodProcessor;
 import com.intellij.refactoring.extractMethod.PrepareFailedException;
 
 import org.jetbrains.research.anticopypaster.AntiCopyPasterBundle;
+import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
+import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.models.PredictionModel;
 import org.jetbrains.research.anticopypaster.models.UserSettingsModel;
@@ -70,6 +73,37 @@ public class RefactoringNotificationTask extends TimerTask {
         return model;
     }
 
+    private boolean isGlobalVariable(PsiElement psiElement) {
+        // check if elem is field of a class
+        if (psiElement instanceof PsiField field) {
+            // make sure field isnt inside a method
+            PsiMember parentMember = PsiTreeUtil.getParentOfType(field, PsiMember.class);
+            return parentMember instanceof PsiClass && !isLocalVariable(field);
+        }
+        return false;
+    }
+
+    private boolean isLocalVariable(PsiVariable variable) {
+        PsiMethod containingMethod = PsiTreeUtil.getParentOfType(variable, PsiMethod.class);
+        return containingMethod != null;
+    }
+
+    private boolean bodyContainsGlobalVar(PsiElement current, PsiElement last) {
+        // Iterates through all siblings at this level
+        while (current != null) {
+            if (isGlobalVariable(current))
+                return true;
+            PsiElement firstChild = current.getFirstChild();
+            if (firstChild != null) {
+                // The current element has children, descend
+                bodyContainsGlobalVar(firstChild, last);
+            }
+            if (current == last) break;
+            current = current.getNextSibling();
+        }
+        return false;
+    }
+
     @Override
     public void run() {
         while (!eventsQueue.isEmpty()) {
@@ -88,6 +122,8 @@ public class RefactoringNotificationTask extends TimerTask {
                     event.setReasonToExtract(AntiCopyPasterBundle.message(
                             "extract.method.to.simplify.logic.of.enclosing.method"));
 
+                    Clone template = result.results().get(0);
+//                    if (!template.liveVars().isEmpty() || bodyContainsGlobalVar(template.start(), template.end())) {
                     notify(event.getProject(),
                             AntiCopyPasterBundle.message(
                                     "extract.method.refactoring.is.available"),

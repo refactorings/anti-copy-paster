@@ -5,13 +5,17 @@ import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.TimerTask;
-import java.util.function.Function;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ExtractionTask extends TimerTask {
     public Project project;
@@ -19,6 +23,7 @@ public class ExtractionTask extends TimerTask {
     public String text;
     public RefactoringEvent event;
     public List<Clone> clones;
+    private static AtomicInteger numExtractedMethods = new AtomicInteger(0);
 
     public ExtractionTask(RefactoringEvent event, DuplicatesInspection.InspectionResult inspectionResult) {
         this.project = event.getProject();
@@ -76,6 +81,7 @@ public class ExtractionTask extends TimerTask {
     private String buildMethodText(Clone clone, String methodName) {
         boolean returnsValue = !clone.liveVars().isEmpty();
         // Method signature
+        boolean importFunctions = false, importBiFunctions = false;
         StringBuilder sb = new StringBuilder("private ");
         sb.append(returnsValue ? clone.liveVars().get(0).type() : "void");
         sb.append(' ');
@@ -124,6 +130,66 @@ public class ExtractionTask extends TimerTask {
         return sb.toString();
     }
 
+    private void callMethod(Clone clone, PsiElementFactory factory, String methodName) {
+        PsiElement start = clone.start();
+        PsiElement end = clone.end();
+        PsiElement parent = PsiTreeUtil.findCommonParent(start, end);
+        // TODO should we check if parent is null? I dont think it ever will be...
+        StringBuilder sb = new StringBuilder();
+        if (!clone.liveVars().isEmpty()) {
+            sb.append(clone.liveVars().get(0).type());
+            sb.append(" resultVar = ");
+        }
+        sb.append(methodName);
+        sb.append("(");
+        for (int i = 0; i < clone.parameters().size(); i++) {
+            Parameter p = clone.parameters().get(i);
+
+            if (p.lambdaArgs().isEmpty()) { // Not a lambda argument
+                sb.append(p.extractedValue().getText());
+            } else if (p.lambdaArgs().size() == 1) { // Lambda arg, 1 param
+                sb.append(p.lambdaArgs().get(0));
+                sb.append(" -> ");
+                sb.append(p.extractedValue().getText());
+            } else if (p.lambdaArgs().size() == 2) { // Lambda arg, 2 params
+                sb.append("(");
+                sb.append(String.join(", ", p.lambdaArgs()));
+                sb.append(") -> ");
+                sb.append(p.extractedValue().getText());
+            }
+            if (i != clone.parameters().size() - 1)
+                sb.append(", ");
+        }
+        sb.append(");\n");
+
+        PsiElement caller = factory.createStatementFromText(sb.toString(), parent);
+        CommandProcessor.getInstance().executeCommand(
+                project,
+                () -> {
+                    parent.addAfter(caller, end);
+                    parent.deleteChildRange(start, end);
+                },
+                "Clone Extraction",
+                null
+        );
+    }
+
+    private String getNewMethodName(PsiClass containingClass) {
+        String base = "extractedMethod";
+        int i = 0;
+        while (containingClass.findMethodsByName(base + i).length > 0)
+            i++;
+
+        PsiField[] fields = containingClass.getFields();
+        String[] fieldStrings = (String[]) Arrays.stream(fields).map(PsiField::getName).toArray();
+        HashSet<String> fieldNames = new HashSet<>(List.of(fieldStrings));
+        while (fieldNames.contains(base + i))
+            i++;
+
+
+        return base + i;
+    }
+
     @Override
     public void run() {
         ApplicationManager.getApplication().invokeLater(() ->
@@ -139,10 +205,20 @@ public class ExtractionTask extends TimerTask {
                 // TODO: run check on all clones to determine which parameters need to be lambdas
                 DuplicatesInspection.InspectionResult result = new DuplicatesInspection().resolve(file, text);
                 Clone template = result.results().get(0);
+
+                String methodName = getNewMethodName(containingClass);
+
+                for (Clone location : result.results()) {
+                    callMethod(location, factory, methodName);
+                }
+
                 PsiMethod extractedMethodElement = factory.createMethodFromText(
-                        buildMethodText(template, "extractedMethod"),
+                        buildMethodText(template, methodName),
                         containingClass
                 );
+
+                JavaCodeStyleManager styleManagerForLambdas = JavaCodeStyleManager.getInstance(project);
+                styleManagerForLambdas.shortenClassReferences(extractedMethodElement);
 
                 PsiMethod[] existingMethods = containingClass.getMethods();
                 CommandProcessor.getInstance().executeCommand(
