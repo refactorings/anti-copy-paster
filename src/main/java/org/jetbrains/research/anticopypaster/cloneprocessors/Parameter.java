@@ -2,9 +2,9 @@ package org.jetbrains.research.anticopypaster.cloneprocessors;
 
 import com.intellij.psi.PsiElement;
 
-import java.util.List;
+import java.util.Set;
 
-public record Parameter(PsiElement extractedValue, String type, List<String> lambdaArgs, List<String> lambdaTypes) {
+public record Parameter(PsiElement extractedValue, String type, Set<Integer> lambdaArgs) {
     public String toString() {
         return "Parameter[extractedValue="
                 + extractedValue.getText()
@@ -12,8 +12,6 @@ public record Parameter(PsiElement extractedValue, String type, List<String> lam
                 + type
                 + ", lambdaArgs="
                 + lambdaArgs.toString()
-                + ", lambdaTypes="
-                + lambdaTypes.toString()
                 + "]";
     }
 }

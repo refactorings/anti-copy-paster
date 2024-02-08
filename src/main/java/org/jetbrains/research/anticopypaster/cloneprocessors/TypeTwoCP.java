@@ -38,8 +38,8 @@ public class TypeTwoCP implements CloneProcessor {
             return new ParamCheckResult(
                     true,
                     polyE.getType().getPresentableText(),
-                    idents.stream().map(PsiElement::getText).filter(ident ->
-                        CloneProcessor.isInScope(ident, ms.scope())
+                    idents.stream().map(ms::getAliasID).filter(id ->
+                        id >= 0
                     ).collect(Collectors.toSet())
             );
         } else if (e instanceof PsiLiteralExpression litExp && litExp.getType() != null) {
@@ -50,28 +50,14 @@ public class TypeTwoCP implements CloneProcessor {
             if (refExp.getParent() != null
                     && refExp.getParent().getParent() instanceof PsiExpressionStatement
                     && refExp.getStartOffsetInParent() == 0) return ParamCheckResult.FAILURE;
-            HashSet<String> lambdaArgs = new HashSet<>();
-            if (CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope()))
-                lambdaArgs.add(refExp.getReferenceName());
+            HashSet<Integer> lambdaArgs = new HashSet<>();
+            int aliasID = ms.getAliasID(refExp.getReferenceName());
+            if (aliasID >= 0)
+                lambdaArgs.add(aliasID);
             return new ParamCheckResult(refExp.getType().getPresentableText(), lambdaArgs);
         }
 
         return ParamCheckResult.FAILURE;
-    }
-
-    /**
-     * If the given element can be aliased, look up its alias ID.
-     * @param e The element to examine
-     * @param ms The current match state
-     * @return The appropriate alias ID, or null if not appropriate
-     */
-    static int aliasId(PsiElement e, MatchState ms) {
-        if (e instanceof PsiIdentifier ident &&
-                CloneProcessor.isInScope(ident.getText(), ms.scope())) {
-            Integer id = ms.aliasMap().get(ident.getText());
-            return id == null ? -1 : id;
-        }
-        return -1;
     }
 
     /**
@@ -102,8 +88,8 @@ public class TypeTwoCP implements CloneProcessor {
         if (childrenA.size() != childrenB.size()) return false;
         if (childrenA.isEmpty()) {
             // Check for aliased variable equivalence
-            int idA = aliasId(a, ma);
-            int idB = aliasId(b, mb);
+            int idA = ma.getAliasID(a);
+            int idB = mb.getAliasID(b);
             return a.textMatches(b) || (idA == idB && idA >= 0);
         }
         // Next level of scoped variables
@@ -140,19 +126,20 @@ public class TypeTwoCP implements CloneProcessor {
                         match,
                         end,
                         CloneProcessor.liveOut(end, mb.scope()),
-                        mb.parameters()
+                        mb.parameters(),
+                        mb.aliasMap()
                 ));
             }
         }
         return results;
     }
 
-    private record ParamCheckResult(boolean success, String type, Set<String> lambdaArgs) {
+    private record ParamCheckResult(boolean success, String type, Set<Integer> lambdaArgs) {
         public static final ParamCheckResult FAILURE = new ParamCheckResult(false, null, null);
         public ParamCheckResult(String type) {
             this(true, type, new HashSet<>());
         }
-        public ParamCheckResult(String type, Set<String> lambdaArgs) {
+        public ParamCheckResult(String type, Set<Integer> lambdaArgs) {
             this(true, type, lambdaArgs);
         }
     }

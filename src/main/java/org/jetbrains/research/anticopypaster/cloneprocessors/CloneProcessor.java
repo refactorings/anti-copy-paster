@@ -45,7 +45,7 @@ public interface CloneProcessor {
         PsiElement[] decls = stmt.getDeclaredElements();
         for (PsiElement decl : decls) {
             if (!(decl instanceof PsiLocalVariable localVar)) continue;
-            ms.aliasMap().put(localVar.getName(), ms.aliasMap().size());
+            ms.aliasMap().add(new Variable(localVar.getName(), localVar.getType().getPresentableText()));
             ms.scope().add(new Variable(localVar.getName(), localVar.getTypeElement().getText()));
         }
     }

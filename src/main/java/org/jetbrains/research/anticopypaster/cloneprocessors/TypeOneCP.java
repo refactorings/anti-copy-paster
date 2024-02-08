@@ -39,7 +39,8 @@ public class TypeOneCP implements CloneProcessor {
                         match,
                         end,
                         CloneProcessor.liveOut(end, mb.scope()),
-                        mb.parameters()
+                        mb.parameters(),
+                        mb.aliasMap()
                 ));
             }
         }

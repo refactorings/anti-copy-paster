@@ -1,13 +1,14 @@
 package org.jetbrains.research.anticopypaster.cloneprocessors;
 
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiIdentifier;
 
 import java.util.*;
 
 public record MatchState(Stack<Variable> scope, Set<Variable> liveIn, List<Parameter> parameters,
-                         Map<String, Integer> aliasMap, List<String> typeParams) {
+                         List<Variable> aliasMap, List<String> typeParams) {
     public MatchState() {
-        this(new Stack<>(), new HashSet<>(), new ArrayList<>(), new HashMap<>(), new ArrayList<>());
+        this(new Stack<>(), new HashSet<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
     }
 
     public MatchState extend() {
@@ -16,20 +17,30 @@ public record MatchState(Stack<Variable> scope, Set<Variable> liveIn, List<Param
         return new MatchState(newStack, liveIn, parameters, aliasMap, typeParams);
     }
 
-    public void addParameter(PsiElement extractedValue, String type, Set<String> lambdaArgs) {
+    public void addParameter(PsiElement extractedValue, String type, Set<Integer> lambdaArgs) {
         parameters.add(new Parameter(
                 extractedValue,
                 type,
-                lambdaArgs.stream().toList(),
-                lambdaArgs.stream().map(this::typeOfParameter).toList()
+                lambdaArgs
         ));
     }
 
-    public String typeOfParameter(String identifier) {
-        return scope.stream().filter(variable -> variable.identifier().equals(identifier))
-                .findFirst()
-                .orElseThrow()
-                .type();
+    /**
+     * If the given element can be aliased, look up its alias ID.
+     * @param e The element to examine
+     * @return The alias ID, or -1 if none
+     */
+    public int getAliasID(PsiElement e) {
+        if (e instanceof PsiIdentifier ident &&
+                CloneProcessor.isInScope(ident.getText(), scope)) {
+            return getAliasID(ident.getText());
+        }
+        return -1;
+    }
+    public int getAliasID(String ident) {
+        for (int i = aliasMap.size() - 1; i >= 0; i--)
+            if (aliasMap.get(i).identifier().equals(ident)) return i;
+        return -1;
     }
 
     public String toString() {
