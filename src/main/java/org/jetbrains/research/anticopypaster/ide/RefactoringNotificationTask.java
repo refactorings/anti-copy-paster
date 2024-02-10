@@ -122,6 +122,9 @@ public class RefactoringNotificationTask extends TimerTask {
                     event.setReasonToExtract(AntiCopyPasterBundle.message(
                             "extract.method.to.simplify.logic.of.enclosing.method"));
 
+                    for (Clone clone : result.results())
+                        if (clone.liveVars().size() > 1) return;
+
                     Clone template = result.results().get(0);
 //                    if (!template.liveVars().isEmpty() || bodyContainsGlobalVar(template.start(), template.end())) {
                     notify(event.getProject(),

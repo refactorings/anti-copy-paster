@@ -4,7 +4,10 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.psi.codeStyle.JavaCodeStyleManager;
+import com.thaiopensource.relaxng.edit.Param;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
@@ -73,10 +76,11 @@ public class ExtractionTask extends TimerTask {
      * @param methodName The name to give the method
      * @return The extracted method as text
      */
-    private String buildMethodText(Clone clone, List<List<Variable>> normalizedLambdaArgs, String methodName) {
+    private String buildMethodText(Clone clone, List<List<Variable>> normalizedLambdaArgs, String methodName, boolean extractToStatic) {
         boolean returnsValue = !clone.liveVars().isEmpty();
         // Method signature
         StringBuilder sb = new StringBuilder("private ");
+        if (extractToStatic) sb.append("static ");
         sb.append(returnsValue ? clone.liveVars().get(0).type() : "void");
         sb.append(' ');
         sb.append(methodName);
@@ -125,6 +129,68 @@ public class ExtractionTask extends TimerTask {
         return sb.toString();
     }
 
+    private void callMethod(Clone clone, PsiElementFactory factory, List<List<Variable>> lambdaArgs, String methodName) {
+        PsiElement start = clone.start();
+        PsiElement end = clone.end();
+        PsiElement parent = PsiTreeUtil.findCommonParent(start, end);
+        // TODO should we check if parent is null? I dont think it ever will be...
+        StringBuilder sb = new StringBuilder();
+        if (!clone.liveVars().isEmpty()) {
+            sb.append(clone.liveVars().get(0).type());
+            sb.append(" ");
+            sb.append(clone.liveVars().get(0).identifier());
+            sb.append(" = ");
+        }
+        sb.append(methodName);
+        sb.append("(");
+        for (int i = 0; i < clone.parameters().size(); i++) {
+            Parameter p = clone.parameters().get(i);
+            if (p.lambdaArgs().isEmpty()) { // Not a lambda argument
+                sb.append(p.extractedValue().getText());
+            } else if (p.lambdaArgs().size() == 1) { // Lambda arg, 1 param
+                sb.append(lambdaArgs.get(i).get(0).identifier());
+                sb.append(" -> ");
+                sb.append(p.extractedValue().getText());
+            } else if (p.lambdaArgs().size() == 2) { // Lambda arg, 2 params
+                sb.append("(");
+                sb.append(String.join(", ", (String[]) lambdaArgs.get(0).stream().map(Variable::identifier).toArray()));
+                sb.append(") -> ");
+                sb.append(p.extractedValue().getText());
+            }
+            if (i != clone.parameters().size() - 1)
+                sb.append(", ");
+        }
+        sb.append(");\n");
+
+        PsiElement caller = factory.createStatementFromText(sb.toString(), parent);
+        CommandProcessor.getInstance().executeCommand(
+                project,
+                () -> {
+                    parent.addAfter(caller, end);
+                    parent.deleteChildRange(start, end);
+                },
+                "Clone Extraction",
+                null
+        );
+    }
+
+    private String getNewMethodName(PsiClass containingClass) {
+        String base = "extractedMethod";
+        int i = 0;
+        while (containingClass.findMethodsByName(base + i).length > 0)
+            i++;
+
+        PsiField[] fields = containingClass.getFields();
+        List<String> fieldNames = new ArrayList<>();
+        for (PsiField field : containingClass.getFields())
+            fieldNames.add(field.getName());
+
+        while (fieldNames.contains(base + i))
+            i++;
+
+        return base + i;
+    }
+
     @Override
     public void run() {
         ApplicationManager.getApplication().invokeLater(() ->
@@ -140,6 +206,9 @@ public class ExtractionTask extends TimerTask {
                 List<Clone> results = new DuplicatesInspection().resolve(file, text).results();
                 if (results.size() < ProjectSettingsState.getInstance(project).minimumDuplicateMethods)
                     return;
+
+                for (Clone clone : results)
+                    if (clone.liveVars().size() > 1) return;
 
                 // Remove unnecessary parameters
                 for (int i = results.get(0).parameters().size() - 1; i >= 0; i--) {
@@ -173,14 +242,27 @@ public class ExtractionTask extends TimerTask {
                     normalizedLambdaArgs.add(lambdaArgs.stream().map(referenceMap::get).toList());
                 }
 
+                String methodName = getNewMethodName(containingClass);
+
+                for (Clone location : results)
+                    callMethod(location, factory, normalizedLambdaArgs, methodName);
+
+                boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
+
                 PsiMethod extractedMethodElement = factory.createMethodFromText(
                         buildMethodText(
                                 results.get(0),
                                 normalizedLambdaArgs,
-                                "extractedMethod"
+                                methodName,
+                                extractToStatic
                         ),
                         containingClass
                 );
+
+                // shortens the lambda args from java.util.function.Function to just Function
+                // and imports the module if it needs to be imported (same for BiFunction)
+                JavaCodeStyleManager styleManagerForLambdas = JavaCodeStyleManager.getInstance(project);
+                styleManagerForLambdas.shortenClassReferences(extractedMethodElement);
 
                 PsiMethod[] existingMethods = containingClass.getMethods();
                 CommandProcessor.getInstance().executeCommand(
