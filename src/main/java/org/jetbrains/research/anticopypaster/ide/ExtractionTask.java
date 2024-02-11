@@ -7,7 +7,6 @@ import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
-import com.thaiopensource.relaxng.edit.Param;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
@@ -136,10 +135,24 @@ public class ExtractionTask extends TimerTask {
         // TODO should we check if parent is null? I dont think it ever will be...
         StringBuilder sb = new StringBuilder();
         if (!clone.liveVars().isEmpty()) {
-            sb.append(clone.liveVars().get(0).type());
-            sb.append(" ");
-            sb.append(clone.liveVars().get(0).identifier());
-            sb.append(" = ");
+            Variable liveOutVar = clone.liveVars().get(0);
+            String liveOutType = liveOutVar.type();
+            if (clone
+                    .parameters()
+                    .stream()
+                    .map(p -> p.extractedValue().getText())
+                    .noneMatch(s -> s.equals(liveOutVar.identifier()))) {
+                // if the live-out var is not also live-in we must set the result of the extracted code to a new variable
+                sb.append(liveOutType);
+                sb.append(" ");
+            }
+
+            if (!liveOutType.equals(CloneProcessor.objectTypeIfPrimitive(liveOutType))) {
+                // otherwise if the live-out var is live-in AND a primitive (since non-primitives are pass by ref)
+                // we just re-assign it to the value of the extracted code
+                sb.append(liveOutVar.identifier());
+                sb.append(" = ");
+            }
         }
         sb.append(methodName);
         sb.append("(");
@@ -153,7 +166,7 @@ public class ExtractionTask extends TimerTask {
                 sb.append(p.extractedValue().getText());
             } else if (p.lambdaArgs().size() == 2) { // Lambda arg, 2 params
                 sb.append("(");
-                sb.append(String.join(", ", (String[]) lambdaArgs.get(0).stream().map(Variable::identifier).toArray()));
+                sb.append(String.join(", ", lambdaArgs.get(i).stream().map(Variable::identifier).toArray(String[]::new)));
                 sb.append(") -> ");
                 sb.append(p.extractedValue().getText());
             }
