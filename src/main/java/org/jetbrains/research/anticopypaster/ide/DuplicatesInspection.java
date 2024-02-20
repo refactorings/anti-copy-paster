@@ -23,11 +23,11 @@ public final class DuplicatesInspection {
      * @param code the piece of code to search for.
      * @return the result of duplicates' detection.
      */
-    public InspectionResult resolve(PsiFile file, final String code) {
+    public InspectionResult resolve(PsiFile file, PsiMethod containingMethod, final String code) {
         ArrayList<Clone> results = new ArrayList<>();
         try {
             PsiCodeBlock block = PsiElementFactory.getInstance(file.getProject())
-                    .createCodeBlockFromText("{" + code + "}", file.getContext());
+                    .createCodeBlockFromText("{" + code + "}", containingMethod.getParent());
             if (block.isEmpty()) return new InspectionResult(results);
             // Process Type 1
 //            results.addAll(new TypeOneCP().getClonesOfType(file, block));
@@ -37,6 +37,9 @@ public final class DuplicatesInspection {
             LOG.error(ex);
             return new InspectionResult(results);
         }
+
+        for (int i = results.size() - 1; i >= 0; i--)
+            if (results.get(i).liveVars().size() > 1) results.remove(i);
 
         return new InspectionResult(results);
     }

@@ -52,7 +52,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         RefactoringNotificationTask rnt = getRefactoringTask(project);
 
         if (rnt == null) {
-            rnt = new RefactoringNotificationTask(inspection, timer, project);
+            rnt = new RefactoringNotificationTask(project);
             refactoringNotificationTask.add(rnt);
             setCheckingForRefactoringOpportunities(rnt, project);
         }
@@ -66,18 +66,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         int offset = caret == null ? 0 : caret.getOffset();
         PsiMethod destinationMethod = findMethodByOffset(file, offset);
 
-        // find number of code fragments considered as duplicated
-        DuplicatesInspection.InspectionResult result = inspection.resolve(file, text);
-        if (result.getDuplicatesCount() == 0) {
-            return text;
-        }
-
-        //number of lines in fragment
-        int linesOfCode = getCountOfCodeLines(text);
-
-        rnt.addEvent(
-                new RefactoringEvent(file, destinationMethod, text, result.getDuplicatesCount(),
-                        project, editor, linesOfCode));
+        rnt.addEvent(new RefactoringEvent(file, destinationMethod, text, project, editor));
 
         return text;
     }

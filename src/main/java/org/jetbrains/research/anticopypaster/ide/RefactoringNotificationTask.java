@@ -5,6 +5,7 @@ import com.intellij.notification.*;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.MessageConstants;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -13,7 +14,6 @@ import com.intellij.refactoring.extractMethod.PrepareFailedException;
 
 import org.jetbrains.research.anticopypaster.AntiCopyPasterBundle;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
-import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.models.PredictionModel;
 import org.jetbrains.research.anticopypaster.models.UserSettingsModel;
@@ -37,28 +37,24 @@ import static org.jetbrains.research.anticopypaster.utils.PsiUtil.*;
 public class RefactoringNotificationTask extends TimerTask {
     private static final Logger LOG = Logger.getInstance(RefactoringNotificationTask.class);
     private static final float predictionThreshold = 0.5f; // certainty threshold for models
-    private final DuplicatesInspection inspection;
     private final ConcurrentLinkedQueue<RefactoringEvent> eventsQueue = new ConcurrentLinkedQueue<>();
     private final NotificationGroup notificationGroup = NotificationGroupManager.getInstance()
             .getNotificationGroup("Extract Method suggestion");
-    private final Timer timer;
     private PredictionModel model;
     private final boolean debugMetrics = true;
     private String logFilePath;
-    private Project p;
+    private Project project;
 
 
-    public RefactoringNotificationTask(DuplicatesInspection inspection, Timer timer, Project p) {
-        this.inspection = inspection;
-        this.timer = timer;
-        this.p = p;
-        this.logFilePath = p.getBasePath() + "/.idea/anticopypaster-refactoringSuggestionsLog.log";
+    public RefactoringNotificationTask(Project project) {
+        this.project = project;
+        this.logFilePath = project.getBasePath() + "/.idea/anticopypaster-refactoringSuggestionsLog.log";
     }
 
     private PredictionModel getOrInitModel() {
         PredictionModel model = this.model;
         if (model == null) {
-            model = this.model = new UserSettingsModel(new MetricsGatherer(p), p);
+            model = this.model = new UserSettingsModel(new MetricsGatherer(project), project);
             if(debugMetrics){
                 UserSettingsModel settingsModel = (UserSettingsModel) model;
                 try(FileWriter fr = new FileWriter(logFilePath, true)){
@@ -107,30 +103,21 @@ public class RefactoringNotificationTask extends TimerTask {
     @Override
     public void run() {
         while (!eventsQueue.isEmpty()) {
-            final PredictionModel model = getOrInitModel();
+//            final PredictionModel model = getOrInitModel();
             try {
                 final RefactoringEvent event = eventsQueue.poll();
                 ApplicationManager.getApplication().runReadAction(() -> {
-                    DuplicatesInspection.InspectionResult result = inspection.resolve(event.getFile(), event.getText());
-                    // This only triggers if there are duplicates found in at least as many
-                    // methods as specified by the user in configurations.
-
-                    ProjectSettingsState settings = ProjectSettingsState.getInstance(event.getProject());
-
-                    if (result.getDuplicatesCount() < settings.minimumDuplicateMethods) return;
-
                     event.setReasonToExtract(AntiCopyPasterBundle.message(
                             "extract.method.to.simplify.logic.of.enclosing.method"));
 
-                    for (Clone clone : result.results())
-                        if (clone.liveVars().size() > 1) return;
+                    List<Clone> results = new DuplicatesInspection().resolve(event.getFile(), event.getDestinationMethod(), event.getText()).results();
+                    if (results.size() < ProjectSettingsState.getInstance(project).minimumDuplicateMethods)
+                        return;
 
-                    Clone template = result.results().get(0);
-//                    if (!template.liveVars().isEmpty() || bodyContainsGlobalVar(template.start(), template.end())) {
                     notify(event.getProject(),
                             AntiCopyPasterBundle.message(
                                     "extract.method.refactoring.is.available"),
-                            getRunnableToShowSuggestionDialog(event, result)
+                            getRunnableToShowSuggestionDialog(event)
                     );
 
 //                    HashSet<String> variablesInCodeFragment = new HashSet<>();
@@ -202,7 +189,7 @@ public class RefactoringNotificationTask extends TimerTask {
         return canBeExtracted;
     }
 
-    private Runnable getRunnableToShowSuggestionDialog(RefactoringEvent event, DuplicatesInspection.InspectionResult inspectionResult) {
+    private Runnable getRunnableToShowSuggestionDialog(RefactoringEvent event) {
         return () -> {
             String message = event.getReasonToExtract();
             if (message.isEmpty()) {
@@ -220,8 +207,8 @@ public class RefactoringNotificationTask extends TimerTask {
                             Messages.getInformationIcon());
 
             //result is equal to 0 if a user accepted the suggestion and clicked on OK button, 1 otherwise
-            if (result == 0) {
-                timer.schedule(new ExtractionTask(event, inspectionResult), 100);
+            if (result == MessageConstants.OK) {
+                new ExtractionTask(event).run();
 
                 AntiCopyPasterUsageStatistics.getInstance(event.getProject()).extractMethodApplied();
             } else {
@@ -261,9 +248,9 @@ public class RefactoringNotificationTask extends TimerTask {
     }
 
     public void setProject(Project p) {
-        this.p = p;
+        this.project = p;
     }
     public Project getProject() {
-        return p;
+        return project;
     }
 }

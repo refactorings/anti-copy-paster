@@ -46,14 +46,14 @@ public class TypeTwoCP implements CloneProcessor {
             return new ParamCheckResult(litExp.getType().getPresentableText());
         } else if (e instanceof PsiReferenceExpression refExp && !refExp.isQualified()
                 && refExp.getType() != null) {
-            // Prevents extracting LHS of statements
+            // Prevents extracting LHS of statements & method calls
             if (refExp.getParent() != null
-                    && refExp.getParent().getParent() instanceof PsiExpressionStatement
-                    && refExp.getStartOffsetInParent() == 0) return ParamCheckResult.FAILURE;
+                    && (refExp.getParent().getParent() instanceof PsiExpressionStatement
+                    && refExp.getStartOffsetInParent() == 0)
+                    || refExp.getParent() instanceof PsiCallExpression) return ParamCheckResult.FAILURE;
             HashSet<Integer> lambdaArgs = new HashSet<>();
             int aliasID = ms.getAliasID(refExp.getReferenceName());
-            if (aliasID >= 0)
-                lambdaArgs.add(aliasID);
+            if (aliasID >= 0) lambdaArgs.add(aliasID);
             return new ParamCheckResult(refExp.getType().getPresentableText(), lambdaArgs);
         }
 
