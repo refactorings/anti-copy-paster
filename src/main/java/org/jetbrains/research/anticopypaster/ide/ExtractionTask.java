@@ -1,18 +1,14 @@
 package org.jetbrains.research.anticopypaster.ide;
 
-import com.intellij.lang.LanguageRefactoringSupport;
-import com.intellij.lang.refactoring.RefactoringSupportProvider;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
-import com.intellij.openapi.editor.colors.TextAttributesKey;
-import com.intellij.openapi.editor.ex.MarkupModelEx;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.markup.*;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.DialogBuilder;
 import com.intellij.openapi.ui.MessageDialogBuilder;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.psi.*;
-import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
@@ -139,23 +135,28 @@ public class ExtractionTask {
         PsiElement start = clone.start();
         PsiElement end = clone.end();
         PsiElement parent = start.getParent();
-        // TODO should we check if parent is null? I dont think it ever will be...
         StringBuilder sb = new StringBuilder();
+
         if (!clone.liveVars().isEmpty()) {
             Variable liveOutVar = clone.liveVars().get(0);
             String liveOutType = liveOutVar.type();
+            boolean isObjectType = liveOutType.equals(CloneProcessor.objectTypeIfPrimitive(liveOutType));
+
             if (clone
                     .parameters()
                     .stream()
                     .map(p -> p.extractedValue().getText())
-                    .noneMatch(s -> s.equals(liveOutVar.identifier()))) {
-                // if the live-out var is not also live-in we must set the result of the extracted code to a new variable
+                    .noneMatch(s -> s.equals(liveOutVar.identifier()))){
+                // if the live-out var is not also live-in
+                // we must set the result of the extracted code to a new variable
                 sb.append(liveOutType);
                 sb.append(" ");
+                sb.append(liveOutVar.identifier());
+                sb.append(" = ");
             }
 
-            if (!liveOutType.equals(CloneProcessor.objectTypeIfPrimitive(liveOutType))) {
-                // otherwise if the live-out var is live-in AND a primitive (since non-primitives are pass by ref)
+            if (!isObjectType) {
+                // otherwise if the live-out var is live-in AND a primitive (since primitives are pass by value)
                 // we just re-assign it to the value of the extracted code
                 sb.append(liveOutVar.identifier());
                 sb.append(" = ");
@@ -205,16 +206,19 @@ public class ExtractionTask {
     }
 
     public void askWhichClonesToExtract(List<Clone> options) {
-        MarkupModel markupModel = event.getEditor().getMarkupModel();
+        Editor editor = event.getEditor();
+        MarkupModel markupModel = editor.getMarkupModel();
         for (int i = options.size() - 1; i >= 0; i--) {
             Clone clone = options.get(i);
+            int startOffset = clone.start().getTextOffset();
             RangeHighlighter highlighter = markupModel.addRangeHighlighter(
-                    clone.start().getTextOffset(),
+                    startOffset,
                     clone.end().getTextOffset() + clone.end().getTextLength(),
                     HighlighterLayer.LAST + 1000,
                     new TextAttributes(null, null, Color.red, EffectType.BOXED, Font.PLAIN),
                     HighlighterTargetArea.EXACT_RANGE
             );
+            editor.getScrollingModel().scrollTo(editor.offsetToLogicalPosition(startOffset), ScrollType.CENTER);
             if (!MessageDialogBuilder.yesNo(
                             "AntiCopyPaster Method Extractor",
                             "Each clone that can be extracted will be highlighted "
@@ -243,6 +247,7 @@ public class ExtractionTask {
                 return;
             // Allow the user to choose to extract each clone
             askWhichClonesToExtract(results);
+
             if (results.isEmpty()) {
                 Messages.showInfoMessage(
                         project,
@@ -252,6 +257,7 @@ public class ExtractionTask {
                 return;
             }
 
+            results.get(0).parameters().forEach(System.out::println);
             // Remove unnecessary parameters
             for (int i = results.get(0).parameters().size() - 1; i >= 0; i--) {
                 Parameter firstParam = results.get(0).parameters().get(i);
@@ -285,6 +291,7 @@ public class ExtractionTask {
 
             // Generate method return type
             Clone template = results.get(0);
+
             String returnType = null;
             for (Clone clone : results) {
                 if (clone.liveVars().size() > 0) {
@@ -328,8 +335,8 @@ public class ExtractionTask {
                             for (Clone location : results)
                                 generateMethodCall(location, factory, normalizedLambdaArgs, methodName);
 
-//                            PsiElement identElement = ((PsiMethod)lastElement).getNameIdentifier();
-//                            if (identElement == null) return;
+                            PsiElement identElement = ((PsiMethod)lastElement).getNameIdentifier();
+                            if (identElement == null) return;
                         },
                         "Clone Extraction",
                         null
