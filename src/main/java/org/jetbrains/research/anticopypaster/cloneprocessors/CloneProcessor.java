@@ -12,7 +12,7 @@ public interface CloneProcessor {
      * @param type Type label to convert if necessary
      * @return The boxed type, or the original label if it isn't primitive
      */
-    static String objectTypeIfPrimitive(String type) {
+    static String boxedType(String type) {
         return switch (type) {
             case "byte" -> "Byte";
             case "short" -> "Short";

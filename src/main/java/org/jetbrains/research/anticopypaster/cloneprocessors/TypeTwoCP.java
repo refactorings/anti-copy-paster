@@ -40,10 +40,11 @@ public class TypeTwoCP implements CloneProcessor {
                     polyE.getType().getPresentableText(),
                     idents.stream().map(ms::getAliasID).filter(id ->
                         id >= 0
-                    ).collect(Collectors.toSet())
+                    ).collect(Collectors.toSet()),
+                    false
             );
         } else if (e instanceof PsiLiteralExpression litExp && litExp.getType() != null) {
-            return new ParamCheckResult(litExp.getType().getPresentableText());
+            return new ParamCheckResult(litExp.getType().getPresentableText(), false);
         } else if (e instanceof PsiReferenceExpression refExp && !refExp.isQualified()
                 && refExp.getType() != null) {
             // Prevents extracting LHS of statements & method calls
@@ -54,7 +55,7 @@ public class TypeTwoCP implements CloneProcessor {
             HashSet<Integer> lambdaArgs = new HashSet<>();
             int aliasID = ms.getAliasID(refExp.getReferenceName());
             if (aliasID >= 0) lambdaArgs.add(aliasID);
-            return new ParamCheckResult(refExp.getType().getPresentableText(), lambdaArgs);
+            return new ParamCheckResult(refExp.getType().getPresentableText(), lambdaArgs, aliasID == -1);
         }
 
         return ParamCheckResult.FAILURE;
@@ -75,8 +76,8 @@ public class TypeTwoCP implements CloneProcessor {
         ParamCheckResult canBeParamA = canBeParam(a, ma);
         ParamCheckResult canBeParamB = canBeParam(b, mb);
         if (canBeParamA.success && canBeParamB.success) {
-            ma.addParameter(a, canBeParamA.type, canBeParamA.lambdaArgs);
-            mb.addParameter(b, canBeParamB.type, canBeParamB.lambdaArgs);
+            ma.addParameter(a, canBeParamA.type, canBeParamA.lambdaArgs, canBeParamA.liveIn);
+            mb.addParameter(b, canBeParamB.type, canBeParamB.lambdaArgs, canBeParamB.liveIn);
             // Type two clone, so we can stop here and evaluate if worth extracting
             // to a parameter later.
             return true;
@@ -100,8 +101,8 @@ public class TypeTwoCP implements CloneProcessor {
         CloneProcessor.updateScope(b, mb, childMb);
         // See if we have a type parameter
         if (a instanceof PsiTypeElement typeA && b instanceof PsiTypeElement typeB) {
-            ma.typeParams().add(CloneProcessor.objectTypeIfPrimitive(typeA.getText()));
-            mb.typeParams().add(CloneProcessor.objectTypeIfPrimitive(typeB.getText()));
+            ma.typeParams().add(CloneProcessor.boxedType(typeA.getText()));
+            mb.typeParams().add(CloneProcessor.boxedType(typeB.getText()));
             return true;
         }
         // Process children
@@ -134,13 +135,13 @@ public class TypeTwoCP implements CloneProcessor {
         return results;
     }
 
-    private record ParamCheckResult(boolean success, String type, Set<Integer> lambdaArgs) {
-        public static final ParamCheckResult FAILURE = new ParamCheckResult(false, null, null);
-        public ParamCheckResult(String type) {
-            this(true, type, new HashSet<>());
+    private record ParamCheckResult(boolean success, String type, Set<Integer> lambdaArgs, boolean liveIn) {
+        public static final ParamCheckResult FAILURE = new ParamCheckResult(false, null, null, false);
+        public ParamCheckResult(String type, boolean liveIn) {
+            this(true, type, new HashSet<>(), liveIn);
         }
-        public ParamCheckResult(String type, Set<Integer> lambdaArgs) {
-            this(true, type, lambdaArgs);
+        public ParamCheckResult(String type, Set<Integer> lambdaArgs, boolean liveIn) {
+            this(true, type, lambdaArgs, liveIn);
         }
     }
 }

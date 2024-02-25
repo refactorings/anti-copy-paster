@@ -17,11 +17,12 @@ public record MatchState(Stack<Variable> scope, Set<Variable> liveIn, List<Param
         return new MatchState(newStack, liveIn, parameters, aliasMap, typeParams);
     }
 
-    public void addParameter(PsiElement extractedValue, String type, Set<Integer> lambdaArgs) {
+    public void addParameter(PsiElement extractedValue, String type, Set<Integer> lambdaArgs, boolean liveIn) {
         parameters.add(new Parameter(
                 extractedValue,
                 type,
-                lambdaArgs
+                lambdaArgs,
+                liveIn
         ));
     }
 

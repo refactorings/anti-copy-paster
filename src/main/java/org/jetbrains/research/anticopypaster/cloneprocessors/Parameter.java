@@ -4,7 +4,7 @@ import com.intellij.psi.PsiElement;
 
 import java.util.Set;
 
-public record Parameter(PsiElement extractedValue, String type, Set<Integer> lambdaArgs) {
+public record Parameter(PsiElement extractedValue, String type, Set<Integer> lambdaArgs, boolean liveIn) {
     public String toString() {
         return "Parameter[extractedValue="
                 + extractedValue.getText()
@@ -12,6 +12,8 @@ public record Parameter(PsiElement extractedValue, String type, Set<Integer> lam
                 + type
                 + ", lambdaArgs="
                 + lambdaArgs.toString()
+                + ", liveIn="
+                + liveIn
                 + "]";
     }
 }
