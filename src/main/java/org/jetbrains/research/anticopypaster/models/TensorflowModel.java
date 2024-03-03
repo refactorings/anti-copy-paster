@@ -2,7 +2,7 @@ package org.jetbrains.research.anticopypaster.models;
 
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
-import org.jetbrains.research.extractMethod.metrics.features.FeaturesVector;
+import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
 import org.tensorflow.SavedModelBundle;
 import org.tensorflow.Session;
 import org.tensorflow.Tensor;
