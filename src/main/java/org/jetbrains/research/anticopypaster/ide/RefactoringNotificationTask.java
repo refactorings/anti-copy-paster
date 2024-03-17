@@ -120,49 +120,50 @@ public class RefactoringNotificationTask extends TimerTask {
                             getRunnableToShowSuggestionDialog(event)
                     );
 
-//                    HashSet<String> variablesInCodeFragment = new HashSet<>();
-//                    HashMap<String, Integer> variablesCountsInCodeFragment = new HashMap<>();
-//
+                    HashSet<String> variablesInCodeFragment = new HashSet<>();
+                    HashMap<String, Integer> variablesCountsInCodeFragment = new HashMap<>();
+
 //                    if (!FragmentCorrectnessChecker.isCorrect(event.getProject(), event.getFile(),
 //                            event.getText(),
 //                            variablesInCodeFragment,
 //                            variablesCountsInCodeFragment)) {
 //                        return;
 //                    }
-//
-//                    FeaturesVector featuresVector = calculateFeatures(event);
-//
-//                    float prediction = model.predict(featuresVector);
-//                    if(debugMetrics){
-//                        UserSettingsModel settingsModel = (UserSettingsModel) model;
-//                        try(FileWriter fr = new FileWriter(logFilePath, true)){
-//                            String timestamp =
-//                                    new SimpleDateFormat("yyyy.MM.dd HH:mm:ss").format(new Date());
-//
-//                            fr.write("\n-----------------------\nNEW COPY/PASTE EVENT: "
-//                                    + timestamp + "\nPASTED CODE:\n"
-//                                    + event.getText());
-//
-//                            if(prediction > predictionThreshold){
-//                                fr.write("\n\nSent Notification: True");
-//                            }else{
-//                                fr.write("\n\nSent Notification: False");
-//                            }
-//                            fr.write("\nMETRICS\n");
-//                        } catch(IOException ioe) { ioe.printStackTrace(); }
-//                        settingsModel.logMetrics(logFilePath);
-//                    }
-//                    event.setReasonToExtract(AntiCopyPasterBundle.message(
-//                            "extract.method.to.simplify.logic.of.enclosing.method")); // dummy
-//
-//                    if ((event.isForceExtraction() || prediction > predictionThreshold) &&
-//                            canBeExtracted(event)) {
-//                        notify(event.getProject(),
-//                                AntiCopyPasterBundle.message(
-//                                        "extract.method.refactoring.is.available"),
-//                                getRunnableToShowSuggestionDialog(event)
-//                        );
-//                    }
+
+                    FeaturesVector featuresVector = calculateFeatures(event);
+
+                    getOrInitModel();
+                    float prediction = model.predict(featuresVector);
+                    if(debugMetrics){
+                        UserSettingsModel settingsModel = (UserSettingsModel) model;
+                        try(FileWriter fr = new FileWriter(logFilePath, true)){
+                            String timestamp =
+                                    new SimpleDateFormat("yyyy.MM.dd HH:mm:ss").format(new Date());
+
+                            fr.write("\n-----------------------\nNEW COPY/PASTE EVENT: "
+                                    + timestamp + "\nPASTED CODE:\n"
+                                    + event.getText());
+
+                            if(prediction > predictionThreshold){
+                                fr.write("\n\nSent Notification: True");
+                            }else{
+                                fr.write("\n\nSent Notification: False");
+                            }
+                            fr.write("\nMETRICS\n");
+                        } catch(IOException ioe) { ioe.printStackTrace(); }
+                        settingsModel.logMetrics(logFilePath);
+                    }
+                    event.setReasonToExtract(AntiCopyPasterBundle.message(
+                            "extract.method.to.simplify.logic.of.enclosing.method")); // dummy
+
+                    if ((event.isForceExtraction() || prediction > predictionThreshold) &&
+                            canBeExtracted(event)) {
+                        notify(event.getProject(),
+                                AntiCopyPasterBundle.message(
+                                        "extract.method.refactoring.is.available"),
+                                getRunnableToShowSuggestionDialog(event)
+                        );
+                    }
                 });
             } catch (Exception e) {
                 LOG.error("[ACP] Can't process an event " + e.getMessage());
