@@ -16,6 +16,7 @@ import org.jetbrains.research.anticopypaster.AntiCopyPasterBundle;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.models.PredictionModel;
+import org.jetbrains.research.anticopypaster.models.TensorflowModel;
 import org.jetbrains.research.anticopypaster.models.UserSettingsModel;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 import org.jetbrains.research.anticopypaster.utils.MetricsGatherer;
@@ -54,17 +55,18 @@ public class RefactoringNotificationTask extends TimerTask {
     private PredictionModel getOrInitModel() {
         PredictionModel model = this.model;
         if (model == null) {
-            model = this.model = new UserSettingsModel(new MetricsGatherer(project), project);
-            if(debugMetrics){
-                UserSettingsModel settingsModel = (UserSettingsModel) model;
-                try(FileWriter fr = new FileWriter(logFilePath, true)){
-                    String timestamp =
-                            new SimpleDateFormat("yyyy.MM.dd HH:mm:ss").format(new Date());
-                    fr.write("\n-----------------------\nInitial Metric Thresholds: " +
-                            timestamp + "\n");
-                } catch(IOException ioe) { ioe.printStackTrace(); }
-                settingsModel.logThresholds(logFilePath);
-            }
+//            model = this.model = new UserSettingsModel(new MetricsGatherer(project), project);
+            model = this.model = new TensorflowModel();
+//            if(debugMetrics){
+//                UserSettingsModel settingsModel = (UserSettingsModel) model;
+//                try(FileWriter fr = new FileWriter(logFilePath, true)){
+//                    String timestamp =
+//                            new SimpleDateFormat("yyyy.MM.dd HH:mm:ss").format(new Date());
+//                    fr.write("\n-----------------------\nInitial Metric Thresholds: " +
+//                            timestamp + "\n");
+//                } catch(IOException ioe) { ioe.printStackTrace(); }
+//                settingsModel.logThresholds(logFilePath);
+//            }
         }
         return model;
     }
@@ -82,22 +84,6 @@ public class RefactoringNotificationTask extends TimerTask {
     private boolean isLocalVariable(PsiVariable variable) {
         PsiMethod containingMethod = PsiTreeUtil.getParentOfType(variable, PsiMethod.class);
         return containingMethod != null;
-    }
-
-    private boolean bodyContainsGlobalVar(PsiElement current, PsiElement last) {
-        // Iterates through all siblings at this level
-        while (current != null) {
-            if (isGlobalVariable(current))
-                return true;
-            PsiElement firstChild = current.getFirstChild();
-            if (firstChild != null) {
-                // The current element has children, descend
-                bodyContainsGlobalVar(firstChild, last);
-            }
-            if (current == last) break;
-            current = current.getNextSibling();
-        }
-        return false;
     }
 
     @Override
@@ -134,27 +120,27 @@ public class RefactoringNotificationTask extends TimerTask {
 
                     getOrInitModel();
                     float prediction = model.predict(featuresVector);
-                    if(debugMetrics){
-                        UserSettingsModel settingsModel = (UserSettingsModel) model;
-                        try(FileWriter fr = new FileWriter(logFilePath, true)){
-                            String timestamp =
-                                    new SimpleDateFormat("yyyy.MM.dd HH:mm:ss").format(new Date());
-
-                            fr.write("\n-----------------------\nNEW COPY/PASTE EVENT: "
-                                    + timestamp + "\nPASTED CODE:\n"
-                                    + event.getText());
-
-                            if(prediction > predictionThreshold){
-                                fr.write("\n\nSent Notification: True");
-                            }else{
-                                fr.write("\n\nSent Notification: False");
-                            }
-                            fr.write("\nMETRICS\n");
-                        } catch(IOException ioe) { ioe.printStackTrace(); }
-                        settingsModel.logMetrics(logFilePath);
-                    }
-                    event.setReasonToExtract(AntiCopyPasterBundle.message(
-                            "extract.method.to.simplify.logic.of.enclosing.method")); // dummy
+//                    if(debugMetrics){
+//                        UserSettingsModel settingsModel = (UserSettingsModel) model;
+//                        try(FileWriter fr = new FileWriter(logFilePath, true)){
+//                            String timestamp =
+//                                    new SimpleDateFormat("yyyy.MM.dd HH:mm:ss").format(new Date());
+//
+//                            fr.write("\n-----------------------\nNEW COPY/PASTE EVENT: "
+//                                    + timestamp + "\nPASTED CODE:\n"
+//                                    + event.getText());
+//
+//                            if(prediction > predictionThreshold){
+//                                fr.write("\n\nSent Notification: True");
+//                            }else{
+//                                fr.write("\n\nSent Notification: False");
+//                            }
+//                            fr.write("\nMETRICS\n");
+//                        } catch(IOException ioe) { ioe.printStackTrace(); }
+//                        settingsModel.logMetrics(logFilePath);
+//                    }
+//                    event.setReasonToExtract(AntiCopyPasterBundle.message(
+//                            "extract.method.to.simplify.logic.of.enclosing.method")); // dummy
 
                     if ((event.isForceExtraction() || prediction > predictionThreshold) &&
                             canBeExtracted(event)) {
