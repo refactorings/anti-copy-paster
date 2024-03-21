@@ -22,7 +22,7 @@ import java.util.Collections;
  * outputLayerName - name of the model's output layer, see wiki for details.
  */
 public class TensorflowModel extends PredictionModel {
-    private final String modelResourcePath = "TensorFlowModel/TrainedModel/";
+    private final String modelResourcePath = "TrainedModel";
     private final String inputLayerName = "serving_default_batch_normalization_input:0";
     private final String outputLayerName = "StatefulPartitionedCall:0";
     private final SavedModelBundle modelBundle;

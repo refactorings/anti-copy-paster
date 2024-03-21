@@ -119,7 +119,7 @@ public class RefactoringNotificationTask extends TimerTask {
                     FeaturesVector featuresVector = calculateFeatures(event);
 
                     getOrInitModel();
-                    float prediction = model.predict(featuresVector);
+                    float prediction = this.model.predict(featuresVector);
 //                    if(debugMetrics){
 //                        UserSettingsModel settingsModel = (UserSettingsModel) model;
 //                        try(FileWriter fr = new FileWriter(logFilePath, true)){
