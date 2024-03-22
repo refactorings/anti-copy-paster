@@ -347,20 +347,6 @@ public class ExtractionTask {
                 for (Clone clone : results)
                     clone.parameters().remove(i);
             }
-            for (int i = results.get(0).parameters().size() - 1; i >= 0; i--) {
-                Parameter firstParam = results.get(0).parameters().get(i);
-                String text = firstParam.extractedValue().getText();
-                boolean canRemove = true;
-                int j = 1;
-                while (canRemove && j < results.size()) {
-                    Parameter currentParam = results.get(j).parameters().get(i);
-                    canRemove = text.equals(currentParam.extractedValue().getText());
-                    j++;
-                }
-                if (!canRemove) continue;
-                for (Clone clone : results)
-                    clone.parameters().remove(i);
-            }
 
             // Combine all lambda args per parameter
             List<Set<Integer>> combinedLambdaArgs = new ArrayList<>();
@@ -380,14 +366,6 @@ public class ExtractionTask {
             // Generate method return type
             Clone template = results.get(0);
             String returnType = null;
-            for (Clone clone : results) {
-                if (clone.liveVars().size() > 0) {
-                    if (returnType == null) {
-                        template = clone;
-                        returnType = clone.liveVars().get(0).type();
-                    } else if (!returnType.equals(clone.liveVars().get(0).type())) return;
-                }
-            }
             for (Clone clone : results) {
                 if (clone.liveVars().size() > 0) {
                     if (returnType == null) {
