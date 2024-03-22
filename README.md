@@ -18,11 +18,6 @@ AntiCopyPaster requires IntelliJ IDEA version 2023.2 to work. To install the plu
 5. Click `Apply`.
 6. Restart the IDE.
 
-### Plugin Walkthrough Video
-
-Here is a link featuring the plugin and how it works:
-[![Video](https://img.youtube.com/vi/nKfybTsSoXc/maxresdefault.jpg)](https://www.youtube.com/watch?v=nKfybTsSoXc)
-
 ## Technical Information
 
 ### How It Works

@@ -22,6 +22,10 @@ dependencies {
     implementation("org.apache.commons:commons-lang3:3.12.0")
     implementation("org.pmml4s:pmml4s_3:1.0.1")
     implementation("org.mongodb:mongodb-driver-sync:4.10.1")
+    implementation("com.github.javaparser:javaparser-core:3.0.0-alpha.4")
+    implementation("commons-io:commons-io:1.3.2")
+    implementation("args4j:args4j:2.33")
+    implementation("org.jetbrains:annotations:24.0.1")
     /**
      * This file is commented out as it uses the TensorFlow API. By removing that dependency,
      * the plugin will be a fifth of the size and much more lightweight, but this won't
@@ -40,13 +44,20 @@ dependencies {
 }
 
 fun properties(key: String) = project.findProperty(key).toString()
-
+fun config(name: String) = project.findProperty(name).toString()
+val ideaVersion = config("ideaVersion")
 intellij {
     version.set(properties("platformVersion"))
     type.set(properties("platformType"))
     downloadSources.set(properties("platformDownloadSources").toBoolean())
     updateSinceUntilBuild.set(true)
     plugins.set(properties("platformPlugins").split(',').map(String::trim).filter(String::isNotEmpty))
+    plugins.add("terminal")
+    if (ideaVersion.contains("PC")) {
+        plugins.add("python-ce")
+    } else if (ideaVersion.contains("PY")) {
+        plugins.add("python")
+    }
 }
 
 tasks {
@@ -58,6 +69,25 @@ tasks {
     //test task
     test {
         useJUnitPlatform()
+    }
+    val copyStubs = register<Copy>("copyStubs") {
+        dependsOn("prepareSandbox")
+        from(projectDir) {
+            include("code2vec/")
+        }
+        into("${intellij.sandboxDir.get()}/plugins/AntiCopyPaster")
+    }
+    buildSearchableOptions {
+        dependsOn(copyStubs)
+    }
+    buildPlugin {
+        dependsOn(copyStubs)
+    }
+    runIde {
+        dependsOn(copyStubs)
+    }
+    publishPlugin {
+        token = config("publishToken")
     }
 }
 

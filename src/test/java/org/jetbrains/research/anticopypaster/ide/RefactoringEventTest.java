@@ -12,7 +12,7 @@ public class RefactoringEventTest {
 
     @BeforeEach
     public void beforeTest() {
-        refactoringEvent = new RefactoringEvent(null, null, null, 0, null, null, 0);
+        refactoringEvent = new RefactoringEvent(null, null, null, null, null);
     }
 
     @Test
