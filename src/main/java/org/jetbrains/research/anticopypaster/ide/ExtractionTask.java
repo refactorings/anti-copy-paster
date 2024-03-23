@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.ide;
 
 import com.intellij.lang.LanguageRefactoringSupport;
 import com.intellij.lang.refactoring.RefactoringSupportProvider;
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
@@ -15,6 +16,7 @@ import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
+import com.intellij.refactoring.RefactoringActionHandlerFactory;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.App;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.FeaturesEntities.ProgramFeatures;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
@@ -395,7 +397,6 @@ public class ExtractionTask {
             JavaCodeStyleManager styleManagerForLambdas = JavaCodeStyleManager.getInstance(project);
             styleManagerForLambdas.shortenClassReferences(extractedMethodElement);
 
-
             ApplicationManager.getApplication().runWriteAction(() -> {
                 CommandProcessor.getInstance().executeCommand(
                         project,
@@ -408,8 +409,13 @@ public class ExtractionTask {
                             for (Clone location : results)
                                 generateMethodCall(location, factory, normalizedLambdaArgs, methodName);
 
-//                            PsiElement identElement = ((PsiMethod)lastElement).getNameIdentifier();
-//                            if (identElement == null) return;
+                            ApplicationManager.getApplication().invokeLater(() ->
+                                    RefactoringActionHandlerFactory.getInstance().createRenameHandler().invoke(
+                                            project,
+                                            new PsiElement[]{lastElement},
+                                            SimpleDataContext.getProjectContext(project)
+                                    )
+                            );
                         },
                         "Clone Extraction",
                         null
