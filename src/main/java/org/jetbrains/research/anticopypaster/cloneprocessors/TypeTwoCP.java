@@ -11,16 +11,15 @@ public class TypeTwoCP implements CloneProcessor {
      * Check for a clone of the fragment starting at the given element.
      * @return The last member element of the clone
      */
-    private PsiElement isDuplicateAt(PsiCodeBlock block, PsiElement fragment, PsiElement start, MatchState ma, MatchState mb) {
-        if (fragment == null) return null;
-        PsiElement fragCurrent = fragment;
+    private PsiElement isDuplicateAt(PsiElement fragmentStart, PsiElement last, PsiElement start, MatchState ma, MatchState mb) {
+        if (fragmentStart == null) return null;
+        PsiElement fragCurrent = fragmentStart;
         PsiElement dupeCurrent = start;
-        while (fragCurrent != null) {
-            if (dupeCurrent == null) return null;
+        while (fragCurrent != null && dupeCurrent != null) {
             if (!matchStack(fragCurrent, dupeCurrent, ma, mb))
                 return null;
+            if (fragCurrent == last) break;
             fragCurrent = fragCurrent.getNextSibling();
-            if (fragCurrent == block.getRBrace()) break;
             dupeCurrent = dupeCurrent.getNextSibling();
         }
         return dupeCurrent;
@@ -101,8 +100,8 @@ public class TypeTwoCP implements CloneProcessor {
         CloneProcessor.updateScope(b, mb, childMb);
         // See if we have a type parameter
         if (a instanceof PsiTypeElement typeA && b instanceof PsiTypeElement typeB) {
-            ma.typeParams().add(CloneProcessor.boxedType(typeA.getText()));
-            mb.typeParams().add(CloneProcessor.boxedType(typeB.getText()));
+            ma.typeParams().add(typeA);
+            mb.typeParams().add(typeB);
             return true;
         }
         // Process children
@@ -114,21 +113,21 @@ public class TypeTwoCP implements CloneProcessor {
     }
 
     @Override
-    public List<Clone> getClonesOfType(PsiFile file, PsiCodeBlock pastedCode) {
+    public List<Clone> getClonesOfType(PsiFile file, PsiStatement startStmt, PsiStatement endStmt) {
         ArrayList<Clone> results = new ArrayList<>();
-        PsiElement blockStart = pastedCode.getStatements()[0];
-        Collection<PsiElement> matches = PsiTreeUtil.findChildrenOfType(file, blockStart.getClass());
+        Collection<PsiElement> matches = PsiTreeUtil.findChildrenOfType(file, PsiStatement.class);
         for (PsiElement match : matches) {
             MatchState ma = new MatchState();
             MatchState mb = new MatchState();
-            PsiElement end = isDuplicateAt(pastedCode, blockStart, match, ma, mb);
+            PsiElement end = isDuplicateAt(startStmt, endStmt, match, ma, mb);
             if (end != null) {
                 results.add(new Clone(
                         match,
                         end,
                         CloneProcessor.liveOut(end, mb.scope()),
                         mb.parameters(),
-                        mb.aliasMap()
+                        mb.aliasMap(),
+                        mb.typeParams()
                 ));
             }
         }

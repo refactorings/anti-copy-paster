@@ -160,5 +160,5 @@ public interface CloneProcessor {
         return true;
     }
 
-    List<Clone> getClonesOfType(PsiFile file, PsiCodeBlock pastedCode);
+    List<Clone> getClonesOfType(PsiFile file, PsiStatement start, PsiStatement end);
 }

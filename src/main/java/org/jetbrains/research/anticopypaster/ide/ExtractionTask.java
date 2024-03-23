@@ -1,6 +1,5 @@
 package org.jetbrains.research.anticopypaster.ide;
 
-import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
@@ -10,14 +9,10 @@ import com.intellij.openapi.editor.markup.*;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageDialogBuilder;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.ui.messages.MessageDialog;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.refactoring.RefactoringActionHandlerFactory;
-import com.intellij.refactoring.RefactoringFactory;
-import com.intellij.refactoring.rename.inplace.InplaceRefactoring;
-import com.intellij.refactoring.rename.inplace.MemberInplaceRenamer;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
@@ -199,7 +194,6 @@ public class ExtractionTask {
         while (containingClass.findMethodsByName(i > 0 ? base + i : base).length > 0)
             i++;
 
-        PsiField[] fields = containingClass.getFields();
         List<String> fieldNames = new ArrayList<>();
         for (PsiField field : containingClass.getFields())
             fieldNames.add(field.getName());
@@ -278,6 +272,19 @@ public class ExtractionTask {
                 if (!canRemove) continue;
                 for (Clone clone : results)
                     clone.parameters().remove(i);
+            }
+            // And unnecessary type parameters
+            for (int i = results.get(0).typeParams().size() - 1; i >= 0; i--) {
+                String text = results.get(0).typeParams().get(i).getText();
+                boolean canRemove = true;
+                int j = 1;
+                while (canRemove && j < results.size()) {
+                    canRemove = text.equals(results.get(j).typeParams().get(i).getText());
+                    j++;
+                }
+                if (!canRemove) continue;
+                for (Clone clone : results)
+                    clone.typeParams().remove(i);
             }
 
             // Combine all lambda args per parameter
