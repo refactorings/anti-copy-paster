@@ -13,7 +13,16 @@ import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.NameUtilCore;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.App;
+import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.FeaturesEntities.ProgramFeatures;
+import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
+import org.jetbrains.research.anticopypaster.cloneprocessors.Variable;
 
+import java.io.BufferedReader;
+import java.io.FileWriter;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.Socket;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -44,6 +53,8 @@ public class JavaNameSuggestionProvider implements NameSuggestionProvider {
             }
         }
         final String[] strings = info != null ? info.names : ArrayUtilRt.EMPTY_STRING_ARRAY;
+        List<List<String>> code2vec_namerecs = generateName();
+        // append code2vec output to strings before it gets processed
         final ArrayList<String> list = new ArrayList<>(Arrays.asList(strings));
         final String[] properlyCased = suggestProperlyCasedName(element);
         if (properlyCased != null) {
@@ -55,8 +66,6 @@ public class JavaNameSuggestionProvider implements NameSuggestionProvider {
         if (superMethodName != null && !list.contains(superMethodName)) {
             list.add(0, superMethodName);
         }
-
-
 
         list.remove(initialName);
         list.add(initialName);
@@ -140,6 +149,63 @@ public class JavaNameSuggestionProvider implements NameSuggestionProvider {
 
         }
         return nameInfo;
+    }
+
+    @Nullable
+    // not final code at all for this, but we need a way to grab the recommendation data easily without using new parameters
+    // ideally want to communicate with the server and pull the most recent prediction data
+    // this definitely doesn't do that right now but it's a start...
+    public List<List<String>> generateName(){
+        List<List<String>> extractedText = null;
+        try{
+            String FILE_PATH2 = "C:/Users/squir/OneDrive/Desktop/sem6/extract.txt";
+            FileWriter fileWriter2 = new FileWriter(FILE_PATH2, true);
+            fileWriter2.write("hi");
+            Socket socket = new Socket("hostname", 8081);
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            PrintWriter out = new PrintWriter(socket.getOutputStream(),true);
+            fileWriter2.write("hi2");
+            String predictions = in.readLine();
+            fileWriter2.write("hi3");
+            socket.close();
+            extractedText = extractEncasedText(predictions);
+            fileWriter2.close();
+        }catch(Exception e){
+        }
+        return extractedText;
+    }
+
+    // this is present for the function above
+    private static List<List<String>> extractEncasedText(String input) {
+        List<List<String>> result = new ArrayList<>();
+
+        // Regular expressions to match text inside the predictions
+        String regexParentheses = "\\(([^)]*)\\)";
+        String regexSquareBrackets = "\\[([^\\]]*)\\]";
+
+        // Find matches using the regular expressions
+        java.util.regex.Pattern patternParentheses = java.util.regex.Pattern.compile(regexParentheses);
+        java.util.regex.Pattern patternSquareBrackets = java.util.regex.Pattern.compile(regexSquareBrackets);
+        java.util.regex.Matcher matcherParentheses = patternParentheses.matcher(input);
+        java.util.regex.Matcher matcherSquareBrackets = patternSquareBrackets.matcher(input);
+
+        // Extract and store the matches in the result list
+        while (matcherParentheses.find() && matcherSquareBrackets.find() && result.size() <= 3) {
+            String textInParentheses = matcherParentheses.group(1);
+            String textInSquareBrackets = matcherSquareBrackets.group(1);
+            textInSquareBrackets = textInSquareBrackets.replaceAll(" ", "");
+            textInSquareBrackets = textInSquareBrackets.replaceAll(",", "_");
+            textInSquareBrackets = textInSquareBrackets.replaceAll("'", "");
+            if(textInSquareBrackets.length() >= 3){
+                // Add the new pair to the result list
+                List<String> pair = new ArrayList<>();
+                pair.add(textInParentheses);
+                pair.add(textInSquareBrackets);
+                result.add(pair);
+            }
+        }
+
+        return result;
     }
 
 }
