@@ -1,12 +1,10 @@
 package org.jetbrains.research.anticopypaster.cloneprocessors;
 
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiIdentifier;
-import com.intellij.psi.PsiTypeElement;
+import com.intellij.psi.*;
 
 import java.util.*;
 
-public record MatchState(Stack<Variable> scope, Set<Variable> liveIn, List<Parameter> parameters,
+public record MatchState(Stack<Variable> scope, Set<PsiVariable> liveIn, List<Parameter> parameters,
                          List<Variable> aliasMap, List<PsiTypeElement> typeParams) {
     public MatchState() {
         this(new Stack<>(), new HashSet<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
@@ -19,12 +17,17 @@ public record MatchState(Stack<Variable> scope, Set<Variable> liveIn, List<Param
     }
 
     public void addParameter(PsiElement extractedValue, String type, Set<Integer> lambdaArgs, boolean liveIn) {
-        parameters.add(new Parameter(
-                extractedValue,
-                type,
-                lambdaArgs,
-                liveIn
-        ));
+        if (liveIn) {
+            if (((PsiReferenceExpression) extractedValue).resolve() instanceof PsiVariable variable) {
+                this.liveIn.add(variable);
+            }
+        } else {
+            parameters.add(new Parameter(
+                    extractedValue,
+                    type,
+                    lambdaArgs
+            ));
+        }
     }
 
     /**

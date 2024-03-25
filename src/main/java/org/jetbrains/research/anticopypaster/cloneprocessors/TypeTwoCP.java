@@ -74,7 +74,7 @@ public class TypeTwoCP implements CloneProcessor {
         // Build parameter stack
         ParamCheckResult canBeParamA = canBeParam(a, ma);
         ParamCheckResult canBeParamB = canBeParam(b, mb);
-        if (canBeParamA.success && canBeParamB.success) {
+        if (canBeParamA.success && canBeParamB.success && canBeParamA.liveIn == canBeParamB.liveIn) {
             ma.addParameter(a, canBeParamA.type, canBeParamA.lambdaArgs, canBeParamA.liveIn);
             mb.addParameter(b, canBeParamB.type, canBeParamB.lambdaArgs, canBeParamB.liveIn);
             // Type two clone, so we can stop here and evaluate if worth extracting
@@ -127,7 +127,8 @@ public class TypeTwoCP implements CloneProcessor {
                         CloneProcessor.liveOut(end, mb.scope()),
                         mb.parameters(),
                         mb.aliasMap(),
-                        mb.typeParams()
+                        mb.typeParams(),
+                        mb.liveIn()
                 ));
             }
         }

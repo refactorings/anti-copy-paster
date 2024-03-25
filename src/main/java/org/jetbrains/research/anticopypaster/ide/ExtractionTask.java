@@ -112,7 +112,16 @@ public class ExtractionTask {
             }
             sb.append(" p");
             sb.append(i + 1);
-            if (i != clone.parameters().size() - 1)
+            if (i != clone.parameters().size() - 1 || !clone.liveOutVars().isEmpty())
+                sb.append(", ");
+        }
+        List<PsiVariable> liveInVars = clone.liveInVars().stream().toList();
+        for (int i = 0; i < liveInVars.size(); i++) {
+            PsiVariable variable = liveInVars.get(i);
+            sb.append(variable.getType().getPresentableText());
+            sb.append(" ");
+            sb.append(variable.getName());
+            if (i != liveInVars.size() - 1)
                 sb.append(", ");
         }
         sb.append(") {\n\t\t");
@@ -126,7 +135,7 @@ public class ExtractionTask {
         );
         if (returnType != null) {
             sb.append("\n\t\treturn ");
-            sb.append(clone.liveVars().get(0).identifier());
+            sb.append(clone.liveOutVars().get(0).identifier());
             sb.append(";");
         }
         sb.append("\n\t}");
@@ -139,8 +148,8 @@ public class ExtractionTask {
         PsiElement parent = start.getParent();
         StringBuilder sb = new StringBuilder();
 
-        if (!clone.liveVars().isEmpty()) {
-            Variable liveOutVar = clone.liveVars().get(0);
+        if (!clone.liveOutVars().isEmpty()) {
+            Variable liveOutVar = clone.liveOutVars().get(0);
             String liveOutType = liveOutVar.type();
             boolean isObjectType = liveOutType.equals(CloneProcessor.boxedType(liveOutType));
 
@@ -178,7 +187,14 @@ public class ExtractionTask {
                 sb.append(") -> ");
                 sb.append(p.extractedValue().getText());
             }
-            if (i != clone.parameters().size() - 1)
+            if (i != clone.parameters().size() - 1 || !clone.liveInVars().isEmpty())
+                sb.append(", ");
+        }
+        List<PsiVariable> liveInVars = clone.liveInVars().stream().toList();
+        for (int i = 0; i < liveInVars.size(); i++) {
+            PsiVariable variable = liveInVars.get(i);
+            sb.append(variable.getName());
+            if (i != liveInVars.size() - 1)
                 sb.append(", ");
         }
         sb.append(");\n");
@@ -262,11 +278,11 @@ public class ExtractionTask {
             for (int i = results.get(0).parameters().size() - 1; i >= 0; i--) {
                 Parameter currentParam = results.get(0).parameters().get(i);
                 String text = currentParam.extractedValue().getText();
-                boolean canRemove = !currentParam.liveIn();
+                boolean canRemove = true;
                 int j = 1;
                 while (canRemove && j < results.size()) {
                     currentParam = results.get(j).parameters().get(i);
-                    canRemove = text.equals(currentParam.extractedValue().getText()) && !currentParam.liveIn();
+                    canRemove = text.equals(currentParam.extractedValue().getText());
                     j++;
                 }
                 if (!canRemove) continue;
@@ -307,11 +323,11 @@ public class ExtractionTask {
 
             String returnType = null;
             for (Clone clone : results) {
-                if (clone.liveVars().size() > 0) {
+                if (clone.liveOutVars().size() > 0) {
                     if (returnType == null) {
                         template = clone;
-                        returnType = clone.liveVars().get(0).type();
-                    } else if (!returnType.equals(clone.liveVars().get(0).type())) return;
+                        returnType = clone.liveOutVars().get(0).type();
+                    } else if (!returnType.equals(clone.liveOutVars().get(0).type())) return;
                 }
             }
 

@@ -49,7 +49,7 @@ public final class DuplicatesInspection {
         }
 
         for (int i = results.size() - 1; i >= 0; i--)
-            if (results.get(i).liveVars().size() > 1) results.remove(i);
+            if (results.get(i).liveOutVars().size() > 1) results.remove(i);
         return result;
     }
 

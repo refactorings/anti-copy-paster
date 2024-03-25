@@ -75,10 +75,6 @@ public interface CloneProcessor {
                 if (pVar != null)
                     childrenState.scope().add(new Variable(pVar.getName(), pVar.getType().getPresentableText()));
             });
-        } else if (anElement instanceof PsiReferenceExpression refExp && !refExp.isQualified()) {
-            if (!isInScope(refExp.getReferenceName(), currentState.scope()) && refExp.getType() != null) {
-                currentState.liveIn().add(new Variable(refExp.getReferenceName(), refExp.getType().getPresentableText()));
-            }
         }
     }
 
