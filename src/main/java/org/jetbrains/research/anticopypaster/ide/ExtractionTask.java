@@ -378,8 +378,8 @@ public class ExtractionTask {
                 }
             }
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
-            List<List<String>> pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
-            String methodName = getNewMethodName(containingClass, pred.get(0).get(1));
+            List<String> pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
+            String methodName = getNewMethodName(containingClass, pred.get(0));
 
             String code = buildMethodText( //for naming method
                     template,
