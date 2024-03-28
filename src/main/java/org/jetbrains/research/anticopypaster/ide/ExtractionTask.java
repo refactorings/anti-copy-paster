@@ -45,18 +45,24 @@ public class ExtractionTask {
      * @param normalizedLambdaArgs The set union combined lambda args across all clones
      * @param sb The StringBuilder to append to
      */
-    private void buildMethodBody(PsiElement current, PsiElement last, List<PsiElement> extractedParameters, List<List<Variable>> normalizedLambdaArgs, StringBuilder sb) {
+    private void buildMethodBody(PsiElement current, PsiElement last, List<PsiElement> extractedParameters, List<List<Variable>> normalizedLambdaArgs, List<PsiTypeElement> typeParams, StringBuilder sb) {
         // Iterates through all siblings at this level
         while (current != null) {
             int idx = extractedParameters.indexOf(current);
-            if (idx == -1)  {
+            int idx2 = typeParams.indexOf(current);
+            System.out.println(current);
+            System.out.println(idx2);
+            if (idx2 != -1) {
+                sb.append("T");
+                sb.append(idx2 + 1);
+            } else if (idx == -1)  {
                 PsiElement firstChild = current.getFirstChild();
                 if (firstChild == null) {
                     // This element has no children, stringify it
                     sb.append(current.getText());
                 } else {
                     // The current element has children, descend
-                    buildMethodBody(firstChild, last, extractedParameters, normalizedLambdaArgs, sb);
+                    buildMethodBody(firstChild, last, extractedParameters, normalizedLambdaArgs, typeParams, sb);
                 }
             } else {
                 sb.append("p");
@@ -85,6 +91,16 @@ public class ExtractionTask {
         // Method signature
         StringBuilder sb = new StringBuilder("private ");
         if (extractToStatic) sb.append("static ");
+        if (!clone.typeParams().isEmpty()) {
+            sb.append("<");
+            for (int i = 0; i < clone.typeParams().size(); i++) {
+                sb.append("T");
+                sb.append(i + 1);
+                if (i != clone.typeParams().size() - 1)
+                    sb.append(", ");
+            }
+            sb.append("> ");
+        }
         sb.append(returnType == null ? "void" : returnType);
         sb.append(' ');
         sb.append(methodName);
@@ -131,6 +147,7 @@ public class ExtractionTask {
                 clone.end(),
                 clone.parameters().stream().map(Parameter::extractedValue).toList(),
                 normalizedLambdaArgs,
+                clone.typeParams(),
                 sb
         );
         if (returnType != null) {

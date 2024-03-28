@@ -57,6 +57,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= settingsComponent.getComplexitySensitivity() != settings.complexitySensitivity;
         modified |= settingsComponent.getComplexityEnabled() != settings.complexityEnabled;
         modified |= settingsComponent.getComplexityRequired() != settings.complexityRequired;
+        modified |= settingsComponent.getJudgementModel() != settings.judgementModel;
+        modified |= settingsComponent.getExtractionType() != settings.extractionType;
         return modified;
     }
 
@@ -78,6 +80,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.complexitySensitivity = settingsComponent.getComplexitySensitivity();
         settings.complexityEnabled = settingsComponent.getComplexityEnabled();
         settings.complexityRequired = settingsComponent.getComplexityRequired();
+        settings.judgementModel = settingsComponent.getJudgementModel();
+        settings.extractionType = settingsComponent.getExtractionType();
     }
 
     // Pull from saved state to preset dialog state upon opening
@@ -98,6 +102,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setComplexitySensitivity(settings.complexitySensitivity);
         settingsComponent.setComplexityEnabled(settings.complexityEnabled);
         settingsComponent.setComplexityRequired(settings.complexityRequired);
+        settingsComponent.setJudgementModel(settings.judgementModel);
+        settingsComponent.setExtractionType(settings.extractionType);
     }
 
     @Override

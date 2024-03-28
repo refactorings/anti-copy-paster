@@ -41,6 +41,8 @@ public class ProjectSettingsComponent {
     private JLabel waitTimeHelp;
     private JLabel statisticsButtonHelp;
     private JLabel advancedButtonHelp;
+    private JComboBox modelComboBox;
+    private JComboBox cloneTypeComboBox;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
@@ -95,6 +97,26 @@ public class ProjectSettingsComponent {
     public int getTimeBuffer() { return (int) timeBufferSelector.getValue(); }
 
     public void setTimeBuffer(int timeBuffer) { timeBufferSelector.setValue(timeBuffer); }
+
+    public ProjectSettingsState.JudgementModel getJudgementModel() {
+        return switch (modelComboBox.getSelectedIndex()) {
+            case 0 -> ProjectSettingsState.JudgementModel.TENSORFLOW;
+            case 1 -> ProjectSettingsState.JudgementModel.USER_SETTINGS;
+            default -> throw new IllegalStateException("Unknown option selected.");
+        };
+    }
+
+    public void setJudgementModel(ProjectSettingsState.JudgementModel model) { modelComboBox.setSelectedIndex(model.getIdx()); }
+
+    public ProjectSettingsState.ExtractionType getExtractionType() {
+        return switch (cloneTypeComboBox.getSelectedIndex()) {
+            case 0 -> ProjectSettingsState.ExtractionType.TYPE_ONE;
+            case 1 -> ProjectSettingsState.ExtractionType.TYPE_TWO;
+            default -> throw new IllegalStateException("Unknown option selected.");
+        };
+    }
+
+    public void setExtractionType(ProjectSettingsState.ExtractionType cloneType) { cloneTypeComboBox.setSelectedIndex(cloneType.getIdx()); }
 
     public int getKeywordsSensitivity() {
         return keywordsSlider.getValue();

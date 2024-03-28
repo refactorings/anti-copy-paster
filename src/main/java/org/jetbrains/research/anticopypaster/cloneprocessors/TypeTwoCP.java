@@ -34,12 +34,12 @@ public class TypeTwoCP implements CloneProcessor {
     static ParamCheckResult canBeParam(PsiElement e, MatchState ms) {
         if (e instanceof PsiPolyadicExpression polyE && polyE.getType() != null) {
             Collection<PsiIdentifier> idents = PsiTreeUtil.findChildrenOfType(polyE, PsiIdentifier.class);
+            if (idents.stream().map(ms::getAliasID).anyMatch(id -> id == -1))
+                return ParamCheckResult.FAILURE;
             return new ParamCheckResult(
                     true,
                     polyE.getType().getPresentableText(),
-                    idents.stream().map(ms::getAliasID).filter(id ->
-                        id >= 0
-                    ).collect(Collectors.toSet()),
+                    idents.stream().map(ms::getAliasID).collect(Collectors.toSet()),
                     false
             );
         } else if (e instanceof PsiLiteralExpression litExp && litExp.getType() != null) {

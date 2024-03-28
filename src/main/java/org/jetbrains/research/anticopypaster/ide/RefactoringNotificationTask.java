@@ -42,6 +42,7 @@ public class RefactoringNotificationTask extends TimerTask {
     private final NotificationGroup notificationGroup = NotificationGroupManager.getInstance()
             .getNotificationGroup("Extract Method suggestion");
     private PredictionModel model;
+    private ProjectSettingsState.JudgementModel lastModelType;
     private final boolean debugMetrics = true;
     private String logFilePath;
     private Project project;
@@ -52,23 +53,15 @@ public class RefactoringNotificationTask extends TimerTask {
         this.logFilePath = project.getBasePath() + "/.idea/anticopypaster-refactoringSuggestionsLog.log";
     }
 
-    private PredictionModel getOrInitModel() {
-        PredictionModel model = this.model;
-        if (model == null) {
-//            model = this.model = new UserSettingsModel(new MetricsGatherer(project), project);
-            model = this.model = new TensorflowModel();
-//            if(debugMetrics){
-//                UserSettingsModel settingsModel = (UserSettingsModel) model;
-//                try(FileWriter fr = new FileWriter(logFilePath, true)){
-//                    String timestamp =
-//                            new SimpleDateFormat("yyyy.MM.dd HH:mm:ss").format(new Date());
-//                    fr.write("\n-----------------------\nInitial Metric Thresholds: " +
-//                            timestamp + "\n");
-//                } catch(IOException ioe) { ioe.printStackTrace(); }
-//                settingsModel.logThresholds(logFilePath);
-//            }
+    private void getOrInitModel() {
+        ProjectSettingsState.JudgementModel currentModelType = ProjectSettingsState.getInstance(project).judgementModel;
+        if (model == null || currentModelType != lastModelType) {
+            lastModelType = currentModelType;
+            model = switch (currentModelType) {
+                case TENSORFLOW -> new TensorflowModel();
+                case USER_SETTINGS -> new UserSettingsModel(new MetricsGatherer(project), project);
+            };
         }
-        return model;
     }
 
     private boolean isGlobalVariable(PsiElement psiElement) {
@@ -109,38 +102,10 @@ public class RefactoringNotificationTask extends TimerTask {
                     HashSet<String> variablesInCodeFragment = new HashSet<>();
                     HashMap<String, Integer> variablesCountsInCodeFragment = new HashMap<>();
 
-//                    if (!FragmentCorrectnessChecker.isCorrect(event.getProject(), event.getFile(),
-//                            event.getText(),
-//                            variablesInCodeFragment,
-//                            variablesCountsInCodeFragment)) {
-//                        return;
-//                    }
-
                     FeaturesVector featuresVector = calculateFeatures(event);
 
                     getOrInitModel();
                     float prediction = this.model.predict(featuresVector);
-//                    if(debugMetrics){
-//                        UserSettingsModel settingsModel = (UserSettingsModel) model;
-//                        try(FileWriter fr = new FileWriter(logFilePath, true)){
-//                            String timestamp =
-//                                    new SimpleDateFormat("yyyy.MM.dd HH:mm:ss").format(new Date());
-//
-//                            fr.write("\n-----------------------\nNEW COPY/PASTE EVENT: "
-//                                    + timestamp + "\nPASTED CODE:\n"
-//                                    + event.getText());
-//
-//                            if(prediction > predictionThreshold){
-//                                fr.write("\n\nSent Notification: True");
-//                            }else{
-//                                fr.write("\n\nSent Notification: False");
-//                            }
-//                            fr.write("\nMETRICS\n");
-//                        } catch(IOException ioe) { ioe.printStackTrace(); }
-//                        settingsModel.logMetrics(logFilePath);
-//                    }
-//                    event.setReasonToExtract(AntiCopyPasterBundle.message(
-//                            "extract.method.to.simplify.logic.of.enclosing.method")); // dummy
 
                     if ((event.isForceExtraction() || prediction > predictionThreshold) &&
                             canBeExtracted(event)) {
@@ -152,7 +117,7 @@ public class RefactoringNotificationTask extends TimerTask {
                     }
                 });
             } catch (Exception e) {
-                LOG.error("[ACP] Can't process an event " + e.getMessage());
+//                LOG.error("[ACP] Can't process an event " + e.getMessage());
             }
         }
     }
