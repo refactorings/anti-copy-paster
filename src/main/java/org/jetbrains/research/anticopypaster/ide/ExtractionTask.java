@@ -26,10 +26,7 @@ import org.jetbrains.research.anticopypaster.cloneprocessors.Variable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
 import java.awt.*;
-import java.io.BufferedReader;
-import java.io.FileWriter;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.Socket;
 import java.util.*;
 import java.util.List;
@@ -312,6 +309,7 @@ public class ExtractionTask {
         }
         return extractedText;
     }
+
     public void run() {
         ApplicationManager.getApplication().invokeLater(() -> {
             PsiElementFactory factory = JavaPsiFacade.getElementFactory(project);
@@ -379,6 +377,15 @@ public class ExtractionTask {
             }
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
             List<String> pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
+            try {
+                FileWriter predtxt = new FileWriter("preds.txt");
+                for (String s : pred) {
+                    predtxt.write(s);
+                }
+                predtxt.close();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
             String methodName = getNewMethodName(containingClass, pred.get(0));
 
             String code = buildMethodText( //for naming method

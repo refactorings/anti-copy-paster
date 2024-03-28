@@ -27,5 +27,6 @@
                 displayName="AntiCopyPaster"/>
         <postStartupActivity
                 implementation="org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterTelemetry"/>
+        <nameSuggestionProvider implementation="org.jetbrains.research.anticopypaster.ide.JavaNameSuggestionProvider"/>
     </extensions>
 </idea-plugin>
