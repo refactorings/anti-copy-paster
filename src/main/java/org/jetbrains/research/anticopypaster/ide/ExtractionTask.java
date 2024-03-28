@@ -378,7 +378,7 @@ public class ExtractionTask {
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
             List<String> pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
             try {
-                FileWriter predtxt = new FileWriter("preds.txt");
+                FileWriter predtxt = new FileWriter("src/main/java/org/jetbrains/research/anticopypaster/ide/preds.txt");
                 for (String s : pred) {
                     predtxt.write(s);
                 }

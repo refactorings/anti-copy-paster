@@ -51,8 +51,13 @@ public class JavaNameSuggestionProvider implements NameSuggestionProvider {
         }
         final String[] strings = info != null ? info.names : ArrayUtilRt.EMPTY_STRING_ARRAY;
         // append code2vec output to strings before it gets processed
-        final ArrayList<String> list = new ArrayList<>(Arrays.asList(strings));
-        final ArrayList<String> preds = getNamePreds("preds.txt");
+        ArrayList<String> list = new ArrayList<>(Arrays.asList(strings));
+        ArrayList<String> preds = null;
+        try {
+            preds = getNamePreds("src/main/java/org/jetbrains/research/anticopypaster/ide/preds.txt");
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         list.addAll(preds);
         final String[] properlyCased = suggestProperlyCasedName(element);
         if (properlyCased != null) {
@@ -149,18 +154,21 @@ public class JavaNameSuggestionProvider implements NameSuggestionProvider {
         return nameInfo;
     }
 
-    private static ArrayList<String> getNamePreds(String filename) {
+    private static ArrayList<String> getNamePreds(String filename) throws IOException {
         ArrayList<String> res = new ArrayList<String>();
         File preds = new File(filename);
+        FileWriter predtxt = new FileWriter(filename, false);
         Scanner reader;
         try {
             reader = new Scanner(preds);
+            while (reader.hasNextLine()){
+                String pred = reader.nextLine();
+                predtxt.write("");
+                res.add(pred);
+            }
+            predtxt.close();
         } catch (FileNotFoundException e) {
             throw new RuntimeException(e);
-        }
-        while (reader.hasNextLine()){
-            String pred = reader.nextLine();
-            res.add(pred);
         }
         return res;
     }
