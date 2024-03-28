@@ -2,3 +2,4 @@
 target/
 build
 .gradle
+code2vec/java14m_model/models/java14_model

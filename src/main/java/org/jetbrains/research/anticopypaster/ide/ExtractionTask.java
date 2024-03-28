@@ -242,35 +242,36 @@ public class ExtractionTask {
      * @param input: The string representation of the prediction.
      * @return A list of the top 3 predictions.
      */
-    private static List<List<String>> extractEncasedText(String input) {
-        List<List<String>> result = new ArrayList<>();
+    private static List<String> extractEncasedText(String input) {
+        //List<List<String>> result = new ArrayList<>();
+        List<String> result = new ArrayList<>();
 
         // Regular expressions to match text inside the predictions
         String regexParentheses = "\\(([^)]*)\\)";
         String regexSquareBrackets = "\\[([^\\]]*)\\]";
 
         // Find matches using the regular expressions
-        java.util.regex.Pattern patternParentheses = java.util.regex.Pattern.compile(regexParentheses);
+        //java.util.regex.Pattern patternParentheses = java.util.regex.Pattern.compile(regexParentheses);
         java.util.regex.Pattern patternSquareBrackets = java.util.regex.Pattern.compile(regexSquareBrackets);
-        java.util.regex.Matcher matcherParentheses = patternParentheses.matcher(input);
+        //java.util.regex.Matcher matcherParentheses = patternParentheses.matcher(input);
         java.util.regex.Matcher matcherSquareBrackets = patternSquareBrackets.matcher(input);
 
         // Extract and store the matches in the result list
-        while (matcherParentheses.find() && matcherSquareBrackets.find() && result.size() <= 3) {
-            String textInParentheses = matcherParentheses.group(1);
+        while (/*matcherParentheses.find() &&*/ matcherSquareBrackets.find() && result.size() <= 3) {
+            //String textInParentheses = matcherParentheses.group(1);
             String textInSquareBrackets = matcherSquareBrackets.group(1);
             textInSquareBrackets = textInSquareBrackets.replaceAll(" ", "");
             textInSquareBrackets = textInSquareBrackets.replaceAll(",", "_");
             textInSquareBrackets = textInSquareBrackets.replaceAll("'", "");
             if(textInSquareBrackets.length() >= 3){
                 // Add the new pair to the result list
-                List<String> pair = new ArrayList<>();
+                /*List<String> pair = new ArrayList<>();
                 pair.add(textInParentheses);
                 pair.add(textInSquareBrackets);
-                result.add(pair);
+                result.add(pair);*/
+                result.add(textInSquareBrackets);
             }
         }
-
         return result;
     }
     /**
@@ -280,7 +281,7 @@ public class ExtractionTask {
      * @param methodName The name to give the method
      * @return The extracted method as text
      */
-    public List<List<String>> generateName(Clone clone, String returnType, List<List<Variable>> normalizedLambdaArgs, String methodName, boolean extractToStatic){
+    public List<String> generateName(Clone clone, String returnType, List<List<Variable>> normalizedLambdaArgs, String methodName, boolean extractToStatic){
         String code = buildMethodText(clone, returnType, normalizedLambdaArgs, methodName, extractToStatic);
         String[] args = {
                 "--max_path_length",
@@ -292,7 +293,7 @@ public class ExtractionTask {
                 "--no_hash"
         };
         ArrayList<ProgramFeatures> extracted = App.execute(args);
-        List<List<String>> extractedText = null;
+        List<String> extractedText = null;
         try{
             String FILE_PATH2 = "C:/Users/squir/OneDrive/Desktop/sem6/extract.txt";
             FileWriter fileWriter2 = new FileWriter(FILE_PATH2, true);
