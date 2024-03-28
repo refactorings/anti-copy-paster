@@ -1,5 +1,6 @@
 package org.jetbrains.research.anticopypaster.ide;
 
+import com.github.weisj.jsvg.S;
 import com.intellij.CommonBundle;
 import com.intellij.notification.*;
 import com.intellij.openapi.application.ApplicationManager;
@@ -93,12 +94,6 @@ public class RefactoringNotificationTask extends TimerTask {
                     if (results.size() < ProjectSettingsState.getInstance(project).minimumDuplicateMethods)
                         return;
 
-                    notify(event.getProject(),
-                            AntiCopyPasterBundle.message(
-                                    "extract.method.refactoring.is.available"),
-                            getRunnableToShowSuggestionDialog(event)
-                    );
-
                     HashSet<String> variablesInCodeFragment = new HashSet<>();
                     HashMap<String, Integer> variablesCountsInCodeFragment = new HashMap<>();
 
@@ -106,9 +101,9 @@ public class RefactoringNotificationTask extends TimerTask {
 
                     getOrInitModel();
                     float prediction = this.model.predict(featuresVector);
-
                     if ((event.isForceExtraction() || prediction > predictionThreshold) &&
                             canBeExtracted(event)) {
+                        System.out.println("HOW???");
                         notify(event.getProject(),
                                 AntiCopyPasterBundle.message(
                                         "extract.method.refactoring.is.available"),
