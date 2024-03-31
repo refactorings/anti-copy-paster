@@ -239,33 +239,24 @@ public class ExtractionTask {
      * @param input: The string representation of the prediction.
      * @return A list of the top 3 predictions.
      */
-    private static List<String> extractEncasedText(String input) {
-        //List<List<String>> result = new ArrayList<>();
+    public static List<String> extractEncasedText(String input) {
         List<String> result = new ArrayList<>();
-
+        int i = input.indexOf('[');
+        input = input.substring(0, i) + input.substring(i + 1);
         // Regular expressions to match text inside the predictions
-        String regexParentheses = "\\(([^)]*)\\)";
         String regexSquareBrackets = "\\[([^\\]]*)\\]";
 
         // Find matches using the regular expressions
-        //java.util.regex.Pattern patternParentheses = java.util.regex.Pattern.compile(regexParentheses);
         java.util.regex.Pattern patternSquareBrackets = java.util.regex.Pattern.compile(regexSquareBrackets);
-        //java.util.regex.Matcher matcherParentheses = patternParentheses.matcher(input);
         java.util.regex.Matcher matcherSquareBrackets = patternSquareBrackets.matcher(input);
 
         // Extract and store the matches in the result list
         while (/*matcherParentheses.find() &&*/ matcherSquareBrackets.find() && result.size() <= 3) {
-            //String textInParentheses = matcherParentheses.group(1);
             String textInSquareBrackets = matcherSquareBrackets.group(1);
             textInSquareBrackets = textInSquareBrackets.replaceAll(" ", "");
             textInSquareBrackets = textInSquareBrackets.replaceAll(",", "_");
             textInSquareBrackets = textInSquareBrackets.replaceAll("'", "");
             if(textInSquareBrackets.length() >= 3){
-                // Add the new pair to the result list
-                /*List<String> pair = new ArrayList<>();
-                pair.add(textInParentheses);
-                pair.add(textInSquareBrackets);
-                result.add(pair);*/
                 result.add(textInSquareBrackets);
             }
         }
@@ -278,7 +269,7 @@ public class ExtractionTask {
      * @param methodName The name to give the method
      * @return The extracted method as text
      */
-    public List<String> generateName(Clone clone, String returnType, List<List<Variable>> normalizedLambdaArgs, String methodName, boolean extractToStatic){
+    public List<String> generateName(Clone clone, String returnType, List<List<Variable>> normalizedLambdaArgs, String methodName, boolean extractToStatic) throws IOException {
         String code = buildMethodText(clone, returnType, normalizedLambdaArgs, methodName, extractToStatic);
         String[] args = {
                 "--max_path_length",
@@ -292,24 +283,17 @@ public class ExtractionTask {
         ArrayList<ProgramFeatures> extracted = App.execute(args);
         List<String> extractedText = null;
         try{
-            String FILE_PATH2 = "C:/Users/squir/OneDrive/Desktop/sem6/extract.txt";
-            FileWriter fileWriter2 = new FileWriter(FILE_PATH2, true);
-            fileWriter2.write("hi");
-            Socket socket = new Socket("hostname", 8081);
+            Socket socket = new Socket("localhost", 8081);
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             PrintWriter out = new PrintWriter(socket.getOutputStream(),true);
             out.println(extracted);
-            fileWriter2.write("hi2");
             String predictions = in.readLine();
-            fileWriter2.write("hi3");
             socket.close();
             extractedText = extractEncasedText(predictions);
-            fileWriter2.close();
         }catch(Exception e){
         }
         return extractedText;
     }
-
     public void run() {
         ApplicationManager.getApplication().invokeLater(() -> {
             PsiElementFactory factory = JavaPsiFacade.getElementFactory(project);
@@ -318,7 +302,6 @@ public class ExtractionTask {
             if (containingMethod == null) return;
             PsiClass containingClass = containingMethod.getContainingClass();
             if (containingClass == null) return;
-
             List<Clone> results = new DuplicatesInspection().resolve(file, event.getDestinationMethod(), text).results();
             if (results.size() < ProjectSettingsState.getInstance(project).minimumDuplicateMethods)
                 return;
@@ -376,13 +359,14 @@ public class ExtractionTask {
                 }
             }
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
-            List<String> pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
-            try {
-                FileWriter predtxt = new FileWriter("src/main/java/org/jetbrains/research/anticopypaster/ide/preds.txt");
-                for (String s : pred) {
-                    predtxt.write(s);
-                }
-                predtxt.close();
+            List<String> pred;
+            String FILE_PATH2 = "C:/Users/squir/OneDrive/Desktop/sem6/extract.txt";
+            FileWriter fileWriter2 = null;
+            try{
+                pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
+                fileWriter2 = new FileWriter(FILE_PATH2, true);
+                fileWriter2.write(pred.toString());
+                fileWriter2.close();
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -432,9 +416,5 @@ public class ExtractionTask {
 
 
         });
-    }
-    public static void main(String[] args){
-        // some code
-        System.out.println("hi");
     }
 }
