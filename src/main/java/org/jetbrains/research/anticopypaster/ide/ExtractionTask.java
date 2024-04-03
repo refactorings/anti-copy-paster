@@ -251,7 +251,7 @@ public class ExtractionTask {
         java.util.regex.Matcher matcherSquareBrackets = patternSquareBrackets.matcher(input);
 
         // Extract and store the matches in the result list
-        while (/*matcherParentheses.find() &&*/ matcherSquareBrackets.find() && result.size() <= 3) {
+        while (matcherSquareBrackets.find() && result.size() < 3) {
             String textInSquareBrackets = matcherSquareBrackets.group(1);
             textInSquareBrackets = textInSquareBrackets.replaceAll(" ", "");
             textInSquareBrackets = textInSquareBrackets.replaceAll(",", "_");
@@ -360,15 +360,20 @@ public class ExtractionTask {
             }
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
             List<String> pred;
-            String FILE_PATH2 = "C:/Users/squir/OneDrive/Desktop/sem6/extract.txt";
-            FileWriter fileWriter2 = null;
-            try{
+            try {
                 pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
-                fileWriter2 = new FileWriter(FILE_PATH2, true);
-                fileWriter2.write(pred.toString());
-                fileWriter2.close();
             } catch (IOException e) {
                 throw new RuntimeException(e);
+            }
+            try{
+                String FILE_PATH = "src/main/java/org/jetbrains/research/anticopypaster/ide/preds.txt";
+                new FileWriter(FILE_PATH, false).close();
+                FileWriter predtxt = new FileWriter(FILE_PATH);
+                for (String line : pred) {
+                    predtxt.write(line + "\n"); // Write each element of the list followed by a newline
+                }
+                predtxt.close();
+            } catch (IOException e) {
             }
             String methodName = getNewMethodName(containingClass, pred.get(0));
 

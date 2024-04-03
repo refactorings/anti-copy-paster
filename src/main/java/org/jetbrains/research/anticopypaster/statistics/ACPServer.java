@@ -22,9 +22,6 @@ public class ACPServer implements Runnable{
     @Override
     public void run() {
         try{
-            String FILE_PATH2 = "C:/Users/squir/OneDrive/Desktop/sem6/extract.txt";
-            new FileWriter(FILE_PATH2, false).close();
-            FileWriter fileWriter2 = new FileWriter(FILE_PATH2);
             String pluginId = "org.jetbrains.research.anticopypaster";
             String pluginPath = String.valueOf(PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath());
             pluginPath = pluginPath.replace("\\", "/");
@@ -64,8 +61,6 @@ public class ACPServer implements Runnable{
             ArrayList<ProgramFeatures> extracted = App.execute(args);
             out_py.println(extracted);
             msg = in_py.readLine();
-            fileWriter2.write(msg);
-            fileWriter2.close();
             while(true){
                 Socket jv_client = server.accept();
                 PrintWriter out_jv = new PrintWriter(jv_client.getOutputStream(),true);
