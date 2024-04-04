@@ -54,7 +54,7 @@ public class JavaNameSuggestionProvider implements NameSuggestionProvider {
         ArrayList<String> list = new ArrayList<>(Arrays.asList(strings));
         ArrayList<String> preds = null;
         try {
-            preds = getNamePreds("src/main/java/org/jetbrains/research/anticopypaster/ide/preds.txt");
+            preds = getNamePreds("C:\\Users\\Dimitri\\Desktop\\extract.txt");
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -157,16 +157,13 @@ public class JavaNameSuggestionProvider implements NameSuggestionProvider {
     private static ArrayList<String> getNamePreds(String filename) throws IOException {
         ArrayList<String> res = new ArrayList<String>();
         File preds = new File(filename);
-        FileWriter predtxt = new FileWriter(filename, false);
         Scanner reader;
         try {
             reader = new Scanner(preds);
             while (reader.hasNextLine()){
                 String pred = reader.nextLine();
-                predtxt.write("");
                 res.add(pred);
             }
-            predtxt.close();
         } catch (FileNotFoundException e) {
             throw new RuntimeException(e);
         }

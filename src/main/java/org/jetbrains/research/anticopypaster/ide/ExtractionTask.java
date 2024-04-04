@@ -366,7 +366,7 @@ public class ExtractionTask {
                 throw new RuntimeException(e);
             }
             try{
-                String FILE_PATH = "src/main/java/org/jetbrains/research/anticopypaster/ide/preds.txt";
+                String FILE_PATH = "C:\\Users\\Dimitri\\Desktop\\extract.txt";
                 new FileWriter(FILE_PATH, false).close();
                 FileWriter predtxt = new FileWriter(FILE_PATH);
                 for (String line : pred) {
