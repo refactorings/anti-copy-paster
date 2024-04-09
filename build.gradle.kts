@@ -53,11 +53,6 @@ intellij {
     updateSinceUntilBuild.set(true)
     plugins.set(properties("platformPlugins").split(',').map(String::trim).filter(String::isNotEmpty))
     plugins.add("terminal")
-    if (ideaVersion.contains("PC")) {
-        plugins.add("python-ce")
-    } else if (ideaVersion.contains("PY")) {
-        plugins.add("python")
-    }
 }
 
 tasks {
@@ -74,6 +69,9 @@ tasks {
         dependsOn("prepareSandbox")
         from(projectDir) {
             include("code2vec/")
+        }
+        from(projectDir) {
+            include("venv/")
         }
         into("${intellij.sandboxDir.get()}/plugins/AntiCopyPaster")
     }

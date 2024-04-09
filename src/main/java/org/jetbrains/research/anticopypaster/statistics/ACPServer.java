@@ -14,6 +14,7 @@ import java.net.Socket;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.jetbrains.research.anticopypaster.ide.ExtractionTask.extractEncasedText;
@@ -22,13 +23,15 @@ public class ACPServer implements Runnable{
     @Override
     public void run() {
         try{
+            ServerSocket server = new ServerSocket(8081);
             String pluginId = "org.jetbrains.research.anticopypaster";
             String pluginPath = String.valueOf(PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath());
             pluginPath = pluginPath.replace("\\", "/");
-            ProcessBuilder builder = new ProcessBuilder("python3",
+            //String pluginPath = "/Users/squir/Library/Application Support/JetBrains/IdeaIC2023.2/plugins/AntiCopyPaster";
+            ProcessBuilder builder = new ProcessBuilder();
+            builder.command(pluginPath+"/venv/bin/python3",
                     pluginPath+"/code2vec/code2vec-master/code2vec.py", "--load", pluginPath+"/code2vec/java14m_model/models/java14_model/saved_model_iter8.release", "--predict");
             Process process = builder.start();
-            ServerSocket server = new ServerSocket(8081);
             Socket py_client = server.accept();
             PrintWriter out_py = new PrintWriter(py_client.getOutputStream(),true);
             BufferedReader in_py = new BufferedReader(new InputStreamReader(py_client.getInputStream()));
@@ -61,6 +64,11 @@ public class ACPServer implements Runnable{
             ArrayList<ProgramFeatures> extracted = App.execute(args);
             out_py.println(extracted);
             msg = in_py.readLine();
+            /*try (PrintWriter writer = new PrintWriter(new FileWriter("/Users/squir/Documents/GitHub/anti-copy-paster/demofile.txt"))) {
+                writer.println(msg);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }*/
             while(true){
                 Socket jv_client = server.accept();
                 PrintWriter out_jv = new PrintWriter(jv_client.getOutputStream(),true);

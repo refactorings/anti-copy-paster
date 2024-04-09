@@ -365,7 +365,7 @@ public class ExtractionTask {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-            try{
+            /*try{
                 String FILE_PATH = "C:\\Users\\Dimitri\\Desktop\\extract.txt";
                 new FileWriter(FILE_PATH, false).close();
                 FileWriter predtxt = new FileWriter(FILE_PATH);
@@ -374,7 +374,7 @@ public class ExtractionTask {
                 }
                 predtxt.close();
             } catch (IOException e) {
-            }
+            }*/
             String methodName = getNewMethodName(containingClass, pred.get(0));
 
             String code = buildMethodText( //for naming method
