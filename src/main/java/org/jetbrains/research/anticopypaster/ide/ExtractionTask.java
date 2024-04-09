@@ -359,11 +359,14 @@ public class ExtractionTask {
                 }
             }
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
-            List<String> pred;
+            List<String> pred = null;
             try {
                 pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+                if(pred == null){
+                    pred = new ArrayList<>();
+                    pred.add("defaultMethod");
+                }
+            } catch (Exception e) {
             }
             /*try{
                 String FILE_PATH = "C:\\Users\\Dimitri\\Desktop\\extract.txt";

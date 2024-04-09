@@ -70,9 +70,6 @@ tasks {
         from(projectDir) {
             include("code2vec/")
         }
-        from(projectDir) {
-            include("venv/")
-        }
         into("${intellij.sandboxDir.get()}/plugins/AntiCopyPaster")
     }
     buildSearchableOptions {
