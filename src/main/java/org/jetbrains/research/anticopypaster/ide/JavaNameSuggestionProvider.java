@@ -52,12 +52,7 @@ public class JavaNameSuggestionProvider implements NameSuggestionProvider {
         final String[] strings = info != null ? info.names : ArrayUtilRt.EMPTY_STRING_ARRAY;
         // append code2vec output to strings before it gets processed
         ArrayList<String> list = new ArrayList<>(Arrays.asList(strings));
-        ArrayList<String> preds = null;
-        try {
-            preds = getNamePreds("C:\\Users\\Dimitri\\Desktop\\extract.txt");
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        List<String> preds = getNamePreds();
         list.addAll(preds);
         final String[] properlyCased = suggestProperlyCasedName(element);
         if (properlyCased != null) {
@@ -154,19 +149,16 @@ public class JavaNameSuggestionProvider implements NameSuggestionProvider {
         return nameInfo;
     }
 
-    private static ArrayList<String> getNamePreds(String filename) throws IOException {
-        ArrayList<String> res = new ArrayList<String>();
-        File preds = new File(filename);
-        Scanner reader;
-        try {
-            reader = new Scanner(preds);
-            while (reader.hasNextLine()){
-                String pred = reader.nextLine();
-                res.add(pred);
-            }
-        } catch (FileNotFoundException e) {
-            throw new RuntimeException(e);
+    private List<String> getNamePreds(){
+        try{
+            Socket socket = new Socket("localhost", 8082);
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            String preds = in.readLine();
+            socket.close();
+            List<String> predlist = Arrays.asList(preds.split("-"));
+            return predlist;
+        }catch(Exception e){
         }
-        return res;
+        return null;
     }
 }

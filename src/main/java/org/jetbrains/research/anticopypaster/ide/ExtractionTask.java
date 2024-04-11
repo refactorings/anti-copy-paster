@@ -1,13 +1,17 @@
 package org.jetbrains.research.anticopypaster.ide;
 
+import com.intellij.lang.Language;
 import com.intellij.lang.LanguageRefactoringSupport;
 import com.intellij.lang.refactoring.RefactoringSupportProvider;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.editor.ex.MarkupModelEx;
 import com.intellij.openapi.editor.markup.*;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogBuilder;
 import com.intellij.openapi.ui.MessageDialogBuilder;
@@ -24,10 +28,13 @@ import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Variable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VfsUtil;
 
 import java.awt.*;
 import java.io.*;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.*;
 import java.util.List;
 
@@ -294,6 +301,22 @@ public class ExtractionTask {
         }
         return extractedText;
     }
+
+    public void passPreds(List<String> preds){
+        String predstr = "";
+        for (String pred : preds){
+            predstr += (pred+"-");
+        }
+        try{
+            Socket socket = new Socket("localhost", 8082);
+            PrintWriter out = new PrintWriter(socket.getOutputStream(),true);
+            out.println(predstr);
+            socket.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public void run() {
         ApplicationManager.getApplication().invokeLater(() -> {
             PsiElementFactory factory = JavaPsiFacade.getElementFactory(project);
@@ -368,17 +391,8 @@ public class ExtractionTask {
                 }
             } catch (Exception e) {
             }
-            /*try{
-                String FILE_PATH = "C:\\Users\\Dimitri\\Desktop\\extract.txt";
-                new FileWriter(FILE_PATH, false).close();
-                FileWriter predtxt = new FileWriter(FILE_PATH);
-                for (String line : pred) {
-                    predtxt.write(line + "\n"); // Write each element of the list followed by a newline
-                }
-                predtxt.close();
-            } catch (IOException e) {
-            }*/
             String methodName = getNewMethodName(containingClass, pred.get(0));
+            passPreds(pred);
 
             String code = buildMethodText( //for naming method
                     template,
