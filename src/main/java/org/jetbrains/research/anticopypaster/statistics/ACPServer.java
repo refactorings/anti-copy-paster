@@ -2,6 +2,7 @@
 package org.jetbrains.research.anticopypaster.statistics;
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.openapi.extensions.PluginId;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.App;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.FeaturesEntities.ProgramFeatures;
 
@@ -17,42 +18,11 @@ public class ACPServer implements Runnable{
     public void run() {
         try{
             String os = System.getProperty("os.name").toLowerCase();
-            String pythonPath = null;
-            if(os.contains("windows")){
-                String[] windowsLocations = {"C:\\Python312\\python3.exe", "C:\\Program Files\\Python312\\python3.exe",
-                                             "C:\\Python311\\python3.exe", "C:\\Program Files\\Python311\\python3.exe",
-                                             "C:\\Python310\\python3.exe", "C:\\Program Files\\Python310\\python3.exe",
-                                             "C:\\Python38\\python3.exe", "C:\\Program Files\\Python38\\python3.exe",
-                                             "C:\\Python37\\python3.exe", "C:\\Program Files\\Python37\\python3.exe",
-                                             "C:\\Python36\\python3.exe", "C:\\Program Files\\Python36\\python3.exe"};
-                for (String dir : windowsLocations) {
-                    if (new File(dir).exists()) {
-                        pythonPath = dir;
-                        break;
-                    }
-                }
-            } else if (os.contains("mac")){
-                String[] macLocations = {"/Library/Frameworks/Python.framework/Versions/Current/bin/python3", "/usr/bin/python3", "/usr/local/bin/python3"};
-                for (String dir : macLocations) {
-                    if (new File(dir).exists()) {
-                        pythonPath = dir;
-                        break;
-                    }
-                }
-            }
-            else{
-                String[] otherLocations = {"/Library/Frameworks/Python.framework/Versions/Current/bin/python3", "/usr/bin/python3", "/usr/local/bin/python3"};
-                for (String dir : otherLocations) {
-                    if (new File(dir).exists()) {
-                        pythonPath = dir;
-                        break;
-                    }
-                }
-            }
+            String pythonPath = getPythonPath(os);
             if (pythonPath != null && !pythonPath.isEmpty()) {
                 ServerSocket server = new ServerSocket(8081);
                 String pluginId = "org.jetbrains.research.anticopypaster";
-                String pluginPath = String.valueOf(PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath());
+                String pluginPath = PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath().toString();
                 pluginPath = pluginPath.replace("\\", "/");
                 //String pluginPath = "/Users/squir/Library/Application Support/JetBrains/IdeaIC2023.2/plugins/AntiCopyPaster";
                 ProcessBuilder builder = new ProcessBuilder();
@@ -104,5 +74,56 @@ public class ACPServer implements Runnable{
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    @Nullable
+    private static String getPythonPath(String os) {
+        String pythonPath = null;
+        if(os.contains("windows")){
+            String[] versions = {"36", "37", "38", "39", "310", "311", "312"};
+
+            for (String version : versions) {
+                String inC = "C:\\Python"+version+"\\python3.exe";
+                String progF = "C:\\Program Files\\Python"+version+"\\python3.exe";
+                if (new File(inC).exists()) {
+                    pythonPath = inC;
+                    break;
+                } else if (new File(progF).exists()) {
+                    pythonPath = progF;
+                    break;
+                }
+            }
+            if (pythonPath == null){
+                for (String version : versions){
+                    String inC = "C:\\Python"+version+"\\python.exe";
+                    String progF = "C:\\Program Files\\Python"+version+"\\python.exe";
+                    if (new File(inC).exists()) {
+                        pythonPath = inC;
+                        break;
+                    } else if (new File(progF).exists()) {
+                        pythonPath = progF;
+                        break;
+                    }
+                }
+            }
+        } else if (os.contains("mac")){
+            String[] macLocations = {"/Library/Frameworks/Python.framework/Versions/Current/bin/python3", "/usr/bin/python3", "/usr/local/bin/python3"};
+            for (String dir : macLocations) {
+                if (new File(dir).exists()) {
+                    pythonPath = dir;
+                    break;
+                }
+            }
+        }
+        else{
+            String[] otherLocations = {"/Library/Frameworks/Python.framework/Versions/Current/bin/python3", "/usr/bin/python3", "/usr/local/bin/python3"};
+            for (String dir : otherLocations) {
+                if (new File(dir).exists()) {
+                    pythonPath = dir;
+                    break;
+                }
+            }
+        }
+        return pythonPath;
     }
 }
