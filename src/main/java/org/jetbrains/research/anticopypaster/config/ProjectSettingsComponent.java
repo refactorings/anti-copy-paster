@@ -43,6 +43,8 @@ public class ProjectSettingsComponent {
     private JLabel advancedButtonHelp;
     private JComboBox modelComboBox;
     private JComboBox cloneTypeComboBox;
+    private JSlider modelSensitivitySlider;
+    private JLabel modelSensitivityHelp;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
@@ -117,6 +119,14 @@ public class ProjectSettingsComponent {
     }
 
     public void setExtractionType(ProjectSettingsState.ExtractionType cloneType) { cloneTypeComboBox.setSelectedIndex(cloneType.getIdx()); }
+
+    public int getModelSensitivity() {
+        return modelSensitivitySlider.getValue();
+    }
+
+    public void setModelSensitivity(int sensitivity) {
+        modelSensitivitySlider.setValue(sensitivity);
+    }
 
     public int getKeywordsSensitivity() {
         return keywordsSlider.getValue();
@@ -230,6 +240,8 @@ public class ProjectSettingsComponent {
         advancedButtonHelp.setIcon(AllIcons.General.ContextHelp);
         statisticsButtonHelp = new JLabel();
         statisticsButtonHelp.setIcon(AllIcons.General.ContextHelp);
+        modelSensitivityHelp = new JLabel();
+        modelSensitivityHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
     public static void createLinkListener(JComponent component, String url) {
