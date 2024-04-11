@@ -10,7 +10,6 @@ import com.intellij.openapi.startup.ProjectActivity;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
-import java.io.FileWriter;
 
 import com.intellij.openapi.project.Project;
 import com.mongodb.MongoClientSettings;
@@ -46,16 +45,17 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
     @Nullable
     @Override
     public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
-        try{
-            Thread jpserver = new Thread(new ACPServer());
-            Thread predserver = new Thread(new predHolder());
-            jpserver.start();
-            predserver.start();
-        }
-        catch(Exception e){
-            throw e;
-        }
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
+        if(settings.useNameRec){
+            try {
+                Thread jpserver = new Thread(new ACPServer());
+                Thread predserver = new Thread(new predHolder());
+                jpserver.start();
+                predserver.start();
+            } catch (Exception e) {
+                throw e;
+            }
+        }
         if (settings.statisticsUsername != null && !settings.statisticsUsername.isEmpty() && settings.statisticsPasswordIsSet) {
             AntiCopyPasterUsageStatistics.PluginState usageState =
                     AntiCopyPasterUsageStatistics.getInstance(project).getState();

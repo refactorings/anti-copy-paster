@@ -42,11 +42,7 @@ public class ProjectSettingsComponent {
     private JLabel waitTimeHelp;
     private JLabel statisticsButtonHelp;
     private JLabel advancedButtonHelp;
-    private JRadioButton model1;
-    private JRadioButton model2;
-    private JRadioButton model3;
-    private JRadioButton model4;
-    private ButtonGroup modelsRadioGroup;
+    private JCheckBox nameModel;
 
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
@@ -196,15 +192,8 @@ public class ProjectSettingsComponent {
     public void setComplexityRequired(boolean required) {
         complexityRequiredCheckBox.setSelected(required);
     }
-    public void setModel1(boolean clicked) { model1.setSelected(clicked);}
-    public boolean getModel1() { return model1.isSelected();}
-    public void setModel2(boolean clicked) { model2.setSelected(clicked);}
-    public boolean getModel2() { return model2.isSelected();}
-    public void setModel3(boolean clicked) { model3.setSelected(clicked);}
-    public boolean getModel3() { return model3.isSelected();}
-    public void setModel4(boolean clicked) { model4.setSelected(clicked);}
-    public boolean getModel4() { return model4.isSelected();}
-
+    public void setNameModel(boolean enabled) { nameModel.setSelected(enabled);}
+    public boolean getNameModel() { return nameModel.isSelected();}
 
     private void createUIComponents() {
         minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);

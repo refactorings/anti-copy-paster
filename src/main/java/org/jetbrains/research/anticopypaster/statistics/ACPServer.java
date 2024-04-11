@@ -80,7 +80,7 @@ public class ACPServer implements Runnable{
     private static String getPythonPath(String os) {
         String pythonPath = null;
         if(os.contains("windows")){
-            String[] versions = {"36", "37", "38", "39", "310", "311", "312"};
+            String[] versions = {"38", "39", "310", "311", "312"};
 
             for (String version : versions) {
                 String inC = "C:\\Python"+version+"\\python3.exe";
@@ -116,7 +116,7 @@ public class ACPServer implements Runnable{
             }
         }
         else{
-            String[] otherLocations = {"/Library/Frameworks/Python.framework/Versions/Current/bin/python3", "/usr/bin/python3", "/usr/local/bin/python3"};
+            String[] otherLocations = {"/usr/bin/python3", "/usr/local/bin/python3"};
             for (String dir : otherLocations) {
                 if (new File(dir).exists()) {
                     pythonPath = dir;

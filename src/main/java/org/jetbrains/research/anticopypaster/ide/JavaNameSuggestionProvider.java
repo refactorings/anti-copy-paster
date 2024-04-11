@@ -1,5 +1,6 @@
 package org.jetbrains.research.anticopypaster.ide;
 import com.intellij.lang.java.JavaLanguage;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
@@ -53,7 +54,9 @@ public class JavaNameSuggestionProvider implements NameSuggestionProvider {
         // append code2vec output to strings before it gets processed
         ArrayList<String> list = new ArrayList<>(Arrays.asList(strings));
         List<String> preds = getNamePreds();
-        list.addAll(preds);
+        if(preds != null) {
+            list.addAll(preds);
+        }
         final String[] properlyCased = suggestProperlyCasedName(element);
         if (properlyCased != null) {
             Collections.addAll(list, properlyCased);
