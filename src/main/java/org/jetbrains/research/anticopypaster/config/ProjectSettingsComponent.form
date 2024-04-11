@@ -163,7 +163,8 @@
               <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
-              <text value="Extraction judgements should be performed by"/>
+              <labelFor value="303ec"/>
+              <text resource-bundle="AntiCopyPasterBundle" key="settings.general.label.judgements"/>
             </properties>
           </component>
           <component id="303ec" class="javax.swing.JComboBox" binding="modelComboBox">
@@ -172,8 +173,8 @@
             </constraints>
             <properties>
               <model>
-                <item value="a ML model"/>
-                <item value="my custom settings"/>
+                <item value="the AI model"/>
+                <item value="my manual heuristics"/>
               </model>
             </properties>
           </component>
@@ -774,7 +775,8 @@
               <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="0" hsize-policy="0" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
             </constraints>
             <properties>
-              <text value="Extract clones that are"/>
+              <labelFor value="4c9cc"/>
+              <text resource-bundle="AntiCopyPasterBundle" key="settings.general.label.clones"/>
             </properties>
           </component>
           <component id="4c9cc" class="javax.swing.JComboBox" binding="cloneTypeComboBox">
@@ -784,7 +786,8 @@
             <properties>
               <model>
                 <item value="type 1"/>
-                <item value="type 1 or 2"/>
+                <item value="type 2"/>
+                <item value="type 3"/>
               </model>
             </properties>
           </component>

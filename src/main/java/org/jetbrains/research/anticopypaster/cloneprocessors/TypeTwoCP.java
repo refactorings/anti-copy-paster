@@ -102,6 +102,8 @@ public class TypeTwoCP implements CloneProcessor {
         if (a instanceof PsiTypeElement typeA && b instanceof PsiTypeElement typeB) {
             ma.typeParams().add(typeA);
             mb.typeParams().add(typeB);
+            if (!typeA.getText().equals(typeB.getText()))
+                mb.setExtractable(false);
             return true;
         }
         // Process children
@@ -128,7 +130,8 @@ public class TypeTwoCP implements CloneProcessor {
                         mb.parameters(),
                         mb.aliasMap(),
                         mb.typeParams(),
-                        mb.liveIn()
+                        mb.liveIn(),
+                        mb.extractable()
                 ));
             }
         }

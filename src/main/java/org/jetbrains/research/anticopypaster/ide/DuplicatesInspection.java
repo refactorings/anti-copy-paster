@@ -3,10 +3,7 @@ package org.jetbrains.research.anticopypaster.ide;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.psi.*;
 import com.intellij.util.IncorrectOperationException;
-import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
-import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
-import org.jetbrains.research.anticopypaster.cloneprocessors.TypeOneCP;
-import org.jetbrains.research.anticopypaster.cloneprocessors.TypeTwoCP;
+import org.jetbrains.research.anticopypaster.cloneprocessors.*;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.utils.PsiUtil;
 
@@ -43,6 +40,7 @@ public final class DuplicatesInspection {
             CloneProcessor processor = switch (ProjectSettingsState.getInstance(file.getProject()).extractionType) {
                 case TYPE_ONE -> new TypeOneCP();
                 case TYPE_TWO -> new TypeTwoCP();
+                case TYPE_THREE -> new TypeThreeCP();
             };
             results.addAll(processor.getClonesOfType(file, stmts[startStmt], stmts[endStmt]));
         } catch (IncorrectOperationException ex) {

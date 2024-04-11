@@ -94,13 +94,11 @@ public class RefactoringNotificationTask extends TimerTask {
                     if (results.size() < ProjectSettingsState.getInstance(project).minimumDuplicateMethods)
                         return;
 
-                    HashSet<String> variablesInCodeFragment = new HashSet<>();
-                    HashMap<String, Integer> variablesCountsInCodeFragment = new HashMap<>();
-
                     FeaturesVector featuresVector = calculateFeatures(event);
 
                     getOrInitModel();
                     float prediction = this.model.predict(featuresVector);
+                    System.out.println(prediction);
                     if ((event.isForceExtraction() || prediction > predictionThreshold) &&
                             canBeExtracted(event)) {
                         System.out.println("HOW???");

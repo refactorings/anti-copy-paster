@@ -71,7 +71,8 @@ public class TypeOneCP implements CloneProcessor {
                         mb.parameters(),
                         mb.aliasMap(),
                         mb.typeParams(),
-                        mb.liveIn()
+                        mb.liveIn(),
+                        mb.extractable()
                 ));
             }
         }

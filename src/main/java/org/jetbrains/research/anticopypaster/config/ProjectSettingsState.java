@@ -86,7 +86,8 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public enum ExtractionType {
         TYPE_ONE(0),
-        TYPE_TWO(1);
+        TYPE_TWO(1),
+        TYPE_THREE(2);
 
         private int idx;
         ExtractionType(int idx) {
