@@ -42,6 +42,10 @@ public class ProjectSettingsComponent {
     private JLabel statisticsButtonHelp;
     private JLabel advancedButtonHelp;
     private JComboBox nameModel;
+    private JSpinner numOfPreds;
+    private JPanel panel1;
+    private JLabel upToLabel;
+    private JLabel functionNamePredictionsCreatedLabel;
 
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
@@ -193,11 +197,14 @@ public class ProjectSettingsComponent {
     }
     public void setNameModel(int selectedIndex) { nameModel.setSelectedIndex(selectedIndex); }
     public int getNameModel() { return (nameModel.getSelectedIndex()); }
+    public int getNumOfPreds() { return (int) numOfPreds.getValue(); }
+
+    public void setNumOfPreds(int preds) { numOfPreds.setValue(preds); }
 
     private void createUIComponents() {
         minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);
         timeBufferSelector = new JBIntSpinner(10, 1, 300);
-
+        numOfPreds = new JBIntSpinner(3, 1, 10);
         // Set link and icons for help features
         helpLabel = new JLabel();
         createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/index.html");

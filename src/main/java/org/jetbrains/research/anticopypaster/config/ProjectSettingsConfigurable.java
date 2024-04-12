@@ -6,14 +6,6 @@ import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.io.BufferedWriter;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
 
 public class ProjectSettingsConfigurable implements Configurable {
 
@@ -60,6 +52,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= settingsComponent.getComplexityEnabled() != settings.complexityEnabled;
         modified |= settingsComponent.getComplexityRequired() != settings.complexityRequired;
         modified |= settingsComponent.getNameModel() != settings.useNameRec;
+        modified |= settingsComponent.getNumOfPreds() != settings.numOfPreds;
         return modified;
     }
 
@@ -82,6 +75,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.complexityEnabled = settingsComponent.getComplexityEnabled();
         settings.complexityRequired = settingsComponent.getComplexityRequired();
         settings.useNameRec = settingsComponent.getNameModel();
+        settings.numOfPreds = settingsComponent.getNumOfPreds();
     }
 
     // Pull from saved state to preset dialog state upon opening
@@ -103,6 +97,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setComplexityEnabled(settings.complexityEnabled);
         settingsComponent.setComplexityRequired(settings.complexityRequired);
         settingsComponent.setNameModel(settings.useNameRec);
+        settingsComponent.setNumOfPreds(settings.numOfPreds);
     }
 
     @Override

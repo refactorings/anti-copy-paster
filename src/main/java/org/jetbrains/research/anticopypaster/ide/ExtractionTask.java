@@ -244,9 +244,9 @@ public class ExtractionTask {
     /**
      * Method to turn the code name prediction into a useable list.
      * @param input: The string representation of the prediction.
-     * @return A list of the top 3 predictions.
+     * @return A list of the top x predictions.
      */
-    public static List<String> extractEncasedText(String input) {
+    public static List<String> extractEncasedText(String input, int numOfPreds) {
         List<String> result = new ArrayList<>();
         int i = input.indexOf('[');
         input = input.substring(0, i) + input.substring(i + 1);
@@ -258,7 +258,7 @@ public class ExtractionTask {
         java.util.regex.Matcher matcherSquareBrackets = patternSquareBrackets.matcher(input);
 
         // Extract and store the matches in the result list
-        while (matcherSquareBrackets.find() && result.size() < 3) {
+        while (matcherSquareBrackets.find() && result.size() < numOfPreds) {
             String textInSquareBrackets = matcherSquareBrackets.group(1);
             textInSquareBrackets = textInSquareBrackets.replaceAll(" ", "");
             textInSquareBrackets = textInSquareBrackets.replaceAll(",", "_");
@@ -296,7 +296,7 @@ public class ExtractionTask {
             out.println(extracted);
             String predictions = in.readLine();
             socket.close();
-            extractedText = extractEncasedText(predictions);
+            extractedText = extractEncasedText(predictions, ProjectSettingsState.getInstance(project).numOfPreds);
         }catch(Exception e){
         }
         return extractedText;
