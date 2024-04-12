@@ -46,7 +46,7 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
     @Override
     public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
-        if(settings.useNameRec){
+        if(settings.useNameRec == 0){
             try {
                 Thread jpserver = new Thread(new ACPServer());
                 Thread predserver = new Thread(new predHolder());

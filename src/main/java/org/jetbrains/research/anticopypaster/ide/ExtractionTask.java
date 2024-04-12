@@ -392,7 +392,7 @@ public class ExtractionTask {
             } catch (Exception e) {
             }
             String methodName = getNewMethodName(containingClass, pred.get(0));
-            if(ProjectSettingsState.getInstance(project).useNameRec){
+            if(ProjectSettingsState.getInstance(project).useNameRec == 0){
                 passPreds(pred);
             }
             String code = buildMethodText( //for naming method

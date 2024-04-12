@@ -14,7 +14,6 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.IOException;
-import java.net.BindException;
 import java.net.URI;
 import java.net.URISyntaxException;
 
@@ -42,7 +41,7 @@ public class ProjectSettingsComponent {
     private JLabel waitTimeHelp;
     private JLabel statisticsButtonHelp;
     private JLabel advancedButtonHelp;
-    private JCheckBox nameModel;
+    private JComboBox nameModel;
 
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
@@ -192,8 +191,8 @@ public class ProjectSettingsComponent {
     public void setComplexityRequired(boolean required) {
         complexityRequiredCheckBox.setSelected(required);
     }
-    public void setNameModel(boolean enabled) { nameModel.setSelected(enabled);}
-    public boolean getNameModel() { return nameModel.isSelected();}
+    public void setNameModel(int selectedIndex) { nameModel.setSelectedIndex(selectedIndex); }
+    public int getNameModel() { return (nameModel.getSelectedIndex()); }
 
     private void createUIComponents() {
         minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);

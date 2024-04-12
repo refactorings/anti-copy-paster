@@ -55,7 +55,7 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public String statisticsUsername = null;
     public boolean statisticsPasswordIsSet = false;
 
-    public boolean useNameRec = true;
+    public int useNameRec = 0;
 
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);
