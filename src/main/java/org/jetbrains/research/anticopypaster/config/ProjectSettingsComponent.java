@@ -47,6 +47,9 @@ public class ProjectSettingsComponent {
     private JComboBox cloneTypeComboBox;
     private JSlider modelSensitivitySlider;
     private JLabel modelSensitivityHelp;
+    private JPanel panel1;
+    private JLabel upToLabel;
+    private JLabel functionNamePredictionsCreatedLabel;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
