@@ -78,6 +78,7 @@ public class RefactoringNotificationTask extends TimerTask {
                     event.setReasonToExtract(AntiCopyPasterBundle.message(
                             "extract.method.to.simplify.logic.of.enclosing.method"));
 
+                    // Get project settings
                     ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
 
                     List<Clone> results = new DuplicatesInspection().resolve(event.getFile(), event.getDestinationMethod(), event.getText()).results();
