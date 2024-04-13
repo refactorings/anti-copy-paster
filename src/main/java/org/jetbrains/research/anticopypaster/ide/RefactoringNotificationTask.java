@@ -44,6 +44,9 @@ public class RefactoringNotificationTask extends TimerTask {
             .getNotificationGroup("Extract Method suggestion");
     private PredictionModel model;
     private ProjectSettingsState.JudgementModel lastModelType;
+
+    private int modelSensitivity; // this is going to be from 0 to 100 since it is an integer on the slider
+
     private final boolean debugMetrics = true;
     private String logFilePath;
     private Project project;
@@ -65,21 +68,6 @@ public class RefactoringNotificationTask extends TimerTask {
         }
     }
 
-    private boolean isGlobalVariable(PsiElement psiElement) {
-        // check if elem is field of a class
-        if (psiElement instanceof PsiField field) {
-            // make sure field isnt inside a method
-            PsiMember parentMember = PsiTreeUtil.getParentOfType(field, PsiMember.class);
-            return parentMember instanceof PsiClass && !isLocalVariable(field);
-        }
-        return false;
-    }
-
-    private boolean isLocalVariable(PsiVariable variable) {
-        PsiMethod containingMethod = PsiTreeUtil.getParentOfType(variable, PsiMethod.class);
-        return containingMethod != null;
-    }
-
     @Override
     public void run() {
         while (!eventsQueue.isEmpty()) {
@@ -90,18 +78,21 @@ public class RefactoringNotificationTask extends TimerTask {
                     event.setReasonToExtract(AntiCopyPasterBundle.message(
                             "extract.method.to.simplify.logic.of.enclosing.method"));
 
+                    ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
+
                     List<Clone> results = new DuplicatesInspection().resolve(event.getFile(), event.getDestinationMethod(), event.getText()).results();
-                    if (results.size() < ProjectSettingsState.getInstance(project).minimumDuplicateMethods)
+                    if (results.size() < settings.minimumDuplicateMethods)
                         return;
 
                     FeaturesVector featuresVector = calculateFeatures(event);
 
                     getOrInitModel();
+                    modelSensitivity = ProjectSettingsState.getInstance(project).modelSensitivity;
+
+                    float threshold = (float) modelSensitivity/100; // divide it by 100 since the prediction is a decimal < 1
                     float prediction = this.model.predict(featuresVector);
-                    System.out.println(prediction);
-                    if ((event.isForceExtraction() || prediction > predictionThreshold) &&
+                    if ((event.isForceExtraction() || prediction > threshold) &&
                             canBeExtracted(event)) {
-                        System.out.println("HOW???");
                         notify(event.getProject(),
                                 AntiCopyPasterBundle.message(
                                         "extract.method.refactoring.is.available"),
