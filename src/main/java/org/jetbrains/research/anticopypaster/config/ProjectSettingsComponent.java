@@ -42,7 +42,7 @@ public class ProjectSettingsComponent {
     private JLabel statisticsButtonHelp;
     private JLabel advancedButtonHelp;
     private JComboBox nameModel;
-    private JSpinner numOfPreds;
+    private JSlider numOfPred;
     private JPanel panel1;
     private JLabel upToLabel;
     private JLabel functionNamePredictionsCreatedLabel;
@@ -61,12 +61,10 @@ public class ProjectSettingsComponent {
             boolean displayAndResolveCredentials = credentialsDialog.showAndGet();
             credentialsDialog.saveSettings(displayAndResolveCredentials);
         });
-
         addConditionallyEnabledMetricGroup(keywordsEnabledCheckBox,keywordsSlider,keywordsRequiredCheckBox);
         addConditionallyEnabledMetricGroup(couplingEnabledCheckBox,couplingSlider,couplingRequiredCheckBox);
         addConditionallyEnabledMetricGroup(complexityEnabledCheckBox, complexitySlider, complexityRequiredCheckBox);
         addConditionallyEnabledMetricGroup(sizeEnabledCheckBox, sizeSlider, sizeRequiredCheckBox);
-
         createUIComponents();
     }
     private void addConditionallyEnabledMetricGroup(JCheckBox ind, JSlider depslid, JCheckBox dep) {
@@ -197,14 +195,17 @@ public class ProjectSettingsComponent {
     }
     public void setNameModel(int selectedIndex) { nameModel.setSelectedIndex(selectedIndex); }
     public int getNameModel() { return (nameModel.getSelectedIndex()); }
-    public int getNumOfPreds() { return (int) numOfPreds.getValue(); }
+    public int getNumOfPreds() {
+        return numOfPred.getValue();
+    }
 
-    public void setNumOfPreds(int preds) { numOfPreds.setValue(preds); }
+    public void setNumOfPreds(int preds) {
+        numOfPred.setValue(preds);
+    }
 
     private void createUIComponents() {
         minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);
         timeBufferSelector = new JBIntSpinner(10, 1, 300);
-        numOfPreds = new JBIntSpinner(3, 1, 10);
         // Set link and icons for help features
         helpLabel = new JLabel();
         createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/index.html");
