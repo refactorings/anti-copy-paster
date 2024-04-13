@@ -12,7 +12,7 @@ public interface CloneProcessor {
      * @param type Type label to convert if necessary
      * @return The boxed type, or the original label if it isn't primitive
      */
-    static String objectTypeIfPrimitive(String type) {
+    static String boxedType(String type) {
         return switch (type) {
             case "byte" -> "Byte";
             case "short" -> "Short";
@@ -75,10 +75,16 @@ public interface CloneProcessor {
                 if (pVar != null)
                     childrenState.scope().add(new Variable(pVar.getName(), pVar.getType().getPresentableText()));
             });
-        } else if (anElement instanceof PsiReferenceExpression refExp && !refExp.isQualified()) {
-            if (!isInScope(refExp.getReferenceName(), currentState.scope()) && refExp.getType() != null) {
-                currentState.liveIn().add(new Variable(refExp.getReferenceName(), refExp.getType().getPresentableText()));
-            }
+        } else if (anElement instanceof PsiReferenceExpression refExp && !refExp.isQualified()
+                && refExp.getType() != null) {
+            // Prevents extracting LHS of statements & method calls
+            if (refExp.getParent() != null
+                    && (refExp.getParent().getParent() instanceof PsiExpressionStatement
+                    && refExp.getStartOffsetInParent() == 0)
+                    || refExp.getParent() instanceof PsiCallExpression) return;
+            int aliasID = currentState.getAliasID(refExp.getReferenceName());
+            if (aliasID == -1 && refExp.resolve() instanceof PsiVariable variable)
+                currentState.liveIn().add(variable);
         }
     }
 
@@ -129,36 +135,5 @@ public interface CloneProcessor {
         ).toList());
     }
 
-    /**
-     * Determines if two elements are an exact text match through tree traversal
-     * by type 1 standards (no whitespace or comments count).
-     * @param a The first element to compare
-     * @param b The second element to compare
-     * @param ma The match state for the first element
-     * @param mb The match state for the second element
-     * @return Whether the elements match
-     */
-    static boolean exactMatch(PsiElement a, PsiElement b, MatchState ma, MatchState mb) {
-        if (a == null || b == null) return false;
-        // Filter children of each element.
-        List<PsiElement> childrenA = viableChildren(a);
-        List<PsiElement> childrenB = viableChildren(b);
-        // No need to traverse if different number of children.
-        if (childrenA.size() != childrenB.size()) return false;
-        if (childrenA.isEmpty()) return a.textMatches(b);
-        // Next level of scoped variables
-        MatchState childMa = ma.extend();
-        MatchState childMb = mb.extend();
-        // Detect if we need to add a new variable to scope from the current element
-        CloneProcessor.updateScope(a, ma, childMa);
-        CloneProcessor.updateScope(b, mb, childMb);
-        // Process children
-        for (int i = 0; i < childrenA.size(); i++) {
-            if (!exactMatch(childrenA.get(i), childrenB.get(i), childMa, childMb))
-                return false;
-        }
-        return true;
-    }
-
-    List<Clone> getClonesOfType(PsiFile file, PsiCodeBlock pastedCode);
+    List<Clone> getClonesOfType(PsiFile file, PsiStatement start, PsiStatement end);
 }

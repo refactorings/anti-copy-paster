@@ -23,6 +23,19 @@ import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.refactoring.RefactoringActionHandlerFactory;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.App;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.FeaturesEntities.ProgramFeatures;
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.ScrollType;
+import com.intellij.openapi.editor.markup.*;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.MessageDialogBuilder;
+import com.intellij.openapi.ui.Messages;
+import com.intellij.psi.*;
+import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.psi.codeStyle.JavaCodeStyleManager;
+import com.intellij.refactoring.RefactoringActionHandlerFactory;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
@@ -35,6 +48,8 @@ import java.awt.*;
 import java.io.*;
 import java.net.Socket;
 import java.net.UnknownHostException;
+
+import java.awt.*;
 import java.util.*;
 import java.util.List;
 
@@ -60,18 +75,24 @@ public class ExtractionTask {
      * @param normalizedLambdaArgs The set union combined lambda args across all clones
      * @param sb The StringBuilder to append to
      */
-    private void buildMethodBody(PsiElement current, PsiElement last, List<PsiElement> extractedParameters, List<List<Variable>> normalizedLambdaArgs, StringBuilder sb) {
+    private void buildMethodBody(PsiElement current, PsiElement last, List<PsiElement> extractedParameters, List<List<Variable>> normalizedLambdaArgs, List<PsiTypeElement> typeParams, StringBuilder sb) {
         // Iterates through all siblings at this level
         while (current != null) {
             int idx = extractedParameters.indexOf(current);
-            if (idx == -1)  {
+            int idx2 = typeParams.indexOf(current);
+            System.out.println(current);
+            System.out.println(idx2);
+            if (idx2 != -1) {
+                sb.append("T");
+                sb.append(idx2 + 1);
+            } else if (idx == -1)  {
                 PsiElement firstChild = current.getFirstChild();
                 if (firstChild == null) {
                     // This element has no children, stringify it
                     sb.append(current.getText());
                 } else {
                     // The current element has children, descend
-                    buildMethodBody(firstChild, last, extractedParameters, normalizedLambdaArgs, sb);
+                    buildMethodBody(firstChild, last, extractedParameters, normalizedLambdaArgs, typeParams, sb);
                 }
             } else {
                 sb.append("p");
@@ -100,6 +121,16 @@ public class ExtractionTask {
         // Method signature
         StringBuilder sb = new StringBuilder("private ");
         if (extractToStatic) sb.append("static ");
+        if (!clone.typeParams().isEmpty()) {
+            sb.append("<");
+            for (int i = 0; i < clone.typeParams().size(); i++) {
+                sb.append("T");
+                sb.append(i + 1);
+                if (i != clone.typeParams().size() - 1)
+                    sb.append(", ");
+            }
+            sb.append("> ");
+        }
         sb.append(returnType == null ? "void" : returnType);
         sb.append(' ');
         sb.append(methodName);
@@ -112,22 +143,31 @@ public class ExtractionTask {
                 sb.append(type);
             } else if (parameterArgs.size() == 1) { // Lambda arg, 1 param
                 sb.append("java.util.function.Function<");
-                sb.append(CloneProcessor.objectTypeIfPrimitive(parameterArgs.get(0).type()));
+                sb.append(CloneProcessor.boxedType(parameterArgs.get(0).type()));
                 sb.append(", ");
-                sb.append(CloneProcessor.objectTypeIfPrimitive(type));
+                sb.append(CloneProcessor.boxedType(type));
                 sb.append(">");
             } else if (parameterArgs.size() == 2) { // Lambda arg, 2 params
                 sb.append("java.util.function.BiFunction<");
-                sb.append(CloneProcessor.objectTypeIfPrimitive(parameterArgs.get(0).type()));
+                sb.append(CloneProcessor.boxedType(parameterArgs.get(0).type()));
                 sb.append(", ");
-                sb.append(CloneProcessor.objectTypeIfPrimitive(parameterArgs.get(1).type()));
+                sb.append(CloneProcessor.boxedType(parameterArgs.get(1).type()));
                 sb.append(", ");
-                sb.append(CloneProcessor.objectTypeIfPrimitive(type));
+                sb.append(CloneProcessor.boxedType(type));
                 sb.append(">");
             }
             sb.append(" p");
             sb.append(i + 1);
-            if (i != clone.parameters().size() - 1)
+            if (i != clone.parameters().size() - 1 || !clone.liveOutVars().isEmpty())
+                sb.append(", ");
+        }
+        List<PsiVariable> liveInVars = clone.liveInVars().stream().toList();
+        for (int i = 0; i < liveInVars.size(); i++) {
+            PsiVariable variable = liveInVars.get(i);
+            sb.append(variable.getType().getPresentableText());
+            sb.append(" ");
+            sb.append(variable.getName());
+            if (i != liveInVars.size() - 1)
                 sb.append(", ");
         }
         sb.append(") {\n\t\t");
@@ -137,11 +177,12 @@ public class ExtractionTask {
                 clone.end(),
                 clone.parameters().stream().map(Parameter::extractedValue).toList(),
                 normalizedLambdaArgs,
+                clone.typeParams(),
                 sb
         );
         if (returnType != null) {
             sb.append("\n\t\treturn ");
-            sb.append(clone.liveVars().get(0).identifier());
+            sb.append(clone.liveOutVars().get(0).identifier());
             sb.append(";");
         }
         sb.append("\n\t}");
@@ -152,23 +193,26 @@ public class ExtractionTask {
         PsiElement start = clone.start();
         PsiElement end = clone.end();
         PsiElement parent = start.getParent();
-        // TODO should we check if parent is null? I dont think it ever will be...
         StringBuilder sb = new StringBuilder();
-        if (!clone.liveVars().isEmpty()) {
-            Variable liveOutVar = clone.liveVars().get(0);
+
+        if (!clone.liveOutVars().isEmpty()) {
+            Variable liveOutVar = clone.liveOutVars().get(0);
             String liveOutType = liveOutVar.type();
+            boolean isObjectType = liveOutType.equals(CloneProcessor.boxedType(liveOutType));
+
             if (clone
                     .parameters()
                     .stream()
                     .map(p -> p.extractedValue().getText())
-                    .noneMatch(s -> s.equals(liveOutVar.identifier()))) {
-                // if the live-out var is not also live-in we must set the result of the extracted code to a new variable
+                    .noneMatch(s -> s.equals(liveOutVar.identifier()))){
+                // if the live-out var is not also live-in
+                // we must set the result of the extracted code to a new variable
                 sb.append(liveOutType);
                 sb.append(" ");
-            }
-
-            if (!liveOutType.equals(CloneProcessor.objectTypeIfPrimitive(liveOutType))) {
-                // otherwise if the live-out var is live-in AND a primitive (since non-primitives are pass by ref)
+                sb.append(liveOutVar.identifier());
+                sb.append(" = ");
+            } else if (!isObjectType) {
+                // otherwise if the live-out var is live-in AND a primitive (since primitives are pass by value)
                 // we just re-assign it to the value of the extracted code
                 sb.append(liveOutVar.identifier());
                 sb.append(" = ");
@@ -190,7 +234,14 @@ public class ExtractionTask {
                 sb.append(") -> ");
                 sb.append(p.extractedValue().getText());
             }
-            if (i != clone.parameters().size() - 1)
+            if (i != clone.parameters().size() - 1 || !clone.liveInVars().isEmpty())
+                sb.append(", ");
+        }
+        List<PsiVariable> liveInVars = clone.liveInVars().stream().toList();
+        for (int i = 0; i < liveInVars.size(); i++) {
+            PsiVariable variable = liveInVars.get(i);
+            sb.append(variable.getName());
+            if (i != liveInVars.size() - 1)
                 sb.append(", ");
         }
         sb.append(");\n");
@@ -204,8 +255,6 @@ public class ExtractionTask {
         int i = 0;
         while (containingClass.findMethodsByName(i > 0 ? base + i : base).length > 0)
             i++;
-
-        PsiField[] fields = containingClass.getFields();
         List<String> fieldNames = new ArrayList<>();
         for (PsiField field : containingClass.getFields())
             fieldNames.add(field.getName());
@@ -217,16 +266,19 @@ public class ExtractionTask {
     }
 
     public void askWhichClonesToExtract(List<Clone> options) {
-        MarkupModel markupModel = event.getEditor().getMarkupModel();
+        Editor editor = event.getEditor();
+        MarkupModel markupModel = editor.getMarkupModel();
         for (int i = options.size() - 1; i >= 0; i--) {
             Clone clone = options.get(i);
+            int startOffset = clone.start().getTextOffset();
             RangeHighlighter highlighter = markupModel.addRangeHighlighter(
-                    clone.start().getTextOffset(),
+                    startOffset,
                     clone.end().getTextOffset() + clone.end().getTextLength(),
                     HighlighterLayer.LAST + 1000,
                     new TextAttributes(null, null, Color.red, EffectType.BOXED, Font.PLAIN),
                     HighlighterTargetArea.EXACT_RANGE
             );
+            editor.getScrollingModel().scrollTo(editor.offsetToLogicalPosition(startOffset), ScrollType.CENTER);
             if (!MessageDialogBuilder.yesNo(
                             "AntiCopyPaster Method Extractor",
                             "Each clone that can be extracted will be highlighted "
@@ -325,11 +377,15 @@ public class ExtractionTask {
             if (containingMethod == null) return;
             PsiClass containingClass = containingMethod.getContainingClass();
             if (containingClass == null) return;
+
             List<Clone> results = new DuplicatesInspection().resolve(file, event.getDestinationMethod(), text).results();
             if (results.size() < ProjectSettingsState.getInstance(project).minimumDuplicateMethods)
                 return;
             // Allow the user to choose to extract each clone
             askWhichClonesToExtract(results);
+
+            String methodName = getNewMethodName(containingClass);
+
             if (results.isEmpty()) {
                 Messages.showInfoMessage(
                         project,
@@ -341,12 +397,12 @@ public class ExtractionTask {
 
             // Remove unnecessary parameters
             for (int i = results.get(0).parameters().size() - 1; i >= 0; i--) {
-                Parameter firstParam = results.get(0).parameters().get(i);
-                String text = firstParam.extractedValue().getText();
+                Parameter currentParam = results.get(0).parameters().get(i);
+                String text = currentParam.extractedValue().getText();
                 boolean canRemove = true;
                 int j = 1;
                 while (canRemove && j < results.size()) {
-                    Parameter currentParam = results.get(j).parameters().get(i);
+                    currentParam = results.get(j).parameters().get(i);
                     canRemove = text.equals(currentParam.extractedValue().getText());
                     j++;
                 }
@@ -354,7 +410,6 @@ public class ExtractionTask {
                 for (Clone clone : results)
                     clone.parameters().remove(i);
             }
-
             // Combine all lambda args per parameter
             List<Set<Integer>> combinedLambdaArgs = new ArrayList<>();
             for (int i = 0; i < results.get(0).parameters().size(); i++)
@@ -395,15 +450,59 @@ public class ExtractionTask {
             if(ProjectSettingsState.getInstance(project).useNameRec == 0){
                 passPreds(pred);
             }
-            String code = buildMethodText( //for naming method
-                    template,
-                    returnType,
-                    normalizedLambdaArgs,
-                    methodName,
-                    extractToStatic
-                    );
+          
+            // And unnecessary type parameters
+            for (int i = results.get(0).typeParams().size() - 1; i >= 0; i--) {
+                String text = results.get(0).typeParams().get(i).getText();
+                boolean canRemove = true;
+                int j = 1;
+                while (canRemove && j < results.size()) {
+                    canRemove = text.equals(results.get(j).typeParams().get(i).getText());
+                    j++;
+                }
+                if (!canRemove) continue;
+                for (Clone clone : results)
+                    clone.typeParams().remove(i);
+            }
+
+            // Combine all lambda args per parameter
+            List<Set<Integer>> combinedLambdaArgs = new ArrayList<>();
+            for (int i = 0; i < results.get(0).parameters().size(); i++)
+                combinedLambdaArgs.add(new HashSet<>());
+            for (Clone clone : results)
+                for (int i = 0; i < clone.parameters().size(); i++)
+                    combinedLambdaArgs.get(i).addAll(clone.parameters().get(i).lambdaArgs());
+            List<Variable> referenceMap = results.get(0).aliasMap();
+            List<List<Variable>> normalizedLambdaArgs = new ArrayList<>();
+            for (Set<Integer> lambdaArgs : combinedLambdaArgs) {
+                // Type limitations without extension
+                if (lambdaArgs.size() > 2) return;
+                normalizedLambdaArgs.add(lambdaArgs.stream().map(referenceMap::get).toList());
+            }
+
+            // Generate method return type
+            Clone template = results.get(0);
+
+            String returnType = null;
+            for (Clone clone : results) {
+                if (clone.liveOutVars().size() > 0) {
+                    if (returnType == null) {
+                        template = clone;
+                        returnType = clone.liveOutVars().get(0).type();
+                    } else if (!returnType.equals(clone.liveOutVars().get(0).type())) return;
+                }
+            }
+
+            boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
+
             PsiMethod extractedMethodElement = factory.createMethodFromText(
-                    code,
+                    buildMethodText(
+                            template,
+                            returnType,
+                            normalizedLambdaArgs,
+                            methodName,
+                            extractToStatic
+                    ),
                     containingClass
             );
 
@@ -411,7 +510,6 @@ public class ExtractionTask {
             // and imports the module if it needs to be imported (same for BiFunction)
             JavaCodeStyleManager styleManagerForLambdas = JavaCodeStyleManager.getInstance(project);
             styleManagerForLambdas.shortenClassReferences(extractedMethodElement);
-
             ApplicationManager.getApplication().runWriteAction(() -> {
                 CommandProcessor.getInstance().executeCommand(
                         project,
@@ -425,11 +523,11 @@ public class ExtractionTask {
                                 generateMethodCall(location, factory, normalizedLambdaArgs, methodName);
 
                             ApplicationManager.getApplication().invokeLater(() ->
-                                    RefactoringActionHandlerFactory.getInstance().createRenameHandler().invoke(
-                                            project,
-                                            new PsiElement[]{lastElement},
-                                            SimpleDataContext.getProjectContext(project)
-                                    )
+                                RefactoringActionHandlerFactory.getInstance().createRenameHandler().invoke(
+                                        project,
+                                        new PsiElement[]{lastElement},
+                                        SimpleDataContext.getProjectContext(project)
+                                )
                             );
                         },
                         "Clone Extraction",

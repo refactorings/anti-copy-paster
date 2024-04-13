@@ -104,7 +104,11 @@ public class PsiUtil {
 
     public static PsiMethod findMethodByOffset(PsiFile psiFile, int offset) {
         PsiElement element = psiFile.findElementAt(offset);
-        return (PsiMethod) PsiTreeUtil.findFirstParent(element, p -> p instanceof PsiMethod);
+        return PsiTreeUtil.getParentOfType(element, PsiMethod.class);
+    }
+
+    public static int endOffset(PsiElement element) {
+        return element.getStartOffsetInParent() + element.getTextLength();
     }
 
     public static PsiElement[] getElements(@NotNull Project project, @NotNull PsiFile file,

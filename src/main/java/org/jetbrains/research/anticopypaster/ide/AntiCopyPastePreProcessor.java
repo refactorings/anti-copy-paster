@@ -4,6 +4,7 @@ import com.intellij.codeInsight.editorActions.CopyPastePreProcessor;
 import com.intellij.ide.DataManager;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
@@ -20,13 +21,11 @@ import java.util.ArrayList;
 import java.util.Timer;
 
 import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOffset;
-import static org.jetbrains.research.anticopypaster.utils.PsiUtil.getCountOfCodeLines;
 
 /**
  * Handles any copy-paste action and checks if the pasted code fragment could be extracted into a separate method.
  */
 public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
-    private final DuplicatesInspection inspection = new DuplicatesInspection();
     private final Timer timer = new Timer(true);
     private final ArrayList<RefactoringNotificationTask> refactoringNotificationTask = new ArrayList<>();
 
@@ -66,7 +65,10 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         int offset = caret == null ? 0 : caret.getOffset();
         PsiMethod destinationMethod = findMethodByOffset(file, offset);
 
-        rnt.addEvent(new RefactoringEvent(file, destinationMethod, text, project, editor));
+        RefactoringNotificationTask finalRnt = rnt;
+        ApplicationManager.getApplication().invokeLater(() -> {
+            finalRnt.addEvent(new RefactoringEvent(file, destinationMethod, text, project, editor));
+        });
 
         return text;
     }

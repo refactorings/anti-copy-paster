@@ -22,9 +22,13 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     // PRIMARY SETTINGS STATES
     public int minimumDuplicateMethods = 2;
     public int timeBuffer = 10;
+    public JudgementModel judgementModel = JudgementModel.TENSORFLOW;
+    public ExtractionType extractionType = ExtractionType.TYPE_TWO;
     public boolean keywordsEnabled = true, couplingEnabled = true, sizeEnabled = true, complexityEnabled = true,
             keywordsRequired = true, couplingRequired = true, sizeRequired = true, complexityRequired = true;
-    public int keywordsSensitivity = 50, couplingSensitivity = 50, sizeSensitivity = 50, complexitySensitivity = 50;
+
+    public int keywordsSensitivity = 50, couplingSensitivity = 50, sizeSensitivity = 50, complexitySensitivity = 50,
+                modelSensitivity = 50;
 
     // ADVANCED SETTINGS STATES
     // Each boolean array of two elements follow this scheme {boolean submetric_enabled, boolean submetric_required}
@@ -70,5 +74,32 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     @Override
     public void loadState(@NotNull ProjectSettingsState state) {
         XmlSerializerUtil.copyBean(state, this);
+    }
+
+    public enum JudgementModel {
+        TENSORFLOW(0),
+        USER_SETTINGS(1);
+
+        private int idx;
+        JudgementModel(int idx) {
+            this.idx = idx;
+        }
+        public int getIdx() {
+            return idx;
+        }
+    }
+
+    public enum ExtractionType {
+        TYPE_ONE(0),
+        TYPE_TWO(1),
+        TYPE_THREE(2);
+
+        private int idx;
+        ExtractionType(int idx) {
+            this.idx = idx;
+        }
+        public int getIdx() {
+            return idx;
+        }
     }
 }

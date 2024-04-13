@@ -31,8 +31,10 @@ dependencies {
      * the plugin will be a fifth of the size and much more lightweight, but this won't
      * compile. It's been left here to allow for adding a feature to swap between models
      * in the future.
+     *
+     * This file is uncommented for now
      */
-    // implementation("org.tensorflow:tensorflow:1.15.0")
+    implementation("org.tensorflow:tensorflow:1.15.0")
 
     // Test dependencies
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.9.3")
