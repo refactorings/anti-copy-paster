@@ -11,6 +11,7 @@
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.java</depends>
     <depends>com.intellij.modules.lang</depends>
+    <depends>org.jetbrains.plugins.terminal</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <copyPastePreProcessor
@@ -25,5 +26,6 @@
                 displayName="AntiCopyPaster"/>
         <postStartupActivity
                 implementation="org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterTelemetry"/>
+        <nameSuggestionProvider implementation="org.jetbrains.research.anticopypaster.ide.JavaNameSuggestionProvider"/>
     </extensions>
 </idea-plugin>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <form xmlns="http://www.intellij.com/uidesigner/form/" version="1" bind-to-class="org.jetbrains.research.anticopypaster.config.ProjectSettingsComponent">
-  <grid id="27dc6" binding="mainPanel" layout-manager="GridLayoutManager" row-count="11" column-count="1" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
+  <grid id="27dc6" binding="mainPanel" layout-manager="GridLayoutManager" row-count="12" column-count="1" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
     <margin top="0" left="0" bottom="0" right="0"/>
     <constraints>
       <xy x="20" y="20" width="1686" height="938"/>
@@ -867,15 +867,25 @@
               <toolTipText value="&lt;html&gt;Not all duplicates are worth extracting and the model determines which ones are.&lt;br&gt;A more sensitive model will notify the user about more possible code duplicates.&lt;/html&gt;"/>
             </properties>
           </component>
+          <component id="adc66" class="javax.swing.JSeparator">
+            <constraints>
+              <grid row="1" column="0" row-span="1" col-span="1" vsize-policy="6" hsize-policy="6" anchor="0" fill="1" indent="0" use-parent-layout="false"/>
+            </constraints>
+            <properties/>
+          </component>
         </children>
       </grid>
     </children>
   </grid>
   <buttonGroups>
-    <group name="modelsRadioGroup">
+    <group name="">
       <member id="379f0"/>
       <member id="379f0"/>
       <member id="bedec"/>
+      <member id="8d57c"/>
+      <member id="ae57f"/>
+      <member id="ea935"/>
+      <member id="2a2eb"/>
     </group>
   </buttonGroups>
 </form>

@@ -41,6 +41,8 @@ public class ProjectSettingsComponent {
     private JLabel waitTimeHelp;
     private JLabel statisticsButtonHelp;
     private JLabel advancedButtonHelp;
+    private JComboBox nameModel;
+    private JSlider numOfPred;
     private JComboBox modelComboBox;
     private JComboBox cloneTypeComboBox;
     private JSlider modelSensitivitySlider;
@@ -49,8 +51,6 @@ public class ProjectSettingsComponent {
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
     public ProjectSettingsComponent(Project project) {
-
-        // Set listeners for buttons
         advancedSettingsButton.addActionListener(e -> {
             AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
             boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
@@ -65,10 +65,8 @@ public class ProjectSettingsComponent {
         addConditionallyEnabledMetricGroup(couplingEnabledCheckBox,couplingSlider,couplingRequiredCheckBox);
         addConditionallyEnabledMetricGroup(complexityEnabledCheckBox, complexitySlider, complexityRequiredCheckBox);
         addConditionallyEnabledMetricGroup(sizeEnabledCheckBox, sizeSlider, sizeRequiredCheckBox);
-
         createUIComponents();
     }
-
     private void addConditionallyEnabledMetricGroup(JCheckBox ind, JSlider depslid, JCheckBox dep) {
         ind.addActionListener(e -> {
                     if (ind.isSelected()) {
@@ -223,11 +221,19 @@ public class ProjectSettingsComponent {
     public void setComplexityRequired(boolean required) {
         complexityRequiredCheckBox.setSelected(required);
     }
+    public void setNameModel(int selectedIndex) { nameModel.setSelectedIndex(selectedIndex); }
+    public int getNameModel() { return (nameModel.getSelectedIndex()); }
+    public int getNumOfPreds() {
+        return numOfPred.getValue();
+    }
+
+    public void setNumOfPreds(int preds) {
+        numOfPred.setValue(preds);
+    }
 
     private void createUIComponents() {
         minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);
         timeBufferSelector = new JBIntSpinner(10, 1, 300);
-
         // Set link and icons for help features
         helpLabel = new JLabel();
         createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/index.html");

@@ -1,5 +1,6 @@
 package org.jetbrains.research.anticopypaster.cloneprocessors;
 
+
 import com.intellij.psi.*;
 
 import java.util.*;
@@ -79,6 +80,7 @@ public final class MatchState {
                 + parameters.toString()
                 + "\n]";
     }
+
 
     public Stack<Variable> scope() {
         return scope;
