@@ -1,55 +1,30 @@
 package org.jetbrains.research.anticopypaster.ide;
 
-import com.intellij.lang.Language;
-import com.intellij.lang.LanguageRefactoringSupport;
-import com.intellij.lang.refactoring.RefactoringSupportProvider;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.EditorFactory;
-import com.intellij.openapi.editor.colors.TextAttributesKey;
-import com.intellij.openapi.editor.ex.MarkupModelEx;
 import com.intellij.openapi.editor.markup.*;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.DialogBuilder;
 import com.intellij.openapi.ui.MessageDialogBuilder;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.psi.*;
-import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.refactoring.RefactoringActionHandlerFactory;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.App;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.FeaturesEntities.ProgramFeatures;
-import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ScrollType;
-import com.intellij.openapi.editor.markup.*;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.MessageDialogBuilder;
-import com.intellij.openapi.ui.Messages;
-import com.intellij.psi.*;
-import com.intellij.psi.codeStyle.CodeStyleManager;
-import com.intellij.psi.codeStyle.JavaCodeStyleManager;
-import com.intellij.refactoring.RefactoringActionHandlerFactory;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Variable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
-import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.vfs.VfsUtil;
 
 import java.awt.*;
 import java.io.*;
 import java.net.Socket;
-import java.net.UnknownHostException;
 
-import java.awt.*;
 import java.util.*;
 import java.util.List;
 
@@ -349,7 +324,7 @@ public class ExtractionTask {
             String predictions = in.readLine();
             socket.close();
             extractedText = extractEncasedText(predictions, ProjectSettingsState.getInstance(project).numOfPreds);
-        }catch(Exception e){
+        }catch(Exception ignored){
         }
         return extractedText;
     }
@@ -384,8 +359,6 @@ public class ExtractionTask {
             // Allow the user to choose to extract each clone
             askWhichClonesToExtract(results);
 
-            String methodName = getNewMethodName(containingClass);
-
             if (results.isEmpty()) {
                 Messages.showInfoMessage(
                         project,
@@ -410,47 +383,7 @@ public class ExtractionTask {
                 for (Clone clone : results)
                     clone.parameters().remove(i);
             }
-            // Combine all lambda args per parameter
-            List<Set<Integer>> combinedLambdaArgs = new ArrayList<>();
-            for (int i = 0; i < results.get(0).parameters().size(); i++)
-                combinedLambdaArgs.add(new HashSet<>());
-            for (Clone clone : results)
-                for (int i = 0; i < clone.parameters().size(); i++)
-                    combinedLambdaArgs.get(i).addAll(clone.parameters().get(i).lambdaArgs());
-            List<Variable> referenceMap = results.get(0).aliasMap();
-            List<List<Variable>> normalizedLambdaArgs = new ArrayList<>();
-            for (Set<Integer> lambdaArgs : combinedLambdaArgs) {
-                // Type limitations without extension
-                if (lambdaArgs.size() > 2) return;
-                normalizedLambdaArgs.add(lambdaArgs.stream().map(referenceMap::get).toList());
-            }
 
-            // Generate method return type
-            Clone template = results.get(0);
-            String returnType = null;
-            for (Clone clone : results) {
-                if (clone.liveVars().size() > 0) {
-                    if (returnType == null) {
-                        template = clone;
-                        returnType = clone.liveVars().get(0).type();
-                    } else if (!returnType.equals(clone.liveVars().get(0).type())) return;
-                }
-            }
-            boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
-            List<String> pred = null;
-            try {
-                pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
-                if(pred == null){
-                    pred = new ArrayList<>();
-                    pred.add("defaultMethod");
-                }
-            } catch (Exception e) {
-            }
-            String methodName = getNewMethodName(containingClass, pred.get(0));
-            if(ProjectSettingsState.getInstance(project).useNameRec == 0){
-                passPreds(pred);
-            }
-          
             // And unnecessary type parameters
             for (int i = results.get(0).typeParams().size() - 1; i >= 0; i--) {
                 String text = results.get(0).typeParams().get(i).getText();
@@ -485,7 +418,7 @@ public class ExtractionTask {
 
             String returnType = null;
             for (Clone clone : results) {
-                if (clone.liveOutVars().size() > 0) {
+                if (!clone.liveOutVars().isEmpty()) {
                     if (returnType == null) {
                         template = clone;
                         returnType = clone.liveOutVars().get(0).type();
@@ -494,6 +427,19 @@ public class ExtractionTask {
             }
 
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
+            List<String> pred = null;
+            try {
+                pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
+                if(pred == null){
+                    pred = new ArrayList<>();
+                    pred.add("defaultMethod");
+                }
+            } catch (Exception ignored) {
+            }
+            String methodName = getNewMethodName(containingClass, pred.get(0));
+            if(ProjectSettingsState.getInstance(project).useNameRec == 0){
+                passPreds(pred);
+            }
 
             PsiMethod extractedMethodElement = factory.createMethodFromText(
                     buildMethodText(
