@@ -262,7 +262,7 @@ public class RefactoringEventTest extends LightPlatformTestCase {
 
         PsiManager psiManager = PsiManager.getInstance(myProject);
 
-        VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath("./src/test/resources/testdata/Calculator.java");
+        VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath("./src/test/resources/testdata/NoCloneExample.java");
         assert virtualFile != null;
 
         PsiFile file = psiManager.findFile(virtualFile);
