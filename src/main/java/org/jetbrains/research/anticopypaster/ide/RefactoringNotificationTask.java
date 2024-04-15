@@ -68,6 +68,37 @@ public class RefactoringNotificationTask extends TimerTask {
         }
     }
 
+    private boolean isGlobalVariable(PsiElement psiElement) {
+        // check if elem is field of a class
+        if (psiElement instanceof PsiField field) {
+            // make sure field isnt inside a method
+            PsiMember parentMember = PsiTreeUtil.getParentOfType(field, PsiMember.class);
+            return parentMember instanceof PsiClass && !isLocalVariable(field);
+        }
+        return false;
+    }
+
+    private boolean isLocalVariable(PsiVariable variable) {
+        PsiMethod containingMethod = PsiTreeUtil.getParentOfType(variable, PsiMethod.class);
+        return containingMethod != null;
+    }
+
+    private boolean bodyContainsGlobalVar(PsiElement current, PsiElement last) {
+        // Iterates through all siblings at this level
+        while (current != null) {
+            if (isGlobalVariable(current))
+                return true;
+            PsiElement firstChild = current.getFirstChild();
+            if (firstChild != null) {
+                // The current element has children, descend
+                bodyContainsGlobalVar(firstChild, last);
+            }
+            if (current == last) break;
+            current = current.getNextSibling();
+        }
+        return false;
+    }
+
     @Override
     public void run() {
         while (!eventsQueue.isEmpty()) {
@@ -77,7 +108,7 @@ public class RefactoringNotificationTask extends TimerTask {
                 ApplicationManager.getApplication().runReadAction(() -> {
                     event.setReasonToExtract(AntiCopyPasterBundle.message(
                             "extract.method.to.simplify.logic.of.enclosing.method"));
-
+                    // Get project settings
                     ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
 
                     List<Clone> results = new DuplicatesInspection().resolve(event.getFile(), event.getDestinationMethod(), event.getText()).results();

@@ -26,6 +26,7 @@ import org.bson.Document;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.ide.predHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +46,16 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
     @Override
     public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
+        if(settings.useNameRec == 0){
+            try {
+                Thread jpserver = new Thread(new ACPServer());
+                Thread predserver = new Thread(new predHolder());
+                jpserver.start();
+                predserver.start();
+            } catch (Exception e) {
+                throw e;
+            }
+        }
         if (settings.statisticsUsername != null && !settings.statisticsUsername.isEmpty() && settings.statisticsPasswordIsSet) {
             AntiCopyPasterUsageStatistics.PluginState usageState =
                     AntiCopyPasterUsageStatistics.getInstance(project).getState();

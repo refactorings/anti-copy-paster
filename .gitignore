@@ -2,3 +2,9 @@
 target/
 build
 .gradle
+.DS_Store
+code2vec/java14m_model/models/java14_model
+demofile.txt
+demofile2.txt
+code2vec/code2vec-master/__pycache__
+venv

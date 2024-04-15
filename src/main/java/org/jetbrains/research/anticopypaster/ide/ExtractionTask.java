@@ -3,8 +3,6 @@ package org.jetbrains.research.anticopypaster.ide;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
-import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.markup.*;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageDialogBuilder;
@@ -13,6 +11,10 @@ import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.refactoring.RefactoringActionHandlerFactory;
+import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.App;
+import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.FeaturesEntities.ProgramFeatures;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.ScrollType;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
@@ -20,6 +22,9 @@ import org.jetbrains.research.anticopypaster.cloneprocessors.Variable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
 import java.awt.*;
+import java.io.*;
+import java.net.Socket;
+
 import java.util.*;
 import java.util.List;
 
@@ -221,12 +226,10 @@ public class ExtractionTask {
         parent.deleteChildRange(start, end);
     }
 
-    private String getNewMethodName(PsiClass containingClass) {
-        String base = "extractedMethod";
+    private String getNewMethodName(PsiClass containingClass, String base) {
         int i = 0;
         while (containingClass.findMethodsByName(i > 0 ? base + i : base).length > 0)
             i++;
-
         List<String> fieldNames = new ArrayList<>();
         for (PsiField field : containingClass.getFields())
             fieldNames.add(field.getName());
@@ -265,6 +268,82 @@ public class ExtractionTask {
         }
     }
 
+    /**
+     * Method to turn the code name prediction into a useable list.
+     * @param input: The string representation of the prediction.
+     * @return A list of the top x predictions.
+     */
+    public static List<String> extractEncasedText(String input, int numOfPreds) {
+        List<String> result = new ArrayList<>();
+        int i = input.indexOf('[');
+        input = input.substring(0, i) + input.substring(i + 1);
+        // Regular expressions to match text inside the predictions
+        String regexSquareBrackets = "\\[([^\\]]*)\\]";
+
+        // Find matches using the regular expressions
+        java.util.regex.Pattern patternSquareBrackets = java.util.regex.Pattern.compile(regexSquareBrackets);
+        java.util.regex.Matcher matcherSquareBrackets = patternSquareBrackets.matcher(input);
+
+        // Extract and store the matches in the result list
+        while (matcherSquareBrackets.find() && result.size() < numOfPreds) {
+            String textInSquareBrackets = matcherSquareBrackets.group(1);
+            textInSquareBrackets = textInSquareBrackets.replaceAll(" ", "");
+            textInSquareBrackets = textInSquareBrackets.replaceAll(",", "_");
+            textInSquareBrackets = textInSquareBrackets.replaceAll("'", "");
+            if(textInSquareBrackets.length() >= 3){
+                result.add(textInSquareBrackets);
+            }
+        }
+        return result;
+    }
+    /**
+     * Takes in a text representation of the method and returns an array of potential names to use.
+     * @param clone The clone to use as the extracted method template
+     * @param normalizedLambdaArgs The set union combined lambda args across all clones
+     * @param methodName The name to give the method
+     * @return The extracted method as text
+     */
+    public List<String> generateName(Clone clone, String returnType, List<List<Variable>> normalizedLambdaArgs, String methodName, boolean extractToStatic) throws IOException {
+        String code = buildMethodText(clone, returnType, normalizedLambdaArgs, methodName, extractToStatic);
+        String[] args = {
+                "--max_path_length",
+                "8",
+                "--max_path_width",
+                "2",
+                "--file",
+                code,
+                "--no_hash"
+        };
+        ArrayList<ProgramFeatures> extracted = App.execute(args);
+        List<String> extractedText = null;
+        try{
+            Socket socket = new Socket("localhost", 8081);
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            PrintWriter out = new PrintWriter(socket.getOutputStream(),true);
+            out.println(extracted);
+            String predictions = in.readLine();
+            socket.close();
+            extractedText = extractEncasedText(predictions, ProjectSettingsState.getInstance(project).numOfPreds);
+        }catch(Exception ignored){
+        }
+        return extractedText;
+    }
+
+    public void passPreds(List<String> preds){
+        String predstr = "";
+        for (String pred : preds){
+            predstr += (pred+"-");
+        }
+        try{
+            Socket socket = new Socket("localhost", 8082);
+            PrintWriter out = new PrintWriter(socket.getOutputStream(),true);
+            out.println(predstr);
+            socket.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public void run() {
         ApplicationManager.getApplication().invokeLater(() -> {
             PsiElementFactory factory = JavaPsiFacade.getElementFactory(project);
@@ -279,8 +358,6 @@ public class ExtractionTask {
                 return;
             // Allow the user to choose to extract each clone
             askWhichClonesToExtract(results);
-
-            String methodName = getNewMethodName(containingClass);
 
             if (results.isEmpty()) {
                 Messages.showInfoMessage(
@@ -306,6 +383,7 @@ public class ExtractionTask {
                 for (Clone clone : results)
                     clone.parameters().remove(i);
             }
+
             // And unnecessary type parameters
             for (int i = results.get(0).typeParams().size() - 1; i >= 0; i--) {
                 String text = results.get(0).typeParams().get(i).getText();
@@ -340,7 +418,7 @@ public class ExtractionTask {
 
             String returnType = null;
             for (Clone clone : results) {
-                if (clone.liveOutVars().size() > 0) {
+                if (!clone.liveOutVars().isEmpty()) {
                     if (returnType == null) {
                         template = clone;
                         returnType = clone.liveOutVars().get(0).type();
@@ -349,6 +427,19 @@ public class ExtractionTask {
             }
 
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
+            List<String> pred = null;
+            try {
+                pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
+                if(pred == null){
+                    pred = new ArrayList<>();
+                    pred.add("defaultMethod");
+                }
+            } catch (Exception ignored) {
+            }
+            String methodName = getNewMethodName(containingClass, pred.get(0));
+            if(ProjectSettingsState.getInstance(project).useNameRec == 0){
+                passPreds(pred);
+            }
 
             PsiMethod extractedMethodElement = factory.createMethodFromText(
                     buildMethodText(
@@ -384,9 +475,6 @@ public class ExtractionTask {
                                         SimpleDataContext.getProjectContext(project)
                                 )
                             );
-//                            var ref = MemberInplaceRenamer.getActiveInplaceRenamer(event.getEditor());
-//                            ref.setElementToRename((PsiMethod)lastElement);
-//                            ref.performInplaceRefactoring(new LinkedHashSet<>());
                         },
                         "Clone Extraction",
                         null
