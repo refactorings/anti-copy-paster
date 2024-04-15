@@ -47,9 +47,9 @@ public class ProjectSettingsComponent {
     private JComboBox cloneTypeComboBox;
     private JSlider modelSensitivitySlider;
     private JLabel modelSensitivityHelp;
-    private JPanel panel1;
     private JLabel upToLabel;
-    private JLabel functionNamePredictionsCreatedLabel;
+    private JPanel manualHeuristicsPanel;
+    private JPanel aiSettingsPanel;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
@@ -68,8 +68,21 @@ public class ProjectSettingsComponent {
         addConditionallyEnabledMetricGroup(couplingEnabledCheckBox,couplingSlider,couplingRequiredCheckBox);
         addConditionallyEnabledMetricGroup(complexityEnabledCheckBox, complexitySlider, complexityRequiredCheckBox);
         addConditionallyEnabledMetricGroup(sizeEnabledCheckBox, sizeSlider, sizeRequiredCheckBox);
+        modelComboBox.addActionListener(e -> updatePanelVisibilities());
+        updatePanelVisibilities();
         createUIComponents();
     }
+
+    private void updatePanelVisibilities() {
+        if (modelComboBox.getSelectedIndex() == 0) {
+            manualHeuristicsPanel.setVisible(false);
+            aiSettingsPanel.setVisible(true);
+        } else if (modelComboBox.getSelectedIndex() == 1) {
+            manualHeuristicsPanel.setVisible(true);
+            aiSettingsPanel.setVisible(false);
+        }
+    }
+
     private void addConditionallyEnabledMetricGroup(JCheckBox ind, JSlider depslid, JCheckBox dep) {
         ind.addActionListener(e -> {
                     if (ind.isSelected()) {
@@ -109,7 +122,10 @@ public class ProjectSettingsComponent {
         };
     }
 
-    public void setJudgementModel(ProjectSettingsState.JudgementModel model) { modelComboBox.setSelectedIndex(model.getIdx()); }
+    public void setJudgementModel(ProjectSettingsState.JudgementModel model) {
+        modelComboBox.setSelectedIndex(model.getIdx());
+        updatePanelVisibilities();
+    }
 
     public ProjectSettingsState.ExtractionType getExtractionType() {
         return switch (cloneTypeComboBox.getSelectedIndex()) {

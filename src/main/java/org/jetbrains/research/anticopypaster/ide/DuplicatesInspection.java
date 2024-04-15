@@ -40,7 +40,6 @@ public final class DuplicatesInspection {
             CloneProcessor processor = switch (ProjectSettingsState.getInstance(file.getProject()).extractionType) {
                 case TYPE_ONE -> new TypeOneCP();
                 case TYPE_TWO -> new TypeTwoCP();
-                case TYPE_THREE -> new TypeThreeCP();
             };
             results.addAll(processor.getClonesOfType(file, stmts[startStmt], stmts[endStmt]));
         } catch (IncorrectOperationException ex) {
