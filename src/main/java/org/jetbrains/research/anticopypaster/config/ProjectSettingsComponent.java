@@ -6,7 +6,6 @@ import com.intellij.icons.AllIcons;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 
-import com.intellij.ui.JBIntSpinner;
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialogWrapper;
 
@@ -33,8 +32,6 @@ public class ProjectSettingsComponent {
     private JCheckBox complexityEnabledCheckBox;
     private JCheckBox complexityRequiredCheckBox;
     private JButton advancedSettingsButton;
-    private JSpinner minimumMethodSelector;
-    private JSpinner timeBufferSelector;
     private JButton statisticsCollectionButton;
     private JLabel helpLabel;
     private JLabel duplicateMethodsHelp;
@@ -50,6 +47,8 @@ public class ProjectSettingsComponent {
     private JLabel upToLabel;
     private JPanel manualHeuristicsPanel;
     private JPanel aiSettingsPanel;
+    private JSpinner timeBufferSelector;
+    private JSpinner minimumMethodSelector;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
@@ -70,6 +69,8 @@ public class ProjectSettingsComponent {
         addConditionallyEnabledMetricGroup(sizeEnabledCheckBox, sizeSlider, sizeRequiredCheckBox);
         modelComboBox.addActionListener(e -> updatePanelVisibilities());
         updatePanelVisibilities();
+        timeBufferSelector.setModel(new SpinnerNumberModel(10, 0, Integer.MAX_VALUE, 1));
+        minimumMethodSelector.setModel(new SpinnerNumberModel(2, 2, Integer.MAX_VALUE, 1));
         createUIComponents();
     }
 
@@ -251,8 +252,6 @@ public class ProjectSettingsComponent {
     }
 
     private void createUIComponents() {
-        minimumMethodSelector = new JBIntSpinner(2, 0, Integer.MAX_VALUE);
-        timeBufferSelector = new JBIntSpinner(10, 1, 300);
         // Set link and icons for help features
         helpLabel = new JLabel();
         createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/index.html");
