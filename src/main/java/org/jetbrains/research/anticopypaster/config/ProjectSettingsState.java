@@ -25,10 +25,10 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public JudgementModel judgementModel = JudgementModel.TENSORFLOW;
     public ExtractionType extractionType = ExtractionType.TYPE_TWO;
     public boolean keywordsEnabled = true, couplingEnabled = true, sizeEnabled = true, complexityEnabled = true,
-            keywordsRequired = true, couplingRequired = true, sizeRequired = true, complexityRequired = true;
+            keywordsRequired = false, couplingRequired = false, sizeRequired = false, complexityRequired = false;
 
-    public int keywordsSensitivity = 50, couplingSensitivity = 50, sizeSensitivity = 50, complexitySensitivity = 50,
-                modelSensitivity = 50;
+    public int keywordsSensitivity = 50, couplingSensitivity = 50, sizeSensitivity = 50, complexitySensitivity = 50;
+    public float modelSensitivity = .3f;
 
     // ADVANCED SETTINGS STATES
     // Each boolean array of two elements follow this scheme {boolean submetric_enabled, boolean submetric_required}

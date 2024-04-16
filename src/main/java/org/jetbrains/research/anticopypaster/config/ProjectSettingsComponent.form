@@ -913,7 +913,7 @@
                   <maximum value="100"/>
                   <minorTickSpacing value="10"/>
                   <paintTicks value="true"/>
-                  <value value="50"/>
+                  <value value="30"/>
                 </properties>
               </component>
               <component id="a84e3" class="javax.swing.JLabel" binding="modelSensitivityHelp" custom-create="true">

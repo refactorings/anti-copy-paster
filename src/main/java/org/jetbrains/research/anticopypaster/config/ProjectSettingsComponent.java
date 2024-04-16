@@ -137,12 +137,12 @@ public class ProjectSettingsComponent {
 
     public void setExtractionType(ProjectSettingsState.ExtractionType cloneType) { cloneTypeComboBox.setSelectedIndex(cloneType.getIdx()); }
 
-    public int getModelSensitivity() {
-        return modelSensitivitySlider.getValue();
+    public float getModelSensitivity() {
+        return ((float)modelSensitivitySlider.getValue()) / 100.0f;
     }
 
-    public void setModelSensitivity(int sensitivity) {
-        modelSensitivitySlider.setValue(sensitivity);
+    public void setModelSensitivity(float sensitivity) {
+        modelSensitivitySlider.setValue((int)(sensitivity * 100));
     }
 
     public int getKeywordsSensitivity() {

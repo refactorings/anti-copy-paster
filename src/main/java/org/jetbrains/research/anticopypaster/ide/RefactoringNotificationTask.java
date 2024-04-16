@@ -45,7 +45,7 @@ public class RefactoringNotificationTask extends TimerTask {
     private PredictionModel model;
     private ProjectSettingsState.JudgementModel lastModelType;
 
-    private int modelSensitivity; // this is going to be from 0 to 100 since it is an integer on the slider
+    private float modelSensitivity; // 0.0 to 1.0
 
     private final boolean debugMetrics = true;
     private String logFilePath;
@@ -120,7 +120,7 @@ public class RefactoringNotificationTask extends TimerTask {
                     getOrInitModel();
                     modelSensitivity = ProjectSettingsState.getInstance(project).modelSensitivity;
 
-                    float threshold = (float) modelSensitivity/100; // divide it by 100 since the prediction is a decimal < 1
+                    float threshold = modelSensitivity; // divide it by 100 since the prediction is a decimal < 1
                     float prediction = this.model.predict(featuresVector);
                     if ((event.isForceExtraction() || prediction > threshold) &&
                             canBeExtracted(event)) {
