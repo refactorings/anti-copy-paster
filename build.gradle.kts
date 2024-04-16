@@ -26,6 +26,7 @@ dependencies {
     implementation("commons-io:commons-io:1.3.2")
     implementation("args4j:args4j:2.33")
     implementation("org.jetbrains:annotations:24.0.1")
+    implementation("org.apache.commons:commons-compress:1.21")
     /**
      * This file is commented out as it uses the TensorFlow API. By removing that dependency,
      * the plugin will be a fifth of the size and much more lightweight, but this won't

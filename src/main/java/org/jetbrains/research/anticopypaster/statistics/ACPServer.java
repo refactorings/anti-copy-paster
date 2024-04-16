@@ -2,6 +2,11 @@
 package org.jetbrains.research.anticopypaster.statistics;
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.openapi.extensions.PluginId;
+import org.apache.commons.compress.archivers.ArchiveException;
+import org.apache.commons.compress.archivers.ArchiveStreamFactory;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.utils.IOUtils;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.App;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.FeaturesEntities.ProgramFeatures;
@@ -9,8 +14,13 @@ import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtracto
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URL;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.util.ArrayList;
-
+import java.util.LinkedList;
+import java.util.List;
+import java.util.zip.GZIPInputStream;
 
 
 public class ACPServer implements Runnable{
@@ -19,12 +29,15 @@ public class ACPServer implements Runnable{
         try{
             String os = System.getProperty("os.name").toLowerCase();
             String pythonPath = getPythonPath(os);
+            String pluginId = "org.jetbrains.research.anticopypaster";
+            String pluginPath = PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath().toString();
+            pluginPath = pluginPath.replace("\\", "/");
+            File modelpath = new File(pluginPath+"/code2vec/java14m_model/models/java14_model/dictionaries.bin");
+            if(!modelpath.exists()){
+                downloadModel(pluginPath);
+            }
             if (pythonPath != null && !pythonPath.isEmpty()) {
                 ServerSocket server = new ServerSocket(8081);
-                String pluginId = "org.jetbrains.research.anticopypaster";
-                String pluginPath = PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath().toString();
-                pluginPath = pluginPath.replace("\\", "/");
-                //String pluginPath = "/Users/squir/Library/Application Support/JetBrains/IdeaIC2023.2/plugins/AntiCopyPaster";
                 ProcessBuilder builder = new ProcessBuilder();
                 builder.command(pythonPath,
                         pluginPath+"/code2vec/code2vec-master/code2vec.py", "--load", pluginPath+"/code2vec/java14m_model/models/java14_model/saved_model_iter8.release", "--predict");
@@ -38,10 +51,6 @@ public class ACPServer implements Runnable{
                         "        for (int i = 1; i < n; ++i) {\n" +
                         "            int key = arr[i];\n" +
                         "            int j = i - 1;\n" +
-                        " \n" +
-                        "            /* Move elements of arr[0..i-1], that are\n" +
-                        "               greater than key, to one position ahead\n" +
-                        "               of their current position*/\n" +
                         "            while (j >= 0 && arr[j] > key) {\n" +
                         "                arr[j + 1] = arr[j];\n" +
                         "                j = j - 1;\n" +
@@ -125,5 +134,45 @@ public class ACPServer implements Runnable{
             }
         }
         return pythonPath;
+    }
+
+    private static void downloadModel(String pluginPath){
+        try {
+            URL website = new URL("https://s3.amazonaws.com/code2vec/model/java14m_model.tar.gz");
+            ReadableByteChannel rbc = Channels.newChannel(website.openStream());
+            FileOutputStream fos = new FileOutputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
+            fos.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
+            File inputFile = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
+            File outputFile = new File(pluginPath+"/code2vec/java14m_model", inputFile.getName().substring(0, inputFile.getName().lastIndexOf(".")));
+            GZIPInputStream in = new GZIPInputStream(new FileInputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz"));
+            FileOutputStream out = new FileOutputStream(outputFile);
+            IOUtils.copy(in, out);
+            in.close();
+            out.close();
+            File inputFileTar = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar");
+            inputFile.delete();
+            File outputDir = new File(pluginPath+"/code2vec/java14m_model");
+            final List<File> untaredFiles = new LinkedList<File>();
+            final InputStream is = new FileInputStream(inputFileTar);
+            final TarArchiveInputStream debInputStream = (TarArchiveInputStream) new ArchiveStreamFactory().createArchiveInputStream("tar", is);
+            TarArchiveEntry entry = null;
+            while ((entry = (TarArchiveEntry)debInputStream.getNextEntry()) != null) {
+                final File outputFileTar = new File(outputDir, entry.getName());
+                final OutputStream outputFileStream = new FileOutputStream(outputFileTar);
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                while ((bytesRead = debInputStream.read(buffer)) != -1) {
+                    outputFileStream.write(buffer, 0, bytesRead);
+                }
+                outputFileStream.close();
+                untaredFiles.add(outputFileTar);
+            }
+            debInputStream.close();
+            inputFileTar.delete();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        } catch (ArchiveException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
