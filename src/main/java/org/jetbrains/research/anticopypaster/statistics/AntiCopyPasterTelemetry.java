@@ -3,10 +3,17 @@ package org.jetbrains.research.anticopypaster.statistics;
 import com.intellij.credentialStore.CredentialAttributes;
 import com.intellij.credentialStore.Credentials;
 import com.intellij.ide.passwordSafe.PasswordSafe;
+import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.util.PropertiesComponent;
 
+import com.intellij.notification.Notification;
+import com.intellij.notification.NotificationGroup;
+import com.intellij.notification.NotificationGroupManager;
+import com.intellij.notification.NotificationType;
+import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.startup.ProjectActivity;
 
+import java.io.File;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -34,6 +41,7 @@ import static com.intellij.remoteServer.util.CloudConfigurationUtil.createCreden
 import static org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics.TRANSMISSION_INTERVAL;
 
 public class AntiCopyPasterTelemetry implements ProjectActivity {
+    private final NotificationGroup notificationGroup = NotificationGroupManager.getInstance().getNotificationGroup("Extract Method suggestion");
 
     private static String username;
     private static String password;
@@ -52,6 +60,17 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
                 Thread predserver = new Thread(new predHolder());
                 jpserver.start();
                 predserver.start();
+                String pluginId = "org.jetbrains.research.anticopypaster";
+                String pluginPath = PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath().toString();
+                pluginPath = pluginPath.replace("\\", "/");
+                File modelpath = new File(pluginPath+"/code2vec/java14m_model/models/java14_model/dictionaries.bin");
+                if(!modelpath.exists()){
+                    final Notification notificationStart = notificationGroup.createNotification("Installing pretrained Code2Vec model. This may take a few minutes.", NotificationType.INFORMATION);
+                    notificationStart.notify(project);
+                    while(!modelpath.exists()){}
+                    final Notification notificationEnd = notificationGroup.createNotification("Code2Vec model installed successfully.", NotificationType.INFORMATION);
+                    notificationEnd.notify(project);
+                }
             } catch (Exception e) {
                 throw e;
             }

@@ -140,8 +140,8 @@ public class ACPServer implements Runnable{
         try {
             URL website = new URL("https://s3.amazonaws.com/code2vec/model/java14m_model.tar.gz");
             ReadableByteChannel rbc = Channels.newChannel(website.openStream());
-            FileOutputStream fos = new FileOutputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
-            fos.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
+            FileOutputStream gzOutputStream = new FileOutputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
+            gzOutputStream.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
             File inputFile = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
             File outputFile = new File(pluginPath+"/code2vec/java14m_model", inputFile.getName().substring(0, inputFile.getName().lastIndexOf(".")));
             GZIPInputStream in = new GZIPInputStream(new FileInputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz"));
@@ -149,26 +149,28 @@ public class ACPServer implements Runnable{
             IOUtils.copy(in, out);
             in.close();
             out.close();
+            gzOutputStream.close();
             File inputFileTar = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar");
-            inputFile.delete();
             File outputDir = new File(pluginPath+"/code2vec/java14m_model");
             final List<File> untaredFiles = new LinkedList<File>();
-            final InputStream is = new FileInputStream(inputFileTar);
-            final TarArchiveInputStream debInputStream = (TarArchiveInputStream) new ArchiveStreamFactory().createArchiveInputStream("tar", is);
+            final InputStream tarStream = new FileInputStream(inputFileTar);
+            final TarArchiveInputStream unpackInputStream = (TarArchiveInputStream) new ArchiveStreamFactory().createArchiveInputStream("tar", tarStream);
             TarArchiveEntry entry = null;
-            while ((entry = (TarArchiveEntry)debInputStream.getNextEntry()) != null) {
+            while ((entry = (TarArchiveEntry)unpackInputStream.getNextEntry()) != null) {
                 final File outputFileTar = new File(outputDir, entry.getName());
                 final OutputStream outputFileStream = new FileOutputStream(outputFileTar);
                 byte[] buffer = new byte[4096];
                 int bytesRead;
-                while ((bytesRead = debInputStream.read(buffer)) != -1) {
+                while ((bytesRead = unpackInputStream.read(buffer)) != -1) {
                     outputFileStream.write(buffer, 0, bytesRead);
                 }
                 outputFileStream.close();
                 untaredFiles.add(outputFileTar);
             }
-            debInputStream.close();
+            unpackInputStream.close();
+            tarStream.close();
             inputFileTar.delete();
+            inputFile.delete();
         } catch (IOException e) {
             throw new RuntimeException(e);
         } catch (ArchiveException e) {

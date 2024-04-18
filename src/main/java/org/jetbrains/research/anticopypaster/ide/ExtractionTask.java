@@ -432,7 +432,7 @@ public class ExtractionTask {
                 pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
                 if(pred == null){
                     pred = new ArrayList<>();
-                    pred.add("defaultMethod");
+                    pred.add("extractedMethod");
                 }
             } catch (Exception ignored) {
             }
