@@ -384,6 +384,21 @@ public class ExtractionTask {
                     clone.parameters().remove(i);
             }
 
+            int maxParams = ProjectSettingsState.getInstance(project).maxParams;
+            int neededParams = results.get(0).parameters().size();
+            if (neededParams > maxParams) {
+                Messages.showInfoMessage(
+                        project,
+                        "Selected clones would result in an extracted method with "
+                                + neededParams
+                                + " parameters, but the maximum set in your settings is "
+                                + maxParams
+                                + ". Extraction aborted.",
+                        "AntiCopyPaster Method Extractor"
+                );
+                return;
+            }
+
             // And unnecessary type parameters
             for (int i = results.get(0).typeParams().size() - 1; i >= 0; i--) {
                 String text = results.get(0).typeParams().get(i).getText();
@@ -427,14 +442,18 @@ public class ExtractionTask {
             }
 
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
+            // Predictions
             List<String> pred = null;
             try {
-                pred = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
-                if(pred == null){
+                List<String> recs = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
+                if(recs != null) pred = recs;
+            } catch (Exception ignored) {
+                ignored.printStackTrace();
+            } finally {
+                if (pred == null) {
                     pred = new ArrayList<>();
                     pred.add("extractedMethod");
                 }
-            } catch (Exception ignored) {
             }
             String methodName = getNewMethodName(containingClass, pred.get(0));
             if(ProjectSettingsState.getInstance(project).useNameRec == 0){

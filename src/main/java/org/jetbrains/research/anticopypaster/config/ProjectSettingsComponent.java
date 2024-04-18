@@ -49,6 +49,7 @@ public class ProjectSettingsComponent {
     private JPanel aiSettingsPanel;
     private JSpinner timeBufferSelector;
     private JSpinner minimumMethodSelector;
+    private JSpinner maxParamsSpinner;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
@@ -71,6 +72,7 @@ public class ProjectSettingsComponent {
         updatePanelVisibilities();
         timeBufferSelector.setModel(new SpinnerNumberModel(10, 0, Integer.MAX_VALUE, 1));
         minimumMethodSelector.setModel(new SpinnerNumberModel(2, 2, Integer.MAX_VALUE, 1));
+        maxParamsSpinner.setModel(new SpinnerNumberModel(10, 0, 255, 1));
         createUIComponents();
     }
 
@@ -137,6 +139,14 @@ public class ProjectSettingsComponent {
     }
 
     public void setExtractionType(ProjectSettingsState.ExtractionType cloneType) { cloneTypeComboBox.setSelectedIndex(cloneType.getIdx()); }
+
+    public int getMaxParams() {
+        return (int) maxParamsSpinner.getValue();
+    }
+
+    public void setMaxParams(int maxParams) {
+        maxParamsSpinner.setValue(maxParams);
+    }
 
     public float getModelSensitivity() {
         return ((float)modelSensitivitySlider.getValue()) / 100.0f;

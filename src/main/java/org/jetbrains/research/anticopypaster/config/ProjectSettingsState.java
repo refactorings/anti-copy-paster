@@ -24,6 +24,9 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public int timeBuffer = 10;
     public JudgementModel judgementModel = JudgementModel.TENSORFLOW;
     public ExtractionType extractionType = ExtractionType.TYPE_TWO;
+
+    public int maxParams = 10;
+
     public boolean keywordsEnabled = true, couplingEnabled = true, sizeEnabled = true, complexityEnabled = true,
             keywordsRequired = false, couplingRequired = false, sizeRequired = false, complexityRequired = false;
 

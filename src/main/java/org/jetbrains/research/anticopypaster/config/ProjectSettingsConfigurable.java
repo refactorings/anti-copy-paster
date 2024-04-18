@@ -56,6 +56,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= settingsComponent.getJudgementModel() != settings.judgementModel;
         modified |= settingsComponent.getExtractionType() != settings.extractionType;
         modified |= settingsComponent.getModelSensitivity() != settings.modelSensitivity;
+        modified |= settingsComponent.getMaxParams() != settings.maxParams;
         return modified;
     }
 
@@ -82,6 +83,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.judgementModel = settingsComponent.getJudgementModel();
         settings.extractionType = settingsComponent.getExtractionType();
         settings.modelSensitivity = settingsComponent.getModelSensitivity();
+        settings.maxParams = settingsComponent.getMaxParams();
     }
 
     // Pull from saved state to preset dialog state upon opening
@@ -107,6 +109,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setJudgementModel(settings.judgementModel);
         settingsComponent.setExtractionType(settings.extractionType);
         settingsComponent.setModelSensitivity(settings.modelSensitivity);
+        settingsComponent.setMaxParams(settings.maxParams);
     }
 
     @Override
