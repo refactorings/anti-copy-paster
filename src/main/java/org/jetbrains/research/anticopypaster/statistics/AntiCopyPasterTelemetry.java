@@ -13,10 +13,16 @@ import com.intellij.notification.NotificationType;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.startup.ProjectActivity;
 
-import java.io.File;
+import java.io.*;
+import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.UUID;
+import java.util.zip.GZIPInputStream;
 
 import com.intellij.openapi.project.Project;
 import com.mongodb.MongoClientSettings;
@@ -29,6 +35,11 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.UpdateOptions;
 import kotlin.Unit;
 import kotlin.coroutines.Continuation;
+import org.apache.commons.compress.archivers.ArchiveException;
+import org.apache.commons.compress.archivers.ArchiveStreamFactory;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.utils.IOUtils;
 import org.bson.Document;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -42,37 +53,39 @@ import static org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsa
 
 public class AntiCopyPasterTelemetry implements ProjectActivity {
     private final NotificationGroup notificationGroup = NotificationGroupManager.getInstance().getNotificationGroup("Extract Method suggestion");
-
     private static String username;
     private static String password;
     private static final String REMOTE_HOST = "155.246.39.61";
     private static final String DATABASE_NAME = "anticopypaster";
     private static final String USER_STATISTICS_COLLECTION = "AntiCopyPaster_User_Statistics";
     private static final Logger LOGGER = LoggerFactory.getLogger(AntiCopyPasterTelemetry.class);
+    private static int lock = 1;
 
     @Nullable
     @Override
     public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
+        setLock(settings.useNameRec);
         if(settings.useNameRec == 0){
+            Thread predserver = new Thread(new predHolder());
+            predserver.start();
+            String pluginId = "org.jetbrains.research.anticopypaster";
+            String pluginPath = PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath().toString();
+            pluginPath = pluginPath.replace("\\", "/");
+            File modelpath = new File(pluginPath+"/code2vec/java14m_model/models/java14_model/dictionaries.bin");
             try {
-                Thread jpserver = new Thread(new ACPServer());
-                Thread predserver = new Thread(new predHolder());
-                jpserver.start();
-                predserver.start();
-                String pluginId = "org.jetbrains.research.anticopypaster";
-                String pluginPath = PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath().toString();
-                pluginPath = pluginPath.replace("\\", "/");
-                File modelpath = new File(pluginPath+"/code2vec/java14m_model/models/java14_model/dictionaries.bin");
                 if(!modelpath.exists()){
                     final Notification notificationStart = notificationGroup.createNotification("Installing pretrained Code2Vec model. This may take a few minutes.", NotificationType.INFORMATION);
                     notificationStart.notify(project);
-                    while(!modelpath.exists()){}
+                    downloadModel(pluginPath, project);
                     final Notification notificationEnd = notificationGroup.createNotification("Code2Vec model installed successfully.", NotificationType.INFORMATION);
                     notificationEnd.notify(project);
                 }
-            } catch (Exception e) {
-                throw e;
+                Thread jpserver = new Thread(new ACPServer());
+                jpserver.start();
+            } catch (RuntimeException e) {
+                final Notification notificationStart = notificationGroup.createNotification("Installation of the model failed.", NotificationType.INFORMATION);
+                notificationStart.notify(project);
             }
         }
         if (settings.statisticsUsername != null && !settings.statisticsUsername.isEmpty() && settings.statisticsPasswordIsSet) {
@@ -139,5 +152,50 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
         userId = UUID.randomUUID().toString();
         PropertiesComponent.getInstance().setValue("UniqueUserID", userId);
         return userId;
+    }
+    private static void downloadModel(String pluginPath, Project project) throws RuntimeException{
+        try {
+            URL website = new URL("https://s3.amazonaws.com/code2vec/model/java14m_model.tar.gz");
+            ReadableByteChannel rbc = Channels.newChannel(website.openStream());
+            FileOutputStream gzOutputStream = new FileOutputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
+            gzOutputStream.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
+            File inputFile = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
+            File outputFile = new File(pluginPath+"/code2vec/java14m_model", inputFile.getName().substring(0, inputFile.getName().lastIndexOf(".")));
+            GZIPInputStream in = new GZIPInputStream(new FileInputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz"));
+            FileOutputStream out = new FileOutputStream(outputFile);
+            IOUtils.copy(in, out);
+            in.close();
+            out.close();
+            gzOutputStream.close();
+            File inputFileTar = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar");
+            File outputDir = new File(pluginPath+"/code2vec/java14m_model");
+            final List<File> untaredFiles = new LinkedList<File>();
+            final InputStream tarStream = new FileInputStream(inputFileTar);
+            final TarArchiveInputStream unpackInputStream = (TarArchiveInputStream) new ArchiveStreamFactory().createArchiveInputStream("tar", tarStream);
+            TarArchiveEntry entry = null;
+            while ((entry = (TarArchiveEntry)unpackInputStream.getNextEntry()) != null) {
+                final File outputFileTar = new File(outputDir, entry.getName());
+                final OutputStream outputFileStream = new FileOutputStream(outputFileTar);
+                byte[] buffer = new byte[4096];
+                int bytesRead;
+                while ((bytesRead = unpackInputStream.read(buffer)) != -1) {
+                    outputFileStream.write(buffer, 0, bytesRead);
+                }
+                outputFileStream.close();
+                untaredFiles.add(outputFileTar);
+            }
+            unpackInputStream.close();
+            tarStream.close();
+            inputFileTar.delete();
+            inputFile.delete();
+        } catch (IOException|ArchiveException e) {
+            throw new RuntimeException(e);
+        }
+    }
+    public static int getLock() {
+        return lock;
+    }
+    public static void setLock(int value) {
+        lock = value;
     }
 }

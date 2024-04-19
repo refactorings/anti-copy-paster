@@ -20,6 +20,7 @@ import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Variable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterTelemetry;
 
 import java.awt.*;
 import java.io.*;
@@ -306,7 +307,7 @@ public class ExtractionTask {
      * @param methodName The name to give the method
      * @return The extracted method as text
      */
-    public List<String> generateName(Clone clone, String returnType, List<List<Integer>> normalizedLambdaArgs, String methodName, boolean extractToStatic) throws IOException {
+    public List<String> generateName(Clone clone, String returnType, List<List<Integer>> normalizedLambdaArgs, String methodName, boolean extractToStatic) {
         String code = buildMethodText(clone, returnType, normalizedLambdaArgs, methodName, extractToStatic);
         String[] args = {
                 "--max_path_length",
@@ -317,9 +318,9 @@ public class ExtractionTask {
                 code,
                 "--no_hash"
         };
-        ArrayList<ProgramFeatures> extracted = App.execute(args);
         List<String> extractedText = null;
         try{
+            ArrayList<ProgramFeatures> extracted = App.execute(args);
             Socket socket = new Socket("localhost", 8081);
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             PrintWriter out = new PrintWriter(socket.getOutputStream(),true);
@@ -444,22 +445,28 @@ public class ExtractionTask {
             }
 
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
+            String methodName;
             // Predictions
             List<String> pred = null;
-            try {
-                List<String> recs = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
-                if(recs != null) pred = recs;
-            } catch (Exception ignored) {
-                ignored.printStackTrace();
-            } finally {
-                if (pred == null) {
-                    pred = new ArrayList<>();
-                    pred.add("extractedMethod");
+            if(AntiCopyPasterTelemetry.getLock() == 0) {
+                try {
+                    List<String> recs = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
+                    if (recs != null) pred = recs;
+                } catch (Exception ignored) {
+                    ignored.printStackTrace();
+                } finally {
+                    if (pred == null) {
+                        pred = new ArrayList<>();
+                        pred.add("extractedMethod");
+                    }
                 }
-            }
-            String methodName = getNewMethodName(containingClass, pred.get(0));
-            if(ProjectSettingsState.getInstance(project).useNameRec == 0){
+                methodName = getNewMethodName(containingClass, pred.get(0));
                 passPreds(pred);
+            }
+            else{
+                pred = new ArrayList<>();
+                pred.add("extractedMethod");
+                methodName = getNewMethodName(containingClass, pred.get(0));
             }
 
             PsiMethod extractedMethodElement = factory.createMethodFromText(

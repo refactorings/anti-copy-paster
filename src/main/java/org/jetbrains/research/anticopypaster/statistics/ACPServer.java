@@ -2,11 +2,6 @@
 package org.jetbrains.research.anticopypaster.statistics;
 import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.openapi.extensions.PluginId;
-import org.apache.commons.compress.archivers.ArchiveException;
-import org.apache.commons.compress.archivers.ArchiveStreamFactory;
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
-import org.apache.commons.compress.utils.IOUtils;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.App;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.FeaturesEntities.ProgramFeatures;
@@ -14,13 +9,7 @@ import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtracto
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.URL;
-import java.nio.channels.Channels;
-import java.nio.channels.ReadableByteChannel;
 import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.zip.GZIPInputStream;
 
 
 public class ACPServer implements Runnable{
@@ -32,10 +21,6 @@ public class ACPServer implements Runnable{
             String pluginId = "org.jetbrains.research.anticopypaster";
             String pluginPath = PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath().toString();
             pluginPath = pluginPath.replace("\\", "/");
-            File modelpath = new File(pluginPath+"/code2vec/java14m_model/models/java14_model/dictionaries.bin");
-            if(!modelpath.exists()){
-                downloadModel(pluginPath);
-            }
             if (pythonPath != null && !pythonPath.isEmpty()) {
                 ServerSocket server = new ServerSocket(8081);
                 ProcessBuilder builder = new ProcessBuilder();
@@ -80,8 +65,8 @@ public class ACPServer implements Runnable{
                     out_jv.println(msg);
                 }
             }
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -132,49 +117,8 @@ public class ACPServer implements Runnable{
                     break;
                 }
             }
+            String[] versions = {".8", ".9", ".10", ".11", ".12"};
         }
         return pythonPath;
-    }
-
-    private static void downloadModel(String pluginPath){
-        try {
-            URL website = new URL("https://s3.amazonaws.com/code2vec/model/java14m_model.tar.gz");
-            ReadableByteChannel rbc = Channels.newChannel(website.openStream());
-            FileOutputStream gzOutputStream = new FileOutputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
-            gzOutputStream.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
-            File inputFile = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
-            File outputFile = new File(pluginPath+"/code2vec/java14m_model", inputFile.getName().substring(0, inputFile.getName().lastIndexOf(".")));
-            GZIPInputStream in = new GZIPInputStream(new FileInputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz"));
-            FileOutputStream out = new FileOutputStream(outputFile);
-            IOUtils.copy(in, out);
-            in.close();
-            out.close();
-            gzOutputStream.close();
-            File inputFileTar = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar");
-            File outputDir = new File(pluginPath+"/code2vec/java14m_model");
-            final List<File> untaredFiles = new LinkedList<File>();
-            final InputStream tarStream = new FileInputStream(inputFileTar);
-            final TarArchiveInputStream unpackInputStream = (TarArchiveInputStream) new ArchiveStreamFactory().createArchiveInputStream("tar", tarStream);
-            TarArchiveEntry entry = null;
-            while ((entry = (TarArchiveEntry)unpackInputStream.getNextEntry()) != null) {
-                final File outputFileTar = new File(outputDir, entry.getName());
-                final OutputStream outputFileStream = new FileOutputStream(outputFileTar);
-                byte[] buffer = new byte[4096];
-                int bytesRead;
-                while ((bytesRead = unpackInputStream.read(buffer)) != -1) {
-                    outputFileStream.write(buffer, 0, bytesRead);
-                }
-                outputFileStream.close();
-                untaredFiles.add(outputFileTar);
-            }
-            unpackInputStream.close();
-            tarStream.close();
-            inputFileTar.delete();
-            inputFile.delete();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        } catch (ArchiveException e) {
-            throw new RuntimeException(e);
-        }
     }
 }
