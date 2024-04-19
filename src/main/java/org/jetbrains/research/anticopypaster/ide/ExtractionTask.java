@@ -50,7 +50,7 @@ public class ExtractionTask {
      * @param normalizedLambdaArgs The set union combined lambda args across all clones
      * @param sb The StringBuilder to append to
      */
-    private void buildMethodBody(PsiElement current, PsiElement last, List<PsiElement> extractedParameters, List<List<Variable>> normalizedLambdaArgs, List<PsiTypeElement> typeParams, StringBuilder sb) {
+    private void buildMethodBody(PsiElement current, PsiElement last, List<PsiElement> extractedParameters, List<List<Integer>> normalizedLambdaArgs, List<Variable> aliasMap, List<PsiTypeElement> typeParams, StringBuilder sb) {
         // Iterates through all siblings at this level
         while (current != null) {
             int idx = extractedParameters.indexOf(current);
@@ -67,12 +67,12 @@ public class ExtractionTask {
                     sb.append(current.getText());
                 } else {
                     // The current element has children, descend
-                    buildMethodBody(firstChild, last, extractedParameters, normalizedLambdaArgs, typeParams, sb);
+                    buildMethodBody(firstChild, last, extractedParameters, normalizedLambdaArgs, aliasMap, typeParams, sb);
                 }
             } else {
                 sb.append("p");
                 sb.append(idx + 1);
-                List<String> idents = normalizedLambdaArgs.get(idx).stream().map(Variable::identifier).toList();
+                List<String> idents = normalizedLambdaArgs.get(idx).stream().map((j) -> aliasMap.get(j).identifier()).toList();
                 if (idents.size() > 0) {
                     sb.append(".apply(");
                     sb.append(String.join(", ", idents));
@@ -92,7 +92,7 @@ public class ExtractionTask {
      * @param methodName The name to give the method
      * @return The extracted method as text
      */
-    private String buildMethodText(Clone clone, String returnType, List<List<Variable>> normalizedLambdaArgs, String methodName, boolean extractToStatic) {
+    private String buildMethodText(Clone clone, String returnType, List<List<Integer>> normalizedLambdaArgs, String methodName, boolean extractToStatic) {
         // Method signature
         StringBuilder sb = new StringBuilder("private ");
         if (extractToStatic) sb.append("static ");
@@ -113,7 +113,7 @@ public class ExtractionTask {
         // Build parameter list
         for (int i = 0; i < clone.parameters().size(); i++) {
             String type = clone.parameters().get(i).type();
-            List<Variable> parameterArgs = normalizedLambdaArgs.get(i);
+            List<Variable> parameterArgs = normalizedLambdaArgs.get(i).stream().map((j) -> clone.aliasMap().get(j)).toList();
             if (parameterArgs.isEmpty()) { // Not a lambda argument
                 sb.append(type);
             } else if (parameterArgs.size() == 1) { // Lambda arg, 1 param
@@ -133,7 +133,7 @@ public class ExtractionTask {
             }
             sb.append(" p");
             sb.append(i + 1);
-            if (i != clone.parameters().size() - 1 || !clone.liveOutVars().isEmpty())
+            if (i != clone.parameters().size() - 1 || !clone.liveInVars().isEmpty())
                 sb.append(", ");
         }
         List<PsiVariable> liveInVars = clone.liveInVars().stream().toList();
@@ -152,6 +152,7 @@ public class ExtractionTask {
                 clone.end(),
                 clone.parameters().stream().map(Parameter::extractedValue).toList(),
                 normalizedLambdaArgs,
+                clone.aliasMap(),
                 clone.typeParams(),
                 sb
         );
@@ -164,11 +165,13 @@ public class ExtractionTask {
         return sb.toString();
     }
 
-    private void generateMethodCall(Clone clone, PsiElementFactory factory, List<List<Variable>> lambdaArgs, String methodName) {
+    private void generateMethodCall(Clone clone, PsiElementFactory factory, List<List<Integer>> normalizedLambdaArgs, String methodName) {
         PsiElement start = clone.start();
         PsiElement end = clone.end();
         PsiElement parent = start.getParent();
         StringBuilder sb = new StringBuilder();
+
+
 
         if (!clone.liveOutVars().isEmpty()) {
             Variable liveOutVar = clone.liveOutVars().get(0);
@@ -197,15 +200,15 @@ public class ExtractionTask {
         sb.append("(");
         for (int i = 0; i < clone.parameters().size(); i++) {
             Parameter p = clone.parameters().get(i);
-            if (p.lambdaArgs().isEmpty()) { // Not a lambda argument
+            if (normalizedLambdaArgs.get(i).isEmpty()) { // Not a lambda argument
                 sb.append(p.extractedValue().getText());
-            } else if (p.lambdaArgs().size() == 1) { // Lambda arg, 1 param
-                sb.append(lambdaArgs.get(i).get(0).identifier());
+            } else if (normalizedLambdaArgs.get(i).size() == 1) { // Lambda arg, 1 param
+                sb.append(clone.aliasMap().get(normalizedLambdaArgs.get(i).get(0)).identifier());
                 sb.append(" -> ");
                 sb.append(p.extractedValue().getText());
-            } else if (p.lambdaArgs().size() == 2) { // Lambda arg, 2 params
+            } else if (normalizedLambdaArgs.get(i).size() == 2) { // Lambda arg, 2 params
                 sb.append("(");
-                sb.append(String.join(", ", lambdaArgs.get(i).stream().map(Variable::identifier).toArray(String[]::new)));
+                sb.append(String.join(", ", normalizedLambdaArgs.get(i).stream().map((j) -> clone.aliasMap().get(j).identifier()).toArray(String[]::new)));
                 sb.append(") -> ");
                 sb.append(p.extractedValue().getText());
             }
@@ -303,7 +306,7 @@ public class ExtractionTask {
      * @param methodName The name to give the method
      * @return The extracted method as text
      */
-    public List<String> generateName(Clone clone, String returnType, List<List<Variable>> normalizedLambdaArgs, String methodName, boolean extractToStatic) throws IOException {
+    public List<String> generateName(Clone clone, String returnType, List<List<Integer>> normalizedLambdaArgs, String methodName, boolean extractToStatic) throws IOException {
         String code = buildMethodText(clone, returnType, normalizedLambdaArgs, methodName, extractToStatic);
         String[] args = {
                 "--max_path_length",
@@ -420,12 +423,11 @@ public class ExtractionTask {
             for (Clone clone : results)
                 for (int i = 0; i < clone.parameters().size(); i++)
                     combinedLambdaArgs.get(i).addAll(clone.parameters().get(i).lambdaArgs());
-            List<Variable> referenceMap = results.get(0).aliasMap();
-            List<List<Variable>> normalizedLambdaArgs = new ArrayList<>();
+            List<List<Integer>> normalizedLambdaArgs = new ArrayList<>();
             for (Set<Integer> lambdaArgs : combinedLambdaArgs) {
                 // Type limitations without extension
                 if (lambdaArgs.size() > 2) return;
-                normalizedLambdaArgs.add(lambdaArgs.stream().map(referenceMap::get).toList());
+                normalizedLambdaArgs.add(lambdaArgs.stream().toList());
             }
 
             // Generate method return type
