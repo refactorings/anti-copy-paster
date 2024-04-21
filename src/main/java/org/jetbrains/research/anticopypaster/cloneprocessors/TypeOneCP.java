@@ -49,8 +49,8 @@ public class TypeOneCP implements CloneProcessor {
             if (!exactMatch(fragCurrent, dupeCurrent, ma, mb))
                 return null;
             if (fragCurrent == last) break;
-            fragCurrent = fragCurrent.getNextSibling();
-            dupeCurrent = dupeCurrent.getNextSibling();
+            fragCurrent = CloneProcessor.nextNonWSOrCommentSibling(fragCurrent);
+            dupeCurrent = CloneProcessor.nextNonWSOrCommentSibling(dupeCurrent);
         }
         return dupeCurrent;
     }

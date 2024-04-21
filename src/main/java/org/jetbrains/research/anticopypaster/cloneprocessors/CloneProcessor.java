@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.cloneprocessors;
 
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 
@@ -134,6 +135,18 @@ public interface CloneProcessor {
                     var.identifier().equals(name)
                 ).findFirst().get()
         ).toList());
+    }
+
+    /**
+     * Finds the next non-whitespace nor comment sibling of the given element.
+     * @param current The element to start from.
+     * @return A non-whitespace nor comment element, or null.
+     */
+    static @Nullable PsiElement nextNonWSOrCommentSibling(PsiElement current) {
+        PsiElement next = current.getNextSibling();
+        while (next instanceof PsiComment || next instanceof  PsiWhiteSpace)
+            next = next.getNextSibling();
+        return next;
     }
 
     List<Clone> getClonesOfType(PsiFile file, PsiStatement start, PsiStatement end);
