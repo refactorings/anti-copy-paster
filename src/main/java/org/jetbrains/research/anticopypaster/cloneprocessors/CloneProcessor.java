@@ -62,6 +62,7 @@ public interface CloneProcessor {
             processStatementDecls(stmt, childrenState);
         } else if (anElement instanceof PsiForeachStatement forEachStmt) {
             PsiParameter param = forEachStmt.getIterationParameter();
+            childrenState.aliasMap().add(new Variable(param.getName(), param.getType().getPresentableText()));
             childrenState.scope().add(new Variable(param.getName(), param.getType().getPresentableText()));
         } else if (anElement instanceof PsiForStatement forStmt) {
             PsiStatement stmt = forStmt.getInitialization();

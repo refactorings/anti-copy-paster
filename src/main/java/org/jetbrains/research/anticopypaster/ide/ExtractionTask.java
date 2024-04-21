@@ -56,8 +56,6 @@ public class ExtractionTask {
         while (current != null) {
             int idx = extractedParameters.indexOf(current);
             int idx2 = typeParams.indexOf(current);
-            System.out.println(current);
-            System.out.println(idx2);
             if (idx2 != -1) {
                 sb.append("T");
                 sb.append(idx2 + 1);
