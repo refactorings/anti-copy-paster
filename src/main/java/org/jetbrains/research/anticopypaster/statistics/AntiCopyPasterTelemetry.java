@@ -64,16 +64,14 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
     private static final String DATABASE_NAME = "anticopypaster";
     private static final String USER_STATISTICS_COLLECTION = "AntiCopyPaster_User_Statistics";
     private static final Logger LOGGER = LoggerFactory.getLogger(AntiCopyPasterTelemetry.class);
-    private static int lock = 1;
 
     @Nullable
     @Override
     public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
-        setLock(settings.useNameRec);
+        Thread predserver = new Thread(new predHolder());
+        predserver.start();
         if(settings.useNameRec == 0){
-            Thread predserver = new Thread(new predHolder());
-            predserver.start();
             String pluginId = "org.jetbrains.research.anticopypaster";
             String pluginPath = PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath().toString();
             pluginPath = pluginPath.replace("\\", "/");
@@ -261,10 +259,4 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
 //            throw new RuntimeException(e);
 //        }
 //    }
-    public static int getLock() {
-        return lock;
-    }
-    public static void setLock(int value) {
-        lock = value;
-    }
 }

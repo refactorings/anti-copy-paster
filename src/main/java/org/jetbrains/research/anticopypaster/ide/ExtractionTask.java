@@ -321,9 +321,22 @@ public class ExtractionTask {
             ArrayList<ProgramFeatures> extracted = App.execute(args);
             Socket socket = new Socket("localhost", 8081);
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            PrintWriter out = new PrintWriter(socket.getOutputStream(),true);
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
             out.println(extracted);
-            String predictions = in.readLine();
+            StringBuilder predictionsBuilder = new StringBuilder();
+            char[] buffer = new char[8];
+            int bytesRead;
+            String curr;
+            socket.setSoTimeout(200);
+            while ((bytesRead = in.read(buffer)) != -1) {
+                predictionsBuilder.append(buffer, 0, bytesRead);
+                curr = predictionsBuilder.toString();
+                if(curr.charAt(curr.length()-1)  == '\n'){
+                    break;
+                }
+            }
+            
+            String predictions = predictionsBuilder.toString();
             socket.close();
             extractedText = extractEncasedText(predictions, ProjectSettingsState.getInstance(project).numOfPreds);
         }catch(Exception ignored){
@@ -446,7 +459,7 @@ public class ExtractionTask {
             String methodName;
             // Predictions
             List<String> pred = null;
-            if(AntiCopyPasterTelemetry.getLock() == 0) {
+            if(ProjectSettingsState.getInstance(project).useNameRec == 0) {
                 try {
                     List<String> recs = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
                     if (recs != null) pred = recs;
@@ -459,13 +472,13 @@ public class ExtractionTask {
                     }
                 }
                 methodName = getNewMethodName(containingClass, pred.get(0));
-                passPreds(pred);
             }
             else{
                 pred = new ArrayList<>();
                 pred.add("extractedMethod");
                 methodName = getNewMethodName(containingClass, pred.get(0));
             }
+            passPreds(pred);
 
             PsiMethod extractedMethodElement = factory.createMethodFromText(
                     buildMethodText(
