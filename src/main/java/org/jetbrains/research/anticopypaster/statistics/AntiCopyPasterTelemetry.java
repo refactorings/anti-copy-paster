@@ -11,6 +11,8 @@ import com.intellij.notification.NotificationGroup;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.extensions.PluginId;
+import com.intellij.openapi.progress.*;
+import com.intellij.openapi.progress.impl.BackgroundableProcessIndicator;
 import com.intellij.openapi.startup.ProjectActivity;
 
 import java.io.*;
@@ -25,6 +27,7 @@ import java.util.UUID;
 import java.util.zip.GZIPInputStream;
 
 import com.intellij.openapi.project.Project;
+import com.intellij.util.progress.ProgressVisibilityManager;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoException;
 import com.mongodb.client.MongoClients;
@@ -47,6 +50,8 @@ import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.ide.predHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.swing.*;
 
 import static com.intellij.remoteServer.util.CloudConfigurationUtil.createCredentialAttributes;
 import static org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics.TRANSMISSION_INTERVAL;
@@ -75,11 +80,74 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
             File modelpath = new File(pluginPath+"/code2vec/java14m_model/models/java14_model/dictionaries.bin");
             try {
                 if(!modelpath.exists()){
-                    final Notification notificationStart = notificationGroup.createNotification("Installing pretrained Code2Vec model. This may take a few minutes.", NotificationType.INFORMATION);
-                    notificationStart.notify(project);
-                    downloadModel(pluginPath, project);
-                    final Notification notificationEnd = notificationGroup.createNotification("Code2Vec model installed successfully.", NotificationType.INFORMATION);
-                    notificationEnd.notify(project);
+                    String finalPluginPath = pluginPath;
+                    Task.Backgroundable task = new Task.Backgroundable(project, "Installing Code2Vec Model", false) {
+                        @Override
+                        public void run(@NotNull ProgressIndicator indicator) {
+                            indicator.setIndeterminate(false);
+                            indicator.setFraction(0.1);
+                            try {
+                                indicator.setText2("Opening AWS channel...");
+                                URL website = new URL("https://s3.amazonaws.com/code2vec/model/java14m_model.tar.gz");
+                                indicator.setFraction(0.2);
+                                ReadableByteChannel rbc = Channels.newChannel(website.openStream());
+                                indicator.setFraction(0.3);
+                                indicator.setText2("Creating output stream...");
+                                FileOutputStream gzOutputStream = new FileOutputStream(finalPluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
+                                indicator.setFraction(0.35);
+                                indicator.setText2("Transferring zipped files (this may take a while)...");
+                                gzOutputStream.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
+                                indicator.setFraction(0.5);
+                                indicator.setText2("Transfer completed");
+                                File inputFile = new File(finalPluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
+                                indicator.setFraction(0.55);
+                                File outputFile = new File(finalPluginPath+"/code2vec/java14m_model", inputFile.getName().substring(0, inputFile.getName().lastIndexOf(".")));
+                                indicator.setFraction(0.6);
+                                indicator.setText2("Creating GZip I/O streams...");
+                                GZIPInputStream in = new GZIPInputStream(new FileInputStream(finalPluginPath+"/code2vec/java14m_model/java14m_model.tar.gz"));
+                                FileOutputStream out = new FileOutputStream(outputFile);
+                                indicator.setFraction(0.7);
+                                indicator.setText2("Copying...");
+                                IOUtils.copy(in, out);
+                                in.close();
+                                out.close();
+                                gzOutputStream.close();
+                                indicator.setFraction(0.8);
+                                indicator.setText2("Files unzipped");
+                                File inputFileTar = new File(finalPluginPath+"/code2vec/java14m_model/java14m_model.tar");
+                                File outputDir = new File(finalPluginPath+"/code2vec/java14m_model");
+                                final List<File> untaredFiles = new LinkedList<File>();
+                                final InputStream tarStream = new FileInputStream(inputFileTar);
+                                indicator.setFraction(0.85);
+                                final TarArchiveInputStream unpackInputStream = (TarArchiveInputStream) new ArchiveStreamFactory().createArchiveInputStream("tar", tarStream);
+                                TarArchiveEntry entry = null;
+                                indicator.setFraction(0.9);
+                                indicator.setText2("Untarring files...");
+                                while ((entry = (TarArchiveEntry)unpackInputStream.getNextEntry()) != null) {
+                                    final File outputFileTar = new File(outputDir, entry.getName());
+                                    final OutputStream outputFileStream = new FileOutputStream(outputFileTar);
+                                    byte[] buffer = new byte[4096];
+                                    int bytesRead;
+                                    while ((bytesRead = unpackInputStream.read(buffer)) != -1) {
+                                        outputFileStream.write(buffer, 0, bytesRead);
+                                    }
+                                    outputFileStream.close();
+                                    untaredFiles.add(outputFileTar);
+                                }
+                                indicator.setFraction(0.95);
+                                indicator.setText2("Files untarred");
+                                unpackInputStream.close();
+                                tarStream.close();
+                                inputFileTar.delete();
+                                inputFile.delete();
+                            } catch (IOException|ArchiveException e) {
+                                throw new RuntimeException(e);
+                            }
+                            indicator.setFraction(1.0);
+                            indicator.setText2("Installation completed!");
+                        }
+                    };
+                    ProgressManager.getInstance().runProcessWithProgressAsynchronously(task, new BackgroundableProcessIndicator(task));
                 }
                 Thread jpserver = new Thread(new ACPServer());
                 jpserver.start();
@@ -153,45 +221,46 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
         PropertiesComponent.getInstance().setValue("UniqueUserID", userId);
         return userId;
     }
-    private static void downloadModel(String pluginPath, Project project) throws RuntimeException{
-        try {
-            URL website = new URL("https://s3.amazonaws.com/code2vec/model/java14m_model.tar.gz");
-            ReadableByteChannel rbc = Channels.newChannel(website.openStream());
-            FileOutputStream gzOutputStream = new FileOutputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
-            gzOutputStream.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
-            File inputFile = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
-            File outputFile = new File(pluginPath+"/code2vec/java14m_model", inputFile.getName().substring(0, inputFile.getName().lastIndexOf(".")));
-            GZIPInputStream in = new GZIPInputStream(new FileInputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz"));
-            FileOutputStream out = new FileOutputStream(outputFile);
-            IOUtils.copy(in, out);
-            in.close();
-            out.close();
-            gzOutputStream.close();
-            File inputFileTar = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar");
-            File outputDir = new File(pluginPath+"/code2vec/java14m_model");
-            final List<File> untaredFiles = new LinkedList<File>();
-            final InputStream tarStream = new FileInputStream(inputFileTar);
-            final TarArchiveInputStream unpackInputStream = (TarArchiveInputStream) new ArchiveStreamFactory().createArchiveInputStream("tar", tarStream);
-            TarArchiveEntry entry = null;
-            while ((entry = (TarArchiveEntry)unpackInputStream.getNextEntry()) != null) {
-                final File outputFileTar = new File(outputDir, entry.getName());
-                final OutputStream outputFileStream = new FileOutputStream(outputFileTar);
-                byte[] buffer = new byte[4096];
-                int bytesRead;
-                while ((bytesRead = unpackInputStream.read(buffer)) != -1) {
-                    outputFileStream.write(buffer, 0, bytesRead);
-                }
-                outputFileStream.close();
-                untaredFiles.add(outputFileTar);
-            }
-            unpackInputStream.close();
-            tarStream.close();
-            inputFileTar.delete();
-            inputFile.delete();
-        } catch (IOException|ArchiveException e) {
-            throw new RuntimeException(e);
-        }
-    }
+
+//    private static void downloadModel(String pluginPath, Project project) throws RuntimeException{
+//        try {
+//            URL website = new URL("https://s3.amazonaws.com/code2vec/model/java14m_model.tar.gz");
+//            ReadableByteChannel rbc = Channels.newChannel(website.openStream());
+//            FileOutputStream gzOutputStream = new FileOutputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
+//            gzOutputStream.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
+//            File inputFile = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz");
+//            File outputFile = new File(pluginPath+"/code2vec/java14m_model", inputFile.getName().substring(0, inputFile.getName().lastIndexOf(".")));
+//            GZIPInputStream in = new GZIPInputStream(new FileInputStream(pluginPath+"/code2vec/java14m_model/java14m_model.tar.gz"));
+//            FileOutputStream out = new FileOutputStream(outputFile);
+//            IOUtils.copy(in, out);
+//            in.close();
+//            out.close();
+//            gzOutputStream.close();
+//            File inputFileTar = new File(pluginPath+"/code2vec/java14m_model/java14m_model.tar");
+//            File outputDir = new File(pluginPath+"/code2vec/java14m_model");
+//            final List<File> untaredFiles = new LinkedList<File>();
+//            final InputStream tarStream = new FileInputStream(inputFileTar);
+//            final TarArchiveInputStream unpackInputStream = (TarArchiveInputStream) new ArchiveStreamFactory().createArchiveInputStream("tar", tarStream);
+//            TarArchiveEntry entry = null;
+//            while ((entry = (TarArchiveEntry)unpackInputStream.getNextEntry()) != null) {
+//                final File outputFileTar = new File(outputDir, entry.getName());
+//                final OutputStream outputFileStream = new FileOutputStream(outputFileTar);
+//                byte[] buffer = new byte[4096];
+//                int bytesRead;
+//                while ((bytesRead = unpackInputStream.read(buffer)) != -1) {
+//                    outputFileStream.write(buffer, 0, bytesRead);
+//                }
+//                outputFileStream.close();
+//                untaredFiles.add(outputFileTar);
+//            }
+//            unpackInputStream.close();
+//            tarStream.close();
+//            inputFileTar.delete();
+//            inputFile.delete();
+//        } catch (IOException|ArchiveException e) {
+//            throw new RuntimeException(e);
+//        }
+//    }
     public static int getLock() {
         return lock;
     }
