@@ -143,12 +143,16 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
                             }
                             indicator.setFraction(1.0);
                             indicator.setText2("Installation completed!");
+                            Thread jpserver = new Thread(new ACPServer());
+                            jpserver.start();
                         }
                     };
                     ProgressManager.getInstance().runProcessWithProgressAsynchronously(task, new BackgroundableProcessIndicator(task));
                 }
-                Thread jpserver = new Thread(new ACPServer());
-                jpserver.start();
+                else{
+                    Thread jpserver = new Thread(new ACPServer());
+                    jpserver.start();
+                }
             } catch (RuntimeException e) {
                 final Notification notificationStart = notificationGroup.createNotification("Installation of the model failed.", NotificationType.INFORMATION);
                 notificationStart.notify(project);
