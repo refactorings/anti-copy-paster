@@ -28,6 +28,7 @@ import java.net.Socket;
 
 import java.util.*;
 import java.util.List;
+import java.util.regex.Pattern;
 
 public class ExtractionTask {
     public Project project;
@@ -164,13 +165,16 @@ public class ExtractionTask {
         return sb.toString();
     }
 
+    public String renameInExpression(String identifier, String expression) {
+        return expression.replaceAll("(?<![a-zA-Z0-9_$])" + identifier + "(?![a-zA-Z0-9_$])", identifier + "Arg");
+    }
+
     private void generateMethodCall(Clone clone, PsiElementFactory factory, List<List<Integer>> normalizedLambdaArgs, String methodName) {
         PsiElement start = clone.start();
         PsiElement end = clone.end();
         PsiElement parent = start.getParent();
         StringBuilder sb = new StringBuilder();
-
-
+        String resultVarName = null;
 
         if (!clone.liveOutVars().isEmpty()) {
             Variable liveOutVar = clone.liveOutVars().get(0);
@@ -178,21 +182,23 @@ public class ExtractionTask {
             boolean isObjectType = liveOutType.equals(CloneProcessor.boxedType(liveOutType));
 
             if (clone
-                    .parameters()
+                    .liveInVars()
                     .stream()
-                    .map(p -> p.extractedValue().getText())
-                    .noneMatch(s -> s.equals(liveOutVar.identifier()))){
+                    .map(PsiVariable::getName)
+                    .noneMatch(s -> s != null && s.equals(liveOutVar.identifier()))){
                 // if the live-out var is not also live-in
                 // we must set the result of the extracted code to a new variable
                 sb.append(liveOutType);
                 sb.append(" ");
                 sb.append(liveOutVar.identifier());
                 sb.append(" = ");
+                resultVarName = liveOutVar.identifier();
             } else if (!isObjectType) {
                 // otherwise if the live-out var is live-in AND a primitive (since primitives are pass by value)
                 // we just re-assign it to the value of the extracted code
                 sb.append(liveOutVar.identifier());
                 sb.append(" = ");
+                resultVarName = liveOutVar.identifier();
             }
         }
         sb.append(methodName);
@@ -202,14 +208,33 @@ public class ExtractionTask {
             if (normalizedLambdaArgs.get(i).isEmpty()) { // Not a lambda argument
                 sb.append(p.extractedValue().getText());
             } else if (normalizedLambdaArgs.get(i).size() == 1) { // Lambda arg, 1 param
-                sb.append(clone.aliasMap().get(normalizedLambdaArgs.get(i).get(0)).identifier());
+                String identifier = clone.aliasMap().get(normalizedLambdaArgs.get(i).get(0)).identifier();
+                String expression = p.extractedValue().getText();
+                sb.append(identifier);
+                if (identifier.equals(resultVarName)) {
+                    sb.append("Arg");
+                    expression = renameInExpression(identifier, expression);
+                }
                 sb.append(" -> ");
-                sb.append(p.extractedValue().getText());
+                sb.append(expression);
             } else if (normalizedLambdaArgs.get(i).size() == 2) { // Lambda arg, 2 params
+                String identifier1 = clone.aliasMap().get(normalizedLambdaArgs.get(i).get(0)).identifier();
+                String identifier2 = clone.aliasMap().get(normalizedLambdaArgs.get(i).get(1)).identifier();
+                String expression = p.extractedValue().getText();
                 sb.append("(");
-                sb.append(String.join(", ", normalizedLambdaArgs.get(i).stream().map((j) -> clone.aliasMap().get(j).identifier()).toArray(String[]::new)));
+                sb.append(identifier1);
+                if (identifier1.equals(resultVarName)) {
+                    sb.append("Arg");
+                    expression = renameInExpression(identifier1, expression);
+                }
+                sb.append(", ");
+                sb.append(identifier2);
+                if (identifier2.equals(resultVarName)) {
+                    sb.append("Arg");
+                    expression = renameInExpression(identifier2, expression);
+                }
                 sb.append(") -> ");
-                sb.append(p.extractedValue().getText());
+                sb.append(expression);
             }
             if (i != clone.parameters().size() - 1 || !clone.liveInVars().isEmpty())
                 sb.append(", ");
