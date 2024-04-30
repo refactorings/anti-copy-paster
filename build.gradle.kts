@@ -5,7 +5,11 @@ plugins {
 }
 
 group = "org.jetbrains.research.anticopypaster"
+<<<<<<< Updated upstream
 version = "2022.3-1.0"
+=======
+version = "2024.1-1.0"
+>>>>>>> Stashed changes
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
