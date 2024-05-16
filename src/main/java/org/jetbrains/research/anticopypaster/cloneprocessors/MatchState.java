@@ -33,18 +33,13 @@ public final class MatchState {
         return new MatchState(newStack, liveIn, parameters, aliasMap, typeParams, extractable);
     }
 
-    public void addParameter(PsiElement extractedValue, String type, Set<Integer> lambdaArgs, boolean liveIn) {
-        if (liveIn) {
-            if (((PsiReferenceExpression) extractedValue).resolve() instanceof PsiVariable variable) {
-                this.liveIn.add(variable);
-            }
-        } else {
-            parameters.add(new Parameter(
-                    extractedValue,
-                    type,
-                    lambdaArgs
-            ));
-        }
+    public void addParameter(PsiElement extractedValue, String type, Set<Integer> lambdaArgs, Set<PsiVariable> liveInDeps) {
+        parameters.add(new Parameter(
+                extractedValue,
+                type,
+                lambdaArgs,
+                liveInDeps
+        ));
     }
 
     /**

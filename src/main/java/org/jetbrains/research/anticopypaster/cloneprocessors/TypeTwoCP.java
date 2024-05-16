@@ -24,6 +24,24 @@ public class TypeTwoCP implements CloneProcessor {
         }
         return dupeCurrent;
     }
+
+    /**
+     * Resolves a reference to a variable, or returns null if the reference is not a variable.
+     * @param refExp The reference to resolve.
+     * @return The PsiVariable referenced, or null if not a variable.
+     */
+    static PsiVariable variableFromRefExp(PsiReferenceExpression refExp) {
+        return refExp.resolve() instanceof PsiVariable psiVar ? psiVar : null;
+    }
+
+    /**
+     * Resolves an identifier to a variable, or returns null if the identifier is not a variable.
+     * @param ident The identifier to resolve.
+     * @return The PsiVariable identified, or null if not a variable.
+     */
+    static PsiVariable variableFromIdent(PsiIdentifier ident) {
+        return ident.getParent() instanceof PsiReferenceExpression refExp ? variableFromRefExp(refExp) : null;
+    }
     
     /**
      * Determines if the provided element can be extracted as a parameter.
@@ -34,16 +52,22 @@ public class TypeTwoCP implements CloneProcessor {
     static ParamCheckResult canBeParam(PsiElement e, MatchState ms) {
         if (e instanceof PsiPolyadicExpression polyE && polyE.getType() != null) {
             Collection<PsiIdentifier> idents = PsiTreeUtil.findChildrenOfType(polyE, PsiIdentifier.class);
+            // All variables are liveIn, no lambda needed just embed the expression in the call
+            if (idents.stream().map(ms::getAliasID).allMatch(id -> id == -1)) {
+                Set<PsiVariable> liveInDeps = idents.stream().map(TypeTwoCP::variableFromIdent).collect(Collectors.toSet());
+                for (PsiVariable var : liveInDeps)
+                    if (var == null) return ParamCheckResult.FAILURE;
+                return ParamCheckResult.liveIn(polyE.getType().getPresentableText(), liveInDeps);
+            }
+            // Mixed bag of variables, can't extract b/c of Java lambda limitations
             if (idents.stream().map(ms::getAliasID).anyMatch(id -> id == -1))
                 return ParamCheckResult.FAILURE;
-            return new ParamCheckResult(
-                    true,
+            return ParamCheckResult.asLambda(
                     polyE.getType().getPresentableText(),
-                    idents.stream().map(ms::getAliasID).collect(Collectors.toSet()),
-                    false
+                    idents.stream().map(ms::getAliasID).collect(Collectors.toSet())
             );
         } else if (e instanceof PsiLiteralExpression litExp && litExp.getType() != null) {
-            return new ParamCheckResult(litExp.getType().getPresentableText(), false);
+            return new ParamCheckResult(litExp.getType().getPresentableText());
         } else if (e instanceof PsiReferenceExpression refExp && !refExp.isQualified()
                 && refExp.getType() != null) {
             // Prevents extracting LHS of statements & method calls
@@ -51,10 +75,19 @@ public class TypeTwoCP implements CloneProcessor {
                     && (refExp.getParent().getParent() instanceof PsiExpressionStatement
                     && refExp.getStartOffsetInParent() == 0)
                     || refExp.getParent() instanceof PsiCallExpression) return ParamCheckResult.FAILURE;
-            HashSet<Integer> lambdaArgs = new HashSet<>();
+            String paramType = refExp.getType().getPresentableText();
             int aliasID = ms.getAliasID(refExp.getReferenceName());
-            if (aliasID >= 0) lambdaArgs.add(aliasID);
-            return new ParamCheckResult(refExp.getType().getPresentableText(), lambdaArgs, aliasID == -1);
+            if (aliasID >= 0) {
+                HashSet<Integer> lambdaArgs = new HashSet<>();
+                lambdaArgs.add(aliasID);
+                return ParamCheckResult.asLambda(paramType, lambdaArgs);
+            } else {
+                PsiVariable asVar = variableFromRefExp(refExp);
+                if (asVar == null) return ParamCheckResult.FAILURE;
+                HashSet<PsiVariable> liveInDeps = new HashSet<>();
+                liveInDeps.add(asVar);
+                return ParamCheckResult.liveIn(paramType, liveInDeps);
+            }
         }
 
         return ParamCheckResult.FAILURE;
@@ -74,9 +107,10 @@ public class TypeTwoCP implements CloneProcessor {
         // Build parameter stack
         ParamCheckResult canBeParamA = canBeParam(a, ma);
         ParamCheckResult canBeParamB = canBeParam(b, mb);
-        if (canBeParamA.success && canBeParamB.success && canBeParamA.liveIn == canBeParamB.liveIn) {
-            ma.addParameter(a, canBeParamA.type, canBeParamA.lambdaArgs, canBeParamA.liveIn);
-            mb.addParameter(b, canBeParamB.type, canBeParamB.lambdaArgs, canBeParamB.liveIn);
+//        System.out.println(a.getText() + '~' + canBeParamA.success + '|' + b.getText() + '~' + canBeParamB.success);
+        if (canBeParamA.success && canBeParamB.success && canBeParamA.liveInDeps.size() == canBeParamB.liveInDeps.size()) {
+            ma.addParameter(a, canBeParamA.type, canBeParamA.lambdaArgs, canBeParamA.liveInDeps);
+            mb.addParameter(b, canBeParamB.type, canBeParamB.lambdaArgs, canBeParamB.liveInDeps);
             // Type two clone, so we can stop here and evaluate if worth extracting
             // to a parameter later.
             return true;
@@ -138,13 +172,16 @@ public class TypeTwoCP implements CloneProcessor {
         return results;
     }
 
-    private record ParamCheckResult(boolean success, String type, Set<Integer> lambdaArgs, boolean liveIn) {
-        public static final ParamCheckResult FAILURE = new ParamCheckResult(false, null, null, false);
-        public ParamCheckResult(String type, boolean liveIn) {
-            this(true, type, new HashSet<>(), liveIn);
+    private record ParamCheckResult(boolean success, String type, Set<Integer> lambdaArgs, Set<PsiVariable> liveInDeps) {
+        public static final ParamCheckResult FAILURE = new ParamCheckResult(false, null, null, null);
+        public ParamCheckResult(String type) {
+            this(true, type, new HashSet<>(), new HashSet<>());
         }
-        public ParamCheckResult(String type, Set<Integer> lambdaArgs, boolean liveIn) {
-            this(true, type, lambdaArgs, liveIn);
+        public static ParamCheckResult liveIn(String type, Set<PsiVariable> liveInDeps) {
+            return new ParamCheckResult(true, type, new HashSet<>(), liveInDeps);
+        }
+        public static ParamCheckResult asLambda(String type, Set<Integer> lambdaArgs) {
+            return new ParamCheckResult(true, type, lambdaArgs, new HashSet<>());
         }
     }
 }

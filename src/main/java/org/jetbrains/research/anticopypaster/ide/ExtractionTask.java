@@ -136,7 +136,7 @@ public class ExtractionTask {
             if (i != clone.parameters().size() - 1 || !clone.liveInVars().isEmpty())
                 sb.append(", ");
         }
-        List<PsiVariable> liveInVars = clone.liveInVars().stream().toList();
+        List<PsiVariable> liveInVars = clone.liveInVars().stream().sorted(Comparator.comparing(PsiNamedElement::getName)).toList();
         for (int i = 0; i < liveInVars.size(); i++) {
             PsiVariable variable = liveInVars.get(i);
             sb.append(variable.getType().getPresentableText());
@@ -239,7 +239,7 @@ public class ExtractionTask {
             if (i != clone.parameters().size() - 1 || !clone.liveInVars().isEmpty())
                 sb.append(", ");
         }
-        List<PsiVariable> liveInVars = clone.liveInVars().stream().toList();
+        List<PsiVariable> liveInVars = clone.liveInVars().stream().sorted(Comparator.comparing(PsiNamedElement::getName)).toList();
         for (int i = 0; i < liveInVars.size(); i++) {
             PsiVariable variable = liveInVars.get(i);
             sb.append(variable.getName());
@@ -421,7 +421,7 @@ public class ExtractionTask {
                 }
                 if (!canRemove) continue;
                 for (Clone clone : results)
-                    clone.parameters().remove(i);
+                    clone.liveInVars().addAll(clone.parameters().remove(i).liveInDeps());
             }
 
             int maxParams = ProjectSettingsState.getInstance(project).maxParams;
