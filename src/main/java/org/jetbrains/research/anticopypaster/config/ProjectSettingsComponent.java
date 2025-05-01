@@ -200,31 +200,21 @@ public class ProjectSettingsComponent {
         // Filter nameModel options based on whether main model is Aider, preserving selection if possible
         Object currentSelection = nameModel.getSelectedItem();
         if (isMainModelAider) {
+            // When Aider is selected as the main model, only allow "Aider" in name model
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Aider"});
             nameModel.setModel(model);
+            nameModel.setSelectedItem("Aider");
         } else {
+            // When other main models are selected, restore all options
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Aider"});
             nameModel.setModel(model);
             if (currentSelection != null && model.getIndexOf(currentSelection) != -1) {
                 nameModel.setSelectedItem(currentSelection);
+            } else {
+                nameModel.setSelectedIndex(0); // fallback to first item if previous selection no longer valid
             }
         }
 
-        if (providerPanel != null) {
-            providerPanel.setVisible(showAiderSettings);
-            providerPanel.revalidate();
-            providerPanel.repaint();
-        }
-        if (apiKeyPanel != null) {
-            apiKeyPanel.setVisible(showAiderSettings);
-            apiKeyPanel.revalidate();
-            apiKeyPanel.repaint();
-        }
-        if (modelPanel != null) {
-            modelPanel.setVisible(showAiderSettings);
-            modelPanel.revalidate();
-            modelPanel.repaint();
-        }
     }
 
     private void addConditionallyEnabledMetricGroup(JCheckBox ind, JSlider depslid, JCheckBox dep) {
