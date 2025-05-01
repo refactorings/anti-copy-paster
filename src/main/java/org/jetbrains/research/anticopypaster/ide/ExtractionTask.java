@@ -332,6 +332,9 @@ public class ExtractionTask {
      */
     public List<String> generateName(Clone clone, String returnType, List<List<Integer>> normalizedLambdaArgs, String methodName, boolean extractToStatic) {
         String code = buildMethodText(clone, returnType, normalizedLambdaArgs, methodName, extractToStatic);
+        ProjectSettingsState state = ProjectSettingsState.getInstance(project);
+
+
         String[] args = {
                 "--max_path_length",
                 "8",
@@ -498,10 +501,29 @@ public class ExtractionTask {
                 }
                 methodName = getNewMethodName(containingClass, pred.get(0));
             }
-            else{
+            else if (ProjectSettingsState.getInstance(project).useNameRec == 1) {
                 pred = new ArrayList<>();
                 pred.add("extractedMethod");
                 methodName = getNewMethodName(containingClass, pred.get(0));
+            } else {
+                String methodSuggestion = AiderHelper.suggestMethodName(
+                    project,
+                    buildMethodText(template, returnType, normalizedLambdaArgs, "tempName", extractToStatic),
+                    ProjectSettingsState.getInstance(project).getLlmprovider(),
+                    ProjectSettingsState.getInstance(project).getAiderModel(),
+                    ProjectSettingsState.getInstance(project).getAiderApiKey(),
+                    ProjectSettingsState.getInstance(project).getAiderPath(),
+                    ProjectSettingsState.getInstance(project).numOfPreds
+                );
+                if (methodSuggestion != null && !methodSuggestion.isEmpty()) {
+                    pred = new ArrayList<>();
+                    pred.add(methodSuggestion);
+                    methodName = getNewMethodName(containingClass, methodSuggestion);
+                } else {
+                    pred = new ArrayList<>();
+                    pred.add("extractedMethod");
+                    methodName = getNewMethodName(containingClass, "extractedMethod");
+                }
             }
             passPreds(pred);
 

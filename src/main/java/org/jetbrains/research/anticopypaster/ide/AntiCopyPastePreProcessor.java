@@ -49,26 +49,36 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     @Override
     public String preprocessOnPaste(Project project, PsiFile file, Editor editor, String text, RawText rawText) {
         RefactoringNotificationTask rnt = getRefactoringTask(project);
-
-        if (rnt == null) {
-            rnt = new RefactoringNotificationTask(project);
-            refactoringNotificationTask.add(rnt);
-            setCheckingForRefactoringOpportunities(rnt, project);
+        ProjectSettingsState.JudgementModel currentModelType = ProjectSettingsState.getInstance(project).judgementModel;
+        if (currentModelType == ProjectSettingsState.JudgementModel.AIDER) {
+            ProjectSettingsState state = ProjectSettingsState.getInstance(project);
+            String model = state.getAiderModel();
+            String apiKey = state.getAiderApiKey();
+            String provider = state.getLlmprovider();
+            String aiderPath = state.getAiderPath();
+            AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath);
         }
+        else{
+            if (rnt == null) {
+                rnt = new RefactoringNotificationTask(project);
+                refactoringNotificationTask.add(rnt);
+                setCheckingForRefactoringOpportunities(rnt, project);
+            }
 
-        AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
+            AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
 
-        if (editor == null || file == null) return text;
+            if (editor == null || file == null) return text;
 
-        DataContext dataContext = DataManager.getInstance().getDataContext(editor.getContentComponent());
-        @Nullable Caret caret = CommonDataKeys.CARET.getData(dataContext);
-        int offset = caret == null ? 0 : caret.getOffset();
-        PsiMethod destinationMethod = findMethodByOffset(file, offset);
+            DataContext dataContext = DataManager.getInstance().getDataContext(editor.getContentComponent());
+            @Nullable Caret caret = CommonDataKeys.CARET.getData(dataContext);
+            int offset = caret == null ? 0 : caret.getOffset();
+            PsiMethod destinationMethod = findMethodByOffset(file, offset);
 
-        RefactoringNotificationTask finalRnt = rnt;
-        ApplicationManager.getApplication().invokeLater(() -> {
-            finalRnt.addEvent(new RefactoringEvent(file, destinationMethod, text, project, editor));
-        });
+            RefactoringNotificationTask finalRnt = rnt;
+            ApplicationManager.getApplication().invokeLater(() -> {
+                finalRnt.addEvent(new RefactoringEvent(file, destinationMethod, text, project, editor));
+            });
+        }
 
         return text;
     }

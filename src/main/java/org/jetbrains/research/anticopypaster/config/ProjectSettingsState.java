@@ -64,6 +64,13 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public int useNameRec = 1;
     public int numOfPreds = 3;
 
+    // Aider settings
+    public String aiderApiKey = "";
+    public String aiderModel = "gemini-2.5-pro";
+    public String aiderPath = "aider";
+
+    public String llmProvider = "";
+
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);
     }
@@ -79,10 +86,42 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
         XmlSerializerUtil.copyBean(state, this);
     }
 
+    public String getAiderApiKey() {
+        return aiderApiKey;
+    }
+
+    public void setAiderApiKey(String apiKey) {
+        this.aiderApiKey = apiKey;
+    }
+
+    public String getAiderModel() {
+        return aiderModel;
+    }
+
+    public void setAiderModel(String model) {
+        this.aiderModel = model;
+    }
+
+    public String getAiderPath() {
+        return aiderPath;
+    }
+
+    public void setAiderPath(String path) {
+        this.aiderPath = path;
+    }
+
+    public String getLlmprovider() {
+        return llmProvider;
+    }
+
+    public void setLlmprovider(String provider) {
+        this.llmProvider = provider;
+    }
+
     public enum JudgementModel {
         TENSORFLOW(0),
-        USER_SETTINGS(1);
-
+        USER_SETTINGS(1),
+        AIDER(2);
         private int idx;
         JudgementModel(int idx) {
             this.idx = idx;

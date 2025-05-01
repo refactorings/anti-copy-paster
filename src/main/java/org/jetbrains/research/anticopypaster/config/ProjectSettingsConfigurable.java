@@ -1,11 +1,13 @@
 package org.jetbrains.research.anticopypaster.config;
 
 import com.intellij.openapi.options.Configurable;
+import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.util.Objects;
 
 public class ProjectSettingsConfigurable implements Configurable {
 
@@ -57,12 +59,22 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= settingsComponent.getExtractionType() != settings.extractionType;
         modified |= settingsComponent.getModelSensitivity() != settings.modelSensitivity;
         modified |= settingsComponent.getMaxParams() != settings.maxParams;
+        modified |= !Objects.equals(settingsComponent.getAiderApiKey(), settings.getAiderApiKey());
+        modified |= !Objects.equals(settingsComponent.getSelectedAiderModel(), settings.getAiderModel());
+        modified |= !Objects.equals(settingsComponent.getLlmProvider(), settings.getLlmprovider());
+        modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
         return modified;
     }
 
     // Save dialog inputs to ProjectSettingsState saved state
     @Override
-    public void apply() {
+    public void apply() throws ConfigurationException {
+        if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
+             settingsComponent.getNameModel() == 2) &&
+            (settingsComponent.getAiderApiKey() == null || settingsComponent.getAiderApiKey().trim().isEmpty())) {
+            throw new ConfigurationException("API Key must be provided when using Aider.");
+        }
+
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         settings.minimumDuplicateMethods = settingsComponent.getMinimumDuplicateMethods();
         settings.timeBuffer = settingsComponent.getTimeBuffer();
@@ -84,6 +96,10 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.extractionType = settingsComponent.getExtractionType();
         settings.modelSensitivity = settingsComponent.getModelSensitivity();
         settings.maxParams = settingsComponent.getMaxParams();
+        settings.setAiderApiKey(settingsComponent.getAiderApiKey());
+        settings.setAiderModel(settingsComponent.getSelectedAiderModel());
+        settings.setLlmprovider(settingsComponent.getLlmProvider());
+        settings.setAiderPath(settingsComponent.getAiderPath());
     }
 
     // Pull from saved state to preset dialog state upon opening
@@ -110,6 +126,10 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setExtractionType(settings.extractionType);
         settingsComponent.setModelSensitivity(settings.modelSensitivity);
         settingsComponent.setMaxParams(settings.maxParams);
+        settingsComponent.setAiderApiKey(settings.getAiderApiKey());
+        settingsComponent.setSelectedAiderModel(settings.getAiderModel());
+        settingsComponent.setLlmProvider(settings.getLlmprovider());
+        settingsComponent.setAiderPath(settings.getAiderPath());
     }
 
     @Override
