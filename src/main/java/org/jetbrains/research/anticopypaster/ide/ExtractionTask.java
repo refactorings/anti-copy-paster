@@ -1,5 +1,8 @@
 package org.jetbrains.research.anticopypaster.ide;
 
+import com.intellij.notification.Notification;
+import com.intellij.notification.NotificationType;
+import com.intellij.notification.Notifications;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
@@ -506,6 +509,7 @@ public class ExtractionTask {
                 pred.add("extractedMethod");
                 methodName = getNewMethodName(containingClass, pred.get(0));
             } else {
+                notify(project, "Aider is running name suggestion ...");
                 String methodSuggestion = AiderHelper.suggestMethodName(
                     project,
                     buildMethodText(template, returnType, normalizedLambdaArgs, "tempName", extractToStatic),
@@ -569,5 +573,15 @@ public class ExtractionTask {
 
 
         });
+    }
+
+    private static void notify(Project project, String content) {
+        Notification notification = new Notification(
+                "AiderRefactor",
+                "Aider Refactoring",
+                content,
+                NotificationType.INFORMATION
+        );
+        Notifications.Bus.notify(notification, project);
     }
 }

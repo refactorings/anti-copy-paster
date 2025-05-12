@@ -197,7 +197,6 @@ public class AiderHelper {
 
     public static String suggestMethodName(Project project, String codeSnippet, String provider, String model, String apikey, String aiderPath, int count) {
         try {
-            notify(project, "Aider is generating method name suggestions...");
             File tempFile = File.createTempFile("aider_namegen_", ".java");
             Files.writeString(tempFile.toPath(), codeSnippet, StandardCharsets.UTF_8);
             codeSnippet = codeSnippet.replaceAll("%", "%%");
