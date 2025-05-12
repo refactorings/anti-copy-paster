@@ -96,10 +96,10 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.extractionType = settingsComponent.getExtractionType();
         settings.modelSensitivity = settingsComponent.getModelSensitivity();
         settings.maxParams = settingsComponent.getMaxParams();
-        settings.setAiderApiKey(settingsComponent.getAiderApiKey());
-        settings.setAiderModel(settingsComponent.getSelectedAiderModel());
-        settings.setLlmprovider(settingsComponent.getLlmProvider());
         settings.setAiderPath(settingsComponent.getAiderPath());
+        settings.setLlmprovider(settingsComponent.getLlmProvider());
+        settings.setAiderModel(settingsComponent.getSelectedAiderModel());
+        settings.setAiderApiKey(settingsComponent.getAiderApiKey());
     }
 
     // Pull from saved state to preset dialog state upon opening
@@ -126,10 +126,10 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setExtractionType(settings.extractionType);
         settingsComponent.setModelSensitivity(settings.modelSensitivity);
         settingsComponent.setMaxParams(settings.maxParams);
-        settingsComponent.setAiderApiKey(settings.getAiderApiKey());
-        settingsComponent.setSelectedAiderModel(settings.getAiderModel());
-        settingsComponent.setLlmProvider(settings.getLlmprovider());
         settingsComponent.setAiderPath(settings.getAiderPath());
+        settingsComponent.setLlmProvider(settings.getLlmprovider());
+        settingsComponent.setSelectedAiderModel(settings.getAiderModel());
+        settingsComponent.setAiderApiKey(settings.getAiderApiKey());
     }
 
     @Override
