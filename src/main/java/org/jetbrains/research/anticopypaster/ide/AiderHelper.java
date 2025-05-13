@@ -138,6 +138,9 @@ public class AiderHelper {
     }
 
     private static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt, String provider, String model, String apikey) throws IOException, InterruptedException {
+        if (model.startsWith("deepseek-")) {
+            model = "deepseek/" + model;
+        }
         return runCommand(project, provider,
                 apikey,
                 aiderPath,
