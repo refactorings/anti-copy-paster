@@ -16,6 +16,9 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 
+import java.io.File;
+import java.util.ArrayList;
+
 public class ProjectSettingsComponent {
 
     private JPanel mainPanel;
@@ -60,7 +63,12 @@ public class ProjectSettingsComponent {
     private JTextField aiderPath;
     private JPanel pathPanel;
     private JButton reset;
-
+    private JPanel filesPanel;
+    private JTextField filesPath;
+    private JButton findFilesInDirButton;
+    private JPanel filesCheckboxesPanel;
+    private ArrayList<JCheckBox> allFilesCheckboxes;
+    
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
     public ProjectSettingsComponent(Project project) {
@@ -83,6 +91,7 @@ public class ProjectSettingsComponent {
         llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, or DeepSeek.");
         aidermodelComboBox.setToolTipText("Select the specific model you want to use from the provider.");
         aiderApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
+        filesPath.setToolTipText("Specify the path to the directory with the files you would like to search for clones in.");
 
         // Add warning icon and tooltip for empty API key
         Icon warningIcon = AllIcons.General.Error;
@@ -110,6 +119,49 @@ public class ProjectSettingsComponent {
         warningGbc.anchor = GridBagConstraints.WEST;
         warningGbc.insets = new Insets(0, 5, 0, 0);
         apiKeyPanel.add(apiKeyWarningLabel, warningGbc);
+
+        // Set layout for filesPanel and filesCheckboxesPanel; initialize ArrayList to keep track of checkboxes
+        filesPanel.setLayout(new FlowLayout());
+        filesCheckboxesPanel.setLayout(new FlowLayout());
+        allFilesCheckboxes = new ArrayList<>();
+
+        filesPanel.setVisible(true);
+        filesCheckboxesPanel.setVisible(false);
+
+        // Add warning icon and tooltip for invalid directory path
+        JLabel dirPathWarningLabel = new JLabel(warningIcon);
+        dirPathWarningLabel.setToolTipText("Invalid directory path");
+        dirPathWarningLabel.setVisible(false);
+
+        // Watch for action in relation to Find Files button (if user clicks the Find Files button)
+        findFilesInDirButton.addActionListener(e -> {
+            dirPathWarningLabel.setVisible(false);
+            filesCheckboxesPanel.removeAll(); // Clear checkboxes panel of any previous files' checkboxes
+            allFilesCheckboxes.clear(); // Clear ArrayList of any previous files' checkboxes
+            String filesPathStr = String.valueOf(filesPath);
+            // Check if a path was provided, and if it leads to a valid directory
+            if(!(filesPathStr.equals("null"))) {
+                File filesDir = new File(filesPathStr);
+                if(filesDir.isDirectory()) {
+                    File[] allFiles = filesDir.listFiles();
+                    // If files exist in the directory:
+                    // Create a checkbox for each file and add them to the checkbox panel + ArrayList
+                    if(allFiles != null) {
+                        for(File file : allFiles) {
+                            if(file.isFile()) {
+                                JCheckBox fileCheckBox = new JCheckBox(file.getName());
+                                filesCheckboxesPanel.add(fileCheckBox);
+                                allFilesCheckboxes.add(fileCheckBox);
+                            }
+                        }
+                        filesCheckboxesPanel.setVisible(true);
+                    }
+                } else {
+                    // If an invalid directory path was provided:
+                    dirPathWarningLabel.setVisible(true);
+                }
+            }
+        });
 
         // Watch for API key input changes and toggle warning visibility
         aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
@@ -166,7 +218,7 @@ public class ProjectSettingsComponent {
                             mismatch = !apiKey.startsWith("sk-proj-");
                             break;
                         case "Gemini":
-                            mismatch = !apiKey.startsWith("AIzaSyA");
+                            mismatch = !apiKey.startsWith("AIzaSy");
                             break;
                         case "DeepSeek":
                             mismatch = !apiKey.startsWith("sk-");
@@ -443,6 +495,15 @@ public class ProjectSettingsComponent {
         llmProviderComboBox.setSelectedItem(provider);
     }
 
+    public ArrayList<JCheckBox> getAllFilesCheckboxes() {
+        return allFilesCheckboxes;
+    }
+
+    public void setAllFilesCheckboxes(ArrayList<JCheckBox> filesCheckboxes) {
+        allFilesCheckboxes.clear();
+        allFilesCheckboxes.addAll(filesCheckboxes);
+    }
+
     public void setComplexityRequired(boolean required) {
         complexityRequiredCheckBox.setSelected(required);
     }
@@ -462,6 +523,14 @@ public class ProjectSettingsComponent {
 
     public void setAiderPath(String path) {
         aiderPath.setText(path);
+    }
+
+    public String getFilesPath() {
+        return filesPath.getText();
+    }
+
+    public void setFilesPath(String path) {
+        filesPath.setText(path);
     }
 
     private void createUIComponents() {

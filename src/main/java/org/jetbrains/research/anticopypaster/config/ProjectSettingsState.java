@@ -10,6 +10,8 @@ import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSett
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.swing.*;
+import java.util.ArrayList;
 import java.util.EnumMap;
 
 @Service(Service.Level.PROJECT)
@@ -71,6 +73,10 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public String llmProvider = "";
 
+    public String filesPath = "";
+
+    public ArrayList<JCheckBox> allFilesCheckboxes = new ArrayList<>();
+    
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);
     }
@@ -116,6 +122,23 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public void setLlmprovider(String provider) {
         this.llmProvider = provider;
+    }
+
+    public String getFilesPath() {
+        return filesPath;
+    }
+
+    public void setFilesPath(String path) {
+        this.filesPath = path;
+    }
+
+    public ArrayList<JCheckBox> getAllFilesCheckboxes() {
+        return allFilesCheckboxes;
+    }
+
+    public void setAllFilesCheckboxes(ArrayList<JCheckBox> filesCheckboxes) {
+        (this.allFilesCheckboxes).clear();
+        (this.allFilesCheckboxes).addAll(filesCheckboxes);
     }
 
     public enum JudgementModel {

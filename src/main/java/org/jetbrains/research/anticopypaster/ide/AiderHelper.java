@@ -22,6 +22,7 @@ import java.util.List;
 public class AiderHelper {
 
     public static void checkAndSuggestRefactor(Project project, VirtualFile file, String provider, String model, String apikey, String aiderPath) {
+        // only takes in one VirtualFile; maybe create version of this method that takes in array of VirtualFiles? Or call this method for each file selected.
         notify(project, "Aider is running clone detection...");
         String filePath = file.getPath();
 

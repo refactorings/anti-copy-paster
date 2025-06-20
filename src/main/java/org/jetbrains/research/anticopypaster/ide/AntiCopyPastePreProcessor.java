@@ -10,6 +10,9 @@ import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.RawText;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
 import org.jetbrains.annotations.NotNull;
@@ -17,6 +20,8 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
+import javax.swing.*;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Timer;
 
@@ -56,7 +61,29 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             String apiKey = state.getAiderApiKey();
             String provider = state.getLlmprovider();
             String aiderPath = state.getAiderPath();
-            AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath);
+            String filesPath = state.getFilesPath();
+            ArrayList<JCheckBox> filesCheckboxes = new ArrayList<>(state.getAllFilesCheckboxes());
+            // If a path to search for files has been provided and a file's checkbox has been selected:
+            // Call checkAndSuggestRefactor on the particular file
+            if (!(filesPath == null || filesPath.equals(""))) {
+                for (int i = 0; i < filesCheckboxes.size(); i++) {
+                    if(filesCheckboxes.get(i).isSelected()) {
+                        String fileName = (filesCheckboxes.get(i)).getText();
+                        String filePath = filesPath + "/" + fileName;
+                        VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath(filePath);
+                        if (virtualFile != null) {
+                            AiderHelper.checkAndSuggestRefactor(project, virtualFile, provider, model, apiKey, aiderPath);
+                        }
+                    }
+                }
+            // Alternatively: create new version of checkAndSuggestRefactor that takes in an array of these
+            // virtual files and cross-compares them instead of queueing them up to be analyzed individually, one
+            // after the other.
+            } else {
+                // If no path has been provided, default operation occurs (analysis of only the file that is
+                // currently open by the user).
+                AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath);
+            }
         }
         else{
             if (rnt == null) {

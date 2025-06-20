@@ -63,6 +63,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= !Objects.equals(settingsComponent.getSelectedAiderModel(), settings.getAiderModel());
         modified |= !Objects.equals(settingsComponent.getLlmProvider(), settings.getLlmprovider());
         modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
+        modified |= !Objects.equals(settingsComponent.getFilesPath(), settings.getFilesPath());
+        modified |= !Objects.equals(settingsComponent.getAllFilesCheckboxes(), settings.getAllFilesCheckboxes());
         return modified;
     }
 
@@ -100,6 +102,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.setLlmprovider(settingsComponent.getLlmProvider());
         settings.setAiderModel(settingsComponent.getSelectedAiderModel());
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
+        settings.setFilesPath(settingsComponent.getFilesPath());
+        settings.setAllFilesCheckboxes(settingsComponent.getAllFilesCheckboxes());
     }
 
     // Pull from saved state to preset dialog state upon opening
@@ -130,6 +134,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setLlmProvider(settings.getLlmprovider());
         settingsComponent.setSelectedAiderModel(settings.getAiderModel());
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());
+        settingsComponent.setFilesPath(settings.getFilesPath());
+        settingsComponent.setAllFilesCheckboxes(settings.getAllFilesCheckboxes());
     }
 
     @Override
