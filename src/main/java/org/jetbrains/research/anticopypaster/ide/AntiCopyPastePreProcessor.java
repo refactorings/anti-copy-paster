@@ -63,26 +63,51 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             String aiderPath = state.getAiderPath();
             String filesPath = state.getFilesPath();
             ArrayList<JCheckBox> filesCheckboxes = new ArrayList<>(state.getAllFilesCheckboxes());
-            // If a path to search for files has been provided and a file's checkbox has been selected:
-            // Call checkAndSuggestRefactor on the particular file
-            if (!(filesPath == null || filesPath.equals(""))) {
-                for (int i = 0; i < filesCheckboxes.size(); i++) {
-                    if(filesCheckboxes.get(i).isSelected()) {
-                        String fileName = (filesCheckboxes.get(i)).getText();
-                        String filePath = filesPath + "/" + fileName;
-                        VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath(filePath);
-                        if (virtualFile != null) {
-                            AiderHelper.checkAndSuggestRefactor(project, virtualFile, provider, model, apiKey, aiderPath);
+            String selectedAnalysisButton = state.getSelectedAnalysisButton();
+
+            // Check which analysis option was chosen ("Current File", "All Files in Current Directory", or "Multiple Files")
+            // Take proper action according to selected option
+            if(selectedAnalysisButton.equals("Current File")) {
+                // If "Current File": default operation occurs (analysis of only the file that is currently open by the user).
+                AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath);
+            } else if(selectedAnalysisButton.equals("All Files in Current Directory")) {
+                // If "All Files [...]": get dir of current file, get all files in dir
+                // Call checkAndSuggestRefactor on each file in dir
+                VirtualFile currFileVF = file.getVirtualFile();
+                VirtualFile parentDir = currFileVF.getParent();
+                String dirPath = parentDir.getPath();
+                File currDir = new File(dirPath);
+                if(currDir.isDirectory()) {
+                    File[] filesInDir = currDir.listFiles();
+                    if(filesInDir != null) {
+                        for(File fileInDir : filesInDir) {
+                            String fileAbsPath = fileInDir.getAbsolutePath();
+                            VirtualFile virtualFileInDir = LocalFileSystem.getInstance().findFileByPath(fileAbsPath);
+                            if(virtualFileInDir != null) {
+                                AiderHelper.checkAndSuggestRefactor(project, virtualFileInDir, provider, model, apiKey, aiderPath);
+                            }
                         }
                     }
                 }
-            // Alternatively: create new version of checkAndSuggestRefactor that takes in an array of these
-            // virtual files and cross-compares them instead of queueing them up to be analyzed individually, one
-            // after the other.
-            } else {
-                // If no path has been provided, default operation occurs (analysis of only the file that is
-                // currently open by the user).
-                AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath);
+            } else if(selectedAnalysisButton.equals("Multiple Files")) {
+                // If "Multiple Files":
+                // If a path to search for files has been provided and a file's checkbox has been selected:
+                // Call checkAndSuggestRefactor on the particular file
+                if (!(filesPath == null || filesPath.equals(""))) {
+                    for (int i = 0; i < filesCheckboxes.size(); i++) {
+                        if(filesCheckboxes.get(i).isSelected()) {
+                            String fileName = (filesCheckboxes.get(i)).getText();
+                            String filePath = filesPath + "/" + fileName;
+                            VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath(filePath);
+                            if (virtualFile != null) {
+                                AiderHelper.checkAndSuggestRefactor(project, virtualFile, provider, model, apiKey, aiderPath);
+                            }
+                        }
+                    }
+                    // Alternatively: create new version of checkAndSuggestRefactor that takes in an array of these
+                    // virtual files and cross-compares them instead of queueing them up to be analyzed individually, one
+                    // after the other.
+                }
             }
         }
         else{

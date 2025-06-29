@@ -76,7 +76,9 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public String filesPath = "";
 
     public ArrayList<JCheckBox> allFilesCheckboxes = new ArrayList<>();
-    
+
+    public String selectedAnalysisButton;
+
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);
     }
@@ -139,6 +141,14 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public void setAllFilesCheckboxes(ArrayList<JCheckBox> filesCheckboxes) {
         (this.allFilesCheckboxes).clear();
         (this.allFilesCheckboxes).addAll(filesCheckboxes);
+    }
+
+    public String getSelectedAnalysisButton() {
+        return selectedAnalysisButton;
+    }
+
+    public void setSelectedAnalysisButton(String analysisButton) {
+        this.selectedAnalysisButton = analysisButton;
     }
 
     public enum JudgementModel {

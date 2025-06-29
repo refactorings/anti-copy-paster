@@ -65,6 +65,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
         modified |= !Objects.equals(settingsComponent.getFilesPath(), settings.getFilesPath());
         modified |= !Objects.equals(settingsComponent.getAllFilesCheckboxes(), settings.getAllFilesCheckboxes());
+        modified |= !Objects.equals(settingsComponent.getSelectedAnalysisButton(), settings.getSelectedAnalysisButton());
         return modified;
     }
 
@@ -104,6 +105,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
         settings.setFilesPath(settingsComponent.getFilesPath());
         settings.setAllFilesCheckboxes(settingsComponent.getAllFilesCheckboxes());
+        settings.setSelectedAnalysisButton(settingsComponent.getSelectedAnalysisButton());
     }
 
     // Pull from saved state to preset dialog state upon opening
@@ -136,6 +138,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());
         settingsComponent.setFilesPath(settings.getFilesPath());
         settingsComponent.setAllFilesCheckboxes(settings.getAllFilesCheckboxes());
+        settingsComponent.setSelectedAnalysisButton(settings.getSelectedAnalysisButton());
     }
 
     @Override

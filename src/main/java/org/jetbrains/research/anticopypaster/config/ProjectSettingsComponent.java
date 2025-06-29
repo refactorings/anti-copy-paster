@@ -10,6 +10,8 @@ import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSett
 import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialogWrapper;
 
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.IOException;
@@ -64,8 +66,16 @@ public class ProjectSettingsComponent {
     private JPanel pathPanel;
     private JButton reset;
     private JPanel filesPanel;
+    private ButtonGroup analysisSelectionButtonGroup;
+    private ArrayList<JRadioButton> analysisSelectionButtonList;
+    private JRadioButton currentFileButton;
+    private JRadioButton allFilesButton;
+    private JRadioButton multipleFilesButton;
+    private ActionListener analysisSelectionButtonListener;
+    private JLabel filesDirLabel;
     private JTextField filesPath;
     private JButton findFilesInDirButton;
+    private JLabel filesToAnalyzeLabel;
     private JPanel filesCheckboxesPanel;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     
@@ -125,13 +135,60 @@ public class ProjectSettingsComponent {
         filesCheckboxesPanel.setLayout(new FlowLayout());
         allFilesCheckboxes = new ArrayList<>();
 
+        // Set default visibility for filesPanel and elements
         filesPanel.setVisible(true);
+        filesDirLabel.setVisible(false);
+        filesPath.setVisible(false);
+        findFilesInDirButton.setVisible(false);
+        filesToAnalyzeLabel.setVisible(false);
         filesCheckboxesPanel.setVisible(false);
+
+        // Initialize analysisSelectionButtonGroup
+        analysisSelectionButtonGroup = new ButtonGroup();
+
+        // Add currentFileButton, allFilesButton, and multipleFilesButton to analysisSelectionButtonGroup
+        analysisSelectionButtonGroup.add(currentFileButton);
+        analysisSelectionButtonGroup.add(allFilesButton);
+        analysisSelectionButtonGroup.add(multipleFilesButton);
+
+        // Add currentFileButton, allFilesButton, and multipleFilesButton to analysisSelectionButtonList
+        analysisSelectionButtonList = new ArrayList<>();
+        analysisSelectionButtonList.add(currentFileButton);
+        analysisSelectionButtonList.add(allFilesButton);
+        analysisSelectionButtonList.add(multipleFilesButton);
+
+        // Set default button status for currentFileButton, allFilesButton, and multipleFilesButton
+        // Default selected status: true, false, false (respectively)
+        currentFileButton.setSelected(true);
 
         // Add warning icon and tooltip for invalid directory path
         JLabel dirPathWarningLabel = new JLabel(warningIcon);
         dirPathWarningLabel.setToolTipText("Invalid directory path");
         dirPathWarningLabel.setVisible(false);
+
+        // Create an ActionListener for the currentFileButton, allFilesButton, and multipleFilesButton
+        // (If user selects the "Multiple Files" option, make extra fields visible)
+        // (If user selects either of the other buttons, resort to default visibility)
+        analysisSelectionButtonListener = e -> {
+            JRadioButton selectedButton = (JRadioButton) e.getSource();
+            if( ((selectedButton.getText()).equals("Current File")) ||
+                ((selectedButton.getText()).equals("All Files in Current Directory"))) {
+                filesDirLabel.setVisible(false);
+                filesPath.setVisible(false);
+                findFilesInDirButton.setVisible(false);
+                filesToAnalyzeLabel.setVisible(false);
+                filesCheckboxesPanel.setVisible(false);
+            } else if(selectedButton.getText().equals("Multiple Files")) {
+                filesDirLabel.setVisible(true);
+                filesPath.setVisible(true);
+                findFilesInDirButton.setVisible(true);
+            }
+        };
+
+        // Watch for actions in relation to currentFileButton, allFilesButton, and multipleFilesButton
+        currentFileButton.addActionListener(analysisSelectionButtonListener);
+        allFilesButton.addActionListener(analysisSelectionButtonListener);
+        multipleFilesButton.addActionListener(analysisSelectionButtonListener);
 
         // Watch for action in relation to Find Files button (if user clicks the Find Files button)
         findFilesInDirButton.addActionListener(e -> {
@@ -154,6 +211,7 @@ public class ProjectSettingsComponent {
                                 allFilesCheckboxes.add(fileCheckBox);
                             }
                         }
+                        filesToAnalyzeLabel.setVisible(true);
                         filesCheckboxesPanel.setVisible(true);
                     }
                 } else {
@@ -502,6 +560,25 @@ public class ProjectSettingsComponent {
     public void setAllFilesCheckboxes(ArrayList<JCheckBox> filesCheckboxes) {
         allFilesCheckboxes.clear();
         allFilesCheckboxes.addAll(filesCheckboxes);
+    }
+
+    public String getSelectedAnalysisButton() {
+        String selectedButton = "";
+        for(JRadioButton button : analysisSelectionButtonList) {
+            if(button.isSelected()) {
+                selectedButton = button.getText();
+                break;
+            }
+        }
+        return selectedButton;
+    }
+
+    public void setSelectedAnalysisButton(String analysisButtonText) {
+        for(JRadioButton button : analysisSelectionButtonList) {
+            if((button.getText()).equals(analysisButtonText)) {
+                button.setSelected(true);
+            }
+        }
     }
 
     public void setComplexityRequired(boolean required) {
