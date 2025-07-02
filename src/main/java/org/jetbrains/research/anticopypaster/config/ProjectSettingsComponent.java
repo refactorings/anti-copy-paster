@@ -154,38 +154,6 @@ public class ProjectSettingsComponent {
             public void insertUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
             public void removeUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
             public void changedUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
-
-            private void validateApiKeyPrefix() {
-                String apiKey = new String(aiderApiKey.getPassword()).trim();
-                String provider = (String) llmProviderComboBox.getSelectedItem();
-                boolean mismatch = false;
-
-                if (provider != null && !apiKey.isEmpty()) {
-                    switch (provider) {
-                        case "OpenAI":
-                            mismatch = !apiKey.startsWith("sk-proj-");
-                            break;
-                        case "Gemini":
-                            mismatch = !apiKey.startsWith("AIzaSyA");
-                            break;
-                        case "DeepSeek":
-                            mismatch = !apiKey.startsWith("sk-");
-                            break;
-                        case "Anthropic":
-                            mismatch = !apiKey.startsWith("sk-ant-");
-                            break;
-                    }
-                }
-
-                if (mismatch) {
-                    JOptionPane.showMessageDialog(
-                            mainPanel,
-                            "The API key prefix does not match the selected provider.\nPlease verify your key.",
-                            "API Key Provider Mismatch",
-                            JOptionPane.WARNING_MESSAGE
-                    );
-                }
-            }
         });
 
         // Watch for changes in the model selection combo box
@@ -498,5 +466,39 @@ public class ProjectSettingsComponent {
 
     private void notifySettingsChanged() {
         // This method exists solely to trigger IntelliJ's internal modified state tracking
+    }
+
+    private void validateApiKeyPrefix() {
+        if (!apiKeyPanel.isVisible()) return;
+
+        String apiKey = new String(aiderApiKey.getPassword()).trim();
+        String provider = (String) llmProviderComboBox.getSelectedItem();
+        boolean mismatch = false;
+
+        if (provider != null && !apiKey.isEmpty()) {
+            switch (provider) {
+                case "OpenAI":
+                    mismatch = !apiKey.startsWith("sk-proj-");
+                    break;
+                case "Gemini":
+                    mismatch = !apiKey.startsWith("AIzaSyA");
+                    break;
+                case "DeepSeek":
+                    mismatch = !apiKey.startsWith("sk-");
+                    break;
+                case "Anthropic":
+                    mismatch = !apiKey.startsWith("sk-ant-");
+                    break;
+            }
+        }
+
+        if (mismatch) {
+            JOptionPane.showMessageDialog(
+                    mainPanel,
+                    "The API key prefix does not match the selected provider.\nPlease verify your key.",
+                    "API Key Provider Mismatch",
+                    JOptionPane.WARNING_MESSAGE
+            );
+        }
     }
 }
