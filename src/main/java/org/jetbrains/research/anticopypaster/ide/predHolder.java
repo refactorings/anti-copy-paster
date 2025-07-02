@@ -9,7 +9,8 @@ import java.net.Socket;
 public class predHolder implements Runnable{
     public void run(){
         try {
-            ServerSocket server = new ServerSocket(8082);
+            ServerSocket server = new ServerSocket(0);
+            System.out.println("Listening on port: " + server.getLocalPort());
             String msg;
             while(true){
                 Socket extraction_task = server.accept();
