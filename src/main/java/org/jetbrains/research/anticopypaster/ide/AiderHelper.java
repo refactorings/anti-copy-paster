@@ -137,7 +137,7 @@ public class AiderHelper {
         return normalized.contains("clones found") && !normalized.contains("no clones found");
     }
 
-    private static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt, String provider, String model, String apikey) throws IOException, InterruptedException {
+    public static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt, String provider, String model, String apikey) throws IOException, InterruptedException {
         if (model.startsWith("deepseek-")) {
             model = "deepseek/" + model;
         }
@@ -196,45 +196,5 @@ public class AiderHelper {
                 NotificationType.INFORMATION
         );
         Notifications.Bus.notify(notification, project);
-    }
-
-    public static String suggestMethodName(Project project, String codeSnippet, String provider, String model, String apikey, String aiderPath, int count) {
-        try {
-            File tempFile = File.createTempFile("aider_namegen_", ".java");
-            Files.writeString(tempFile.toPath(), codeSnippet, StandardCharsets.UTF_8);
-            codeSnippet = codeSnippet.replaceAll("%", "%%");
-
-            String prompt = String.format(
-                    "Suggest " + count + " concise and meaningful Java method names for the following extracted method:" + "\n\n" + codeSnippet + "\n\n" +
-                    "List only the method names, no method bodies. Use valid Java identifiers and place each name on a new line, ranked from most to least confident." +
-                            "Output the name suggestion in this format: rank method_name_1, for example, 1 name_1"
-            );
-            String output = runAiderWithPrompt(project, aiderPath, tempFile.getAbsolutePath(), prompt, provider, model, apikey);
-
-            if (output != null) {
-                List<String> candidates = output.lines()
-                        .map(String::trim)
-                        .filter(line -> line.matches("\\d+\\s+[a-zA-Z_$][a-zA-Z\\d_$]*"))
-                        .map(line -> line.split("\\s+", 2)[1])
-                        .limit(count)
-                        .toList();
-
-                if (!candidates.isEmpty()) {
-                    String selected = Messages.showEditableChooseDialog(
-                            "Choose a method name:",       // dialog message
-                            "Aider Name Suggestions",      // title
-                            Messages.getQuestionIcon(),    // icon
-                            candidates.toArray(new String[0]), // options
-                            candidates.get(0),             // initial selection
-                            null                           // validator
-                    );
-                    return selected != null ? selected : null;
-                }
-            }
-        } catch (Exception e) {
-            notify(project, "Failed to generate method names: " + e.getMessage());
-            e.printStackTrace();
-        }
-        return null;
     }
 }
