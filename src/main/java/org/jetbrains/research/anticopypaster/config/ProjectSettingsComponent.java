@@ -6,11 +6,11 @@ import com.intellij.icons.AllIcons;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 
+import com.intellij.util.ui.WrapLayout;
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialogWrapper;
 
 import java.awt.*;
-import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -72,11 +72,13 @@ public class ProjectSettingsComponent {
     private JRadioButton allFilesButton;
     private JRadioButton multipleFilesButton;
     private ActionListener analysisSelectionButtonListener;
+    private JLabel filesToAnalyzeLabel;
     private JLabel filesDirLabel;
     private JTextField filesPath;
     private JButton findFilesInDirButton;
-    private JLabel filesToAnalyzeLabel;
+    private JLabel filesToAnalyzeSelectionLabel;
     private JPanel filesCheckboxesPanel;
+    private JPanel multFilesPanel;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
@@ -131,16 +133,47 @@ public class ProjectSettingsComponent {
         apiKeyPanel.add(apiKeyWarningLabel, warningGbc);
 
         // Set layout for filesPanel and filesCheckboxesPanel; initialize ArrayList to keep track of checkboxes
-        filesPanel.setLayout(new FlowLayout());
-        filesCheckboxesPanel.setLayout(new FlowLayout());
+        filesPanel.setLayout(new GridBagLayout());
+        multFilesPanel.setLayout(new GridBagLayout());
+        filesCheckboxesPanel.setLayout(new GridBagLayout());
         allFilesCheckboxes = new ArrayList<>();
+
+        // Add elements (filesToAnalyzeLabel and JRadioButtons) with constraints to filesPanel
+        GridBagConstraints filesPanelRadioButtonsGbc = new GridBagConstraints();
+        filesPanelRadioButtonsGbc.gridx = 0;
+        filesPanelRadioButtonsGbc.gridy = 0;
+        filesPanelRadioButtonsGbc.weightx = 1.0;
+        filesPanelRadioButtonsGbc.fill = GridBagConstraints.BOTH;
+        filesPanelRadioButtonsGbc.anchor = GridBagConstraints.WEST;
+        filesPanelRadioButtonsGbc.insets = new Insets(0, 0, 0, 0);
+        filesPanel.add(filesToAnalyzeLabel, filesPanelRadioButtonsGbc);
+        filesPanelRadioButtonsGbc.gridx = 1;
+        filesPanel.add(currentFileButton, filesPanelRadioButtonsGbc);
+        filesPanelRadioButtonsGbc.gridx = 2;
+        filesPanel.add(allFilesButton, filesPanelRadioButtonsGbc);
+        filesPanelRadioButtonsGbc.gridx = 3;
+        filesPanel.add(multipleFilesButton, filesPanelRadioButtonsGbc);
+
+        // Add filesPath field with constraints to multFilesPathGbc
+        GridBagConstraints multFilesPathGbc = new GridBagConstraints();
+        multFilesPathGbc.gridx = 1;
+        multFilesPathGbc.gridy = 0;
+        multFilesPathGbc.weightx = 1.0;
+        multFilesPathGbc.fill = GridBagConstraints.BOTH;
+        multFilesPathGbc.anchor = GridBagConstraints.EAST;
+        multFilesPathGbc.insets = new Insets(0, 0, 0, 0);
+        multFilesPanel.add(filesPath, multFilesPathGbc);
+
+        // Add findFilesInDir button to multFilesPanel
+        multFilesPanel.add(findFilesInDirButton);
+
+        // Set layout for filesCheckboxesPanel and add filesToAnalyzeSelectionLabel to filesCheckboxesPanel
+        filesCheckboxesPanel.setLayout(new WrapLayout(WrapLayout.LEFT, 30, 10));
+        filesCheckboxesPanel.add(filesToAnalyzeSelectionLabel);
 
         // Set default visibility for filesPanel and elements
         filesPanel.setVisible(true);
-        filesDirLabel.setVisible(false);
-        filesPath.setVisible(false);
-        findFilesInDirButton.setVisible(false);
-        filesToAnalyzeLabel.setVisible(false);
+        multFilesPanel.setVisible(false);
         filesCheckboxesPanel.setVisible(false);
 
         // Initialize analysisSelectionButtonGroup
@@ -166,6 +199,14 @@ public class ProjectSettingsComponent {
         dirPathWarningLabel.setToolTipText("Invalid directory path");
         dirPathWarningLabel.setVisible(false);
 
+        // Add warning icon with constraints
+        GridBagConstraints dirPathWarningGbc = new GridBagConstraints();
+        dirPathWarningGbc.gridx = 3;
+        dirPathWarningGbc.gridy = 0;
+        dirPathWarningGbc.anchor = GridBagConstraints.WEST;
+        dirPathWarningGbc.insets = new Insets(0, 5, 0, 0);
+        multFilesPanel.add(dirPathWarningLabel, dirPathWarningGbc);
+
         // Create an ActionListener for the currentFileButton, allFilesButton, and multipleFilesButton
         // (If user selects the "Multiple Files" option, make extra fields visible)
         // (If user selects either of the other buttons, resort to default visibility)
@@ -173,15 +214,10 @@ public class ProjectSettingsComponent {
             JRadioButton selectedButton = (JRadioButton) e.getSource();
             if( ((selectedButton.getText()).equals("Current File")) ||
                 ((selectedButton.getText()).equals("All Files in Current Directory"))) {
-                filesDirLabel.setVisible(false);
-                filesPath.setVisible(false);
-                findFilesInDirButton.setVisible(false);
-                filesToAnalyzeLabel.setVisible(false);
+                multFilesPanel.setVisible(false);
                 filesCheckboxesPanel.setVisible(false);
             } else if(selectedButton.getText().equals("Multiple Files")) {
-                filesDirLabel.setVisible(true);
-                filesPath.setVisible(true);
-                findFilesInDirButton.setVisible(true);
+                multFilesPanel.setVisible(true);
             }
         };
 
@@ -195,9 +231,10 @@ public class ProjectSettingsComponent {
             dirPathWarningLabel.setVisible(false);
             filesCheckboxesPanel.removeAll(); // Clear checkboxes panel of any previous files' checkboxes
             allFilesCheckboxes.clear(); // Clear ArrayList of any previous files' checkboxes
-            String filesPathStr = String.valueOf(filesPath);
+            filesCheckboxesPanel.add(filesToAnalyzeSelectionLabel); // Add filesToAnalyzeSelectionLabel to filesCheckboxesPanel again
+            String filesPathStr = filesPath.getText();
             // Check if a path was provided, and if it leads to a valid directory
-            if(!(filesPathStr.equals("null"))) {
+            if(!(filesPathStr.equals(""))) {
                 File filesDir = new File(filesPathStr);
                 if(filesDir.isDirectory()) {
                     File[] allFiles = filesDir.listFiles();
@@ -205,19 +242,22 @@ public class ProjectSettingsComponent {
                     // Create a checkbox for each file and add them to the checkbox panel + ArrayList
                     if(allFiles != null) {
                         for(File file : allFiles) {
-                            if(file.isFile()) {
+                            if (file.isFile()) {
                                 JCheckBox fileCheckBox = new JCheckBox(file.getName());
                                 filesCheckboxesPanel.add(fileCheckBox);
                                 allFilesCheckboxes.add(fileCheckBox);
                             }
                         }
-                        filesToAnalyzeLabel.setVisible(true);
                         filesCheckboxesPanel.setVisible(true);
+                        filesToAnalyzeSelectionLabel.setVisible(true);
                     }
                 } else {
                     // If an invalid directory path was provided:
                     dirPathWarningLabel.setVisible(true);
                 }
+            } else {
+                // If no directory path was provided:
+                dirPathWarningLabel.setVisible(true);
             }
         });
 
@@ -257,45 +297,6 @@ public class ProjectSettingsComponent {
             public void insertUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
             public void removeUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
             public void changedUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
-        });
-
-        // Check API key prefix consistency with selected provider
-        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            public void insertUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
-            public void removeUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
-            public void changedUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
-
-            private void validateApiKeyPrefix() {
-                String apiKey = new String(aiderApiKey.getPassword()).trim();
-                String provider = (String) llmProviderComboBox.getSelectedItem();
-                boolean mismatch = false;
-
-                if (provider != null && !apiKey.isEmpty()) {
-                    switch (provider) {
-                        case "OpenAI":
-                            mismatch = !apiKey.startsWith("sk-proj-");
-                            break;
-                        case "Gemini":
-                            mismatch = !apiKey.startsWith("AIzaSy");
-                            break;
-                        case "DeepSeek":
-                            mismatch = !apiKey.startsWith("sk-");
-                            break;
-                        case "Anthropic":
-                            mismatch = !apiKey.startsWith("sk-ant-");
-                            break;
-                    }
-                }
-
-                if (mismatch) {
-                    JOptionPane.showMessageDialog(
-                            mainPanel,
-                            "The API key prefix does not match the selected provider.\nPlease verify your key.",
-                            "API Key Provider Mismatch",
-                            JOptionPane.WARNING_MESSAGE
-                    );
-                }
-            }
         });
 
         // Watch for changes in the model selection combo box
@@ -644,5 +645,39 @@ public class ProjectSettingsComponent {
 
     private void notifySettingsChanged() {
         // This method exists solely to trigger IntelliJ's internal modified state tracking
+    }
+
+    void validateApiKeyPrefix() {
+        if (!apiKeyPanel.isVisible()) return;
+
+        String apiKey = new String(aiderApiKey.getPassword()).trim();
+        String provider = (String) llmProviderComboBox.getSelectedItem();
+        boolean mismatch = false;
+
+        if (provider != null && !apiKey.isEmpty()) {
+            switch (provider) {
+                case "OpenAI":
+                    mismatch = !apiKey.startsWith("sk-proj-");
+                    break;
+                case "Gemini":
+                    mismatch = !apiKey.startsWith("AIzaSy");
+                    break;
+                case "DeepSeek":
+                    mismatch = !apiKey.startsWith("sk-");
+                    break;
+                case "Anthropic":
+                    mismatch = !apiKey.startsWith("sk-ant-");
+                    break;
+            }
+        }
+
+        if (mismatch) {
+            JOptionPane.showMessageDialog(
+                    mainPanel,
+                    "The API key prefix does not match the selected provider.\nPlease verify your key.",
+                    "API Key Provider Mismatch",
+                    JOptionPane.WARNING_MESSAGE
+            );
+        }
     }
 }

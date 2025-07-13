@@ -22,8 +22,8 @@ import java.util.List;
 public class AiderHelper {
 
     public static void checkAndSuggestRefactor(Project project, VirtualFile file, String provider, String model, String apikey, String aiderPath) {
-        // only takes in one VirtualFile; maybe create version of this method that takes in array of VirtualFiles? Or call this method for each file selected.
-        notify(project, "Aider is running clone detection...");
+        String fileName = file.getName();
+        notify(project, "Aider is running clone detection on " + fileName + "...");
         String filePath = file.getPath();
 
         try {
@@ -42,17 +42,17 @@ public class AiderHelper {
                         ApplicationManager.getApplication().invokeLater(() -> {
                             int choice = Messages.showYesNoDialog(
                                     project,
-                                    "Aider found clones. Do you want to refactor it?",
+                                    "Aider found clones in " + fileName + ". Do you want to refactor it?",
                                     "Code Refactoring",
                                     Messages.getQuestionIcon()
                             );
                             if (choice == Messages.YES) {
-                                runRefactorWithPreview(project, filePath, provider, model, apikey, aiderPath);
+                                runRefactorWithPreview(project, fileName, filePath, provider, model, apikey, aiderPath);
                             }
                         });
                     } else {
                         ApplicationManager.getApplication().invokeLater(() -> {
-                            notify(project, "Aider did not detect any clones in the file.");
+                            notify(project, "Aider did not detect any clones in the file " + fileName + ".");
                         });
                     }
 
@@ -67,8 +67,8 @@ public class AiderHelper {
         }
     }
 
-    private static void runRefactorWithPreview(Project project, String filePath, String provider, String model, String apikey, String aiderPath) {
-        notify(project, "Aider is running code refactoring...");
+    private static void runRefactorWithPreview(Project project, String fileName, String filePath, String provider, String model, String apikey, String aiderPath) {
+        notify(project, "Aider is running code refactoring on " + fileName + "...");
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
                 File originalFile = new File(filePath);
@@ -105,7 +105,7 @@ public class AiderHelper {
                         ApplicationManager.getApplication().invokeLater(() -> {
                             int choice = Messages.showYesNoDialog(
                                     project,
-                                    "Do you want to apply the refactored code?",
+                                    "Do you want to apply the refactored code to " + fileName + "?",
                                     "Apply Refactoring",
                                     Messages.getQuestionIcon()
                             );
@@ -113,21 +113,21 @@ public class AiderHelper {
                             if (choice == Messages.YES) {
                                 try {
                                     Files.write(originalFile.toPath(), refactoredContent.getBytes(StandardCharsets.UTF_8));
-                                    notify(project, "File has been updated with refactored version.");
+                                    notify(project, "File " + fileName + " has been updated with refactored version.");
                                 } catch (IOException e) {
-                                    notify(project, "Failed to overwrite file: " + e.getMessage());
+                                    notify(project, "Failed to overwrite file " + fileName + ": " + e.getMessage());
                                 }
                             } else {
-                                notify(project, "Refactoring was canceled.");
+                                notify(project, "Refactoring for file " + fileName + "was canceled.");
                             }
                         }, ModalityState.NON_MODAL);
                     });
                 } else {
-                    notify(project, "No meaningful changes in refactored code.");
+                    notify(project, "No meaningful changes in refactored code for file " + fileName + ".");
                 }
 
             } catch (Exception e) {
-                notify(project, "Refactor failed: " + e.getMessage());
+                notify(project, "Refactor failed for file " + fileName + ": " + e.getMessage());
                 e.printStackTrace();
             }
         });
@@ -138,7 +138,7 @@ public class AiderHelper {
         return normalized.contains("clones found") && !normalized.contains("no clones found");
     }
 
-    private static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt, String provider, String model, String apikey) throws IOException, InterruptedException {
+    public static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt, String provider, String model, String apikey) throws IOException, InterruptedException {
         if (model.startsWith("deepseek-")) {
             model = "deepseek/" + model;
         }
@@ -197,45 +197,5 @@ public class AiderHelper {
                 NotificationType.INFORMATION
         );
         Notifications.Bus.notify(notification, project);
-    }
-
-    public static String suggestMethodName(Project project, String codeSnippet, String provider, String model, String apikey, String aiderPath, int count) {
-        try {
-            File tempFile = File.createTempFile("aider_namegen_", ".java");
-            Files.writeString(tempFile.toPath(), codeSnippet, StandardCharsets.UTF_8);
-            codeSnippet = codeSnippet.replaceAll("%", "%%");
-
-            String prompt = String.format(
-                    "Suggest " + count + " concise and meaningful Java method names for the following extracted method:" + "\n\n" + codeSnippet + "\n\n" +
-                    "List only the method names, no method bodies. Use valid Java identifiers and place each name on a new line, ranked from most to least confident." +
-                            "Output the name suggestion in this format: rank method_name_1, for example, 1 name_1"
-            );
-            String output = runAiderWithPrompt(project, aiderPath, tempFile.getAbsolutePath(), prompt, provider, model, apikey);
-
-            if (output != null) {
-                List<String> candidates = output.lines()
-                        .map(String::trim)
-                        .filter(line -> line.matches("\\d+\\s+[a-zA-Z_$][a-zA-Z\\d_$]*"))
-                        .map(line -> line.split("\\s+", 2)[1])
-                        .limit(count)
-                        .toList();
-
-                if (!candidates.isEmpty()) {
-                    String selected = Messages.showEditableChooseDialog(
-                            "Choose a method name:",       // dialog message
-                            "Aider Name Suggestions",      // title
-                            Messages.getQuestionIcon(),    // icon
-                            candidates.toArray(new String[0]), // options
-                            candidates.get(0),             // initial selection
-                            null                           // validator
-                    );
-                    return selected != null ? selected : null;
-                }
-            }
-        } catch (Exception e) {
-            notify(project, "Failed to generate method names: " + e.getMessage());
-            e.printStackTrace();
-        }
-        return null;
     }
 }

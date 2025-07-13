@@ -65,14 +65,23 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             ArrayList<JCheckBox> filesCheckboxes = new ArrayList<>(state.getAllFilesCheckboxes());
             String selectedAnalysisButton = state.getSelectedAnalysisButton();
 
+            System.out.println("Selected button: '" + selectedAnalysisButton + "'");
+
             // Check which analysis option was chosen ("Current File", "All Files in Current Directory", or "Multiple Files")
             // Take proper action according to selected option
             if(selectedAnalysisButton.equals("Current File")) {
                 // If "Current File": default operation occurs (analysis of only the file that is currently open by the user).
+
+                System.out.println("Current File properly selected");
+                System.out.println(file.getVirtualFile().getName());
+
                 AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath);
             } else if(selectedAnalysisButton.equals("All Files in Current Directory")) {
                 // If "All Files [...]": get dir of current file, get all files in dir
                 // Call checkAndSuggestRefactor on each file in dir
+
+                System.out.println("All Files in Current Directory properly selected");
+
                 VirtualFile currFileVF = file.getVirtualFile();
                 VirtualFile parentDir = currFileVF.getParent();
                 String dirPath = parentDir.getPath();
@@ -84,6 +93,9 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                             String fileAbsPath = fileInDir.getAbsolutePath();
                             VirtualFile virtualFileInDir = LocalFileSystem.getInstance().findFileByPath(fileAbsPath);
                             if(virtualFileInDir != null) {
+
+                                System.out.println(virtualFileInDir.getName());
+
                                 AiderHelper.checkAndSuggestRefactor(project, virtualFileInDir, provider, model, apiKey, aiderPath);
                             }
                         }
@@ -93,6 +105,9 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 // If "Multiple Files":
                 // If a path to search for files has been provided and a file's checkbox has been selected:
                 // Call checkAndSuggestRefactor on the particular file
+
+                System.out.println("Multiple Files properly selected");
+
                 if (!(filesPath == null || filesPath.equals(""))) {
                     for (int i = 0; i < filesCheckboxes.size(); i++) {
                         if(filesCheckboxes.get(i).isSelected()) {
@@ -100,13 +115,13 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                             String filePath = filesPath + "/" + fileName;
                             VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath(filePath);
                             if (virtualFile != null) {
+
+                                System.out.println(virtualFile.getName());
+
                                 AiderHelper.checkAndSuggestRefactor(project, virtualFile, provider, model, apiKey, aiderPath);
                             }
                         }
                     }
-                    // Alternatively: create new version of checkAndSuggestRefactor that takes in an array of these
-                    // virtual files and cross-compares them instead of queueing them up to be analyzed individually, one
-                    // after the other.
                 }
             }
         }
