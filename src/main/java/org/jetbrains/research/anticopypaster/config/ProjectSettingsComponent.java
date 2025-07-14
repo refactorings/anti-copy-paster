@@ -207,6 +207,19 @@ public class ProjectSettingsComponent {
         dirPathWarningGbc.insets = new Insets(0, 5, 0, 0);
         multFilesPanel.add(dirPathWarningLabel, dirPathWarningGbc);
 
+        // Add warning icon and tooltip for empty directory path
+        JLabel emptyDirPathWarningLabel = new JLabel(warningIcon);
+        emptyDirPathWarningLabel.setToolTipText("Empty directory path");
+        emptyDirPathWarningLabel.setVisible(false);
+
+        // Add warning icon with constraints
+        GridBagConstraints emptyDirPathWarningGbc = new GridBagConstraints();
+        emptyDirPathWarningGbc.gridx = 3;
+        emptyDirPathWarningGbc.gridy = 0;
+        emptyDirPathWarningGbc.anchor = GridBagConstraints.WEST;
+        emptyDirPathWarningGbc.insets = new Insets(0, 5, 0, 0);
+        multFilesPanel.add(emptyDirPathWarningLabel, emptyDirPathWarningGbc);
+
         // Create an ActionListener for the currentFileButton, allFilesButton, and multipleFilesButton
         // (If user selects the "Multiple Files" option, make extra fields visible)
         // (If user selects either of the other buttons, resort to default visibility)
@@ -229,6 +242,7 @@ public class ProjectSettingsComponent {
         // Watch for action in relation to Find Files button (if user clicks the Find Files button)
         findFilesInDirButton.addActionListener(e -> {
             dirPathWarningLabel.setVisible(false);
+            emptyDirPathWarningLabel.setVisible(false);
             filesCheckboxesPanel.removeAll(); // Clear checkboxes panel of any previous files' checkboxes
             allFilesCheckboxes.clear(); // Clear ArrayList of any previous files' checkboxes
             filesCheckboxesPanel.add(filesToAnalyzeSelectionLabel); // Add filesToAnalyzeSelectionLabel to filesCheckboxesPanel again
@@ -240,7 +254,7 @@ public class ProjectSettingsComponent {
                     File[] allFiles = filesDir.listFiles();
                     // If files exist in the directory:
                     // Create a checkbox for each file and add them to the checkbox panel + ArrayList
-                    if(allFiles != null) {
+                    if(allFiles.length > 0) {
                         for(File file : allFiles) {
                             if (file.isFile()) {
                                 JCheckBox fileCheckBox = new JCheckBox(file.getName());
@@ -250,6 +264,9 @@ public class ProjectSettingsComponent {
                         }
                         filesCheckboxesPanel.setVisible(true);
                         filesToAnalyzeSelectionLabel.setVisible(true);
+                    } else {
+                        // If an empty directory path was provided:
+                        emptyDirPathWarningLabel.setVisible(true);
                     }
                 } else {
                     // If an invalid directory path was provided:

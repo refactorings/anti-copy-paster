@@ -2,6 +2,9 @@ package org.jetbrains.research.anticopypaster.ide;
 
 import com.intellij.codeInsight.editorActions.CopyPastePreProcessor;
 import com.intellij.ide.DataManager;
+import com.intellij.notification.Notification;
+import com.intellij.notification.NotificationType;
+import com.intellij.notification.Notifications;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.ApplicationManager;
@@ -109,17 +112,38 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 System.out.println("Multiple Files properly selected");
 
                 if (!(filesPath == null || filesPath.equals(""))) {
-                    for (int i = 0; i < filesCheckboxes.size(); i++) {
-                        if(filesCheckboxes.get(i).isSelected()) {
-                            String fileName = (filesCheckboxes.get(i)).getText();
-                            String filePath = filesPath + "/" + fileName;
-                            VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath(filePath);
-                            if (virtualFile != null) {
+                    File filesDir = new File(filesPath);
+                    if(!filesDir.isDirectory()) {
+                        System.out.println("Invalid directory path");
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file for Aider to run on.");
+                        });
+                    } else if(filesCheckboxes.isEmpty()) {
+                        System.out.println("No files exist within the provided directory");
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            notify(project, "No files exist in the directory provided in the plugin menu. Please input a non-empty directory and select at least one file for Aider to run on.");
+                        });
+                    } else {
+                        boolean filesSelected = false;
+                        for (int i = 0; i < filesCheckboxes.size(); i++) {
+                            if(filesCheckboxes.get(i).isSelected()) {
+                                filesSelected = true;
+                                String fileName = (filesCheckboxes.get(i)).getText();
+                                String filePath = filesPath + "/" + fileName;
+                                VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath(filePath);
+                                if (virtualFile != null) {
 
-                                System.out.println(virtualFile.getName());
+                                    System.out.println(virtualFile.getName());
 
-                                AiderHelper.checkAndSuggestRefactor(project, virtualFile, provider, model, apiKey, aiderPath);
+                                    AiderHelper.checkAndSuggestRefactor(project, virtualFile, provider, model, apiKey, aiderPath);
+                                }
                             }
+                        }
+                        if(!filesSelected) {
+                            System.out.println("No file checkbox(es) selected within plugin menu");
+                            ApplicationManager.getApplication().invokeLater(() -> {
+                                notify(project, "No files have been selected in the plugin menu. Please select at least one file to run Aider on.");
+                            });
                         }
                     }
                 }
@@ -175,5 +199,15 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         } catch (Exception ex) {
             LOG.error("[ACP] Failed to schedule the checking for refactorings.", ex.getMessage());
         }
+    }
+
+    private static void notify(Project project, String content) {
+        Notification notification = new Notification(
+                "AiderRefactor",
+                "Aider Refactoring",
+                content,
+                NotificationType.INFORMATION
+        );
+        Notifications.Bus.notify(notification, project);
     }
 }
