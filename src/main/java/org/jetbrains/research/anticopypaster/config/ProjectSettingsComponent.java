@@ -167,10 +167,6 @@ public class ProjectSettingsComponent {
         // Add findFilesInDir button to multFilesPanel
         multFilesPanel.add(findFilesInDirButton);
 
-        // Set layout for filesCheckboxesPanel and add filesToAnalyzeSelectionLabel to filesCheckboxesPanel
-        filesCheckboxesPanel.setLayout(new WrapLayout(WrapLayout.LEFT, 30, 10));
-        filesCheckboxesPanel.add(filesToAnalyzeSelectionLabel);
-
         // Set default visibility for filesPanel and elements
         filesPanel.setVisible(true);
         multFilesPanel.setVisible(false);
@@ -245,7 +241,17 @@ public class ProjectSettingsComponent {
             emptyDirPathWarningLabel.setVisible(false);
             filesCheckboxesPanel.removeAll(); // Clear checkboxes panel of any previous files' checkboxes
             allFilesCheckboxes.clear(); // Clear ArrayList of any previous files' checkboxes
-            filesCheckboxesPanel.add(filesToAnalyzeSelectionLabel); // Add filesToAnalyzeSelectionLabel to filesCheckboxesPanel again
+
+            // Establishing GBC for filesToAnalyzeSelectionLabel and checkboxes to be added to filesCheckboxesPanel
+            GridBagConstraints filesCheckboxesPanelGbc = new GridBagConstraints();
+            filesCheckboxesPanelGbc.gridx = 0;
+            filesCheckboxesPanelGbc.gridy = 0;
+            filesCheckboxesPanelGbc.weightx = 1.0;
+            filesCheckboxesPanelGbc.fill = GridBagConstraints.BOTH;
+            filesCheckboxesPanelGbc.anchor = GridBagConstraints.WEST;
+            filesCheckboxesPanelGbc.insets = new Insets(0, 8, 8, 0);
+
+            filesCheckboxesPanel.add(filesToAnalyzeSelectionLabel, filesCheckboxesPanelGbc); // Add filesToAnalyzeSelectionLabel to filesCheckboxesPanel again
             String filesPathStr = filesPath.getText();
             // Check if a path was provided, and if it leads to a valid directory
             if(!(filesPathStr.equals(""))) {
@@ -255,12 +261,25 @@ public class ProjectSettingsComponent {
                     // If files exist in the directory:
                     // Create a checkbox for each file and add them to the checkbox panel + ArrayList
                     if(allFiles.length > 0) {
+                        // Initializing rowNum and colNum for future use in filesCheckboxesPanelGbc
+                        int rowNum = 0;
+                        int colNum = 1;
+
                         for(File file : allFiles) {
-                            if (file.isFile()) {
-                                JCheckBox fileCheckBox = new JCheckBox(file.getName());
-                                filesCheckboxesPanel.add(fileCheckBox);
-                                allFilesCheckboxes.add(fileCheckBox);
+                            // Moving to column 0 of next row if colNum > last column of current row
+                            if(colNum > 3) {
+                                colNum = 0;
+                                rowNum++;
                             }
+
+                            filesCheckboxesPanelGbc.gridx = colNum;
+                            filesCheckboxesPanelGbc.gridy = rowNum;
+
+                            JCheckBox fileCheckBox = new JCheckBox(file.getName());
+                            filesCheckboxesPanel.add(fileCheckBox, filesCheckboxesPanelGbc);
+                            allFilesCheckboxes.add(fileCheckBox);
+
+                            colNum++;
                         }
                         filesCheckboxesPanel.setVisible(true);
                         filesToAnalyzeSelectionLabel.setVisible(true);
