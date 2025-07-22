@@ -554,14 +554,22 @@ public class ExtractionTask {
                 }
                 methodName = getNewMethodName(containingClass, pred.get(0));
                 passPreds(pred);
-                finalizeExtraction(project, containingClass, factory, results, template, returnType, normalizedLambdaArgs, methodName, extractToStatic);
+                Clone finalTemplate1 = template;
+                String finalReturnType1 = returnType;
+                ApplicationManager.getApplication().executeOnPooledThread(() ->
+                        finalizeExtraction(project, containingClass, factory, results, finalTemplate1, finalReturnType1, normalizedLambdaArgs, methodName, extractToStatic)
+                );
             }
             else if (ProjectSettingsState.getInstance(project).useNameRec == 1) {
                 pred = new ArrayList<>();
                 pred.add("extractedMethod");
                 methodName = getNewMethodName(containingClass, pred.get(0));
                 passPreds(pred);
-                finalizeExtraction(project, containingClass, factory, results, template, returnType, normalizedLambdaArgs, methodName, extractToStatic);
+                Clone finalTemplate2 = template;
+                String finalReturnType2 = returnType;
+                ApplicationManager.getApplication().invokeLater(() ->
+                        finalizeExtraction(project, containingClass, factory, results, finalTemplate2, finalReturnType2, normalizedLambdaArgs, methodName, extractToStatic)
+                );
             } else {
                 // Use the new async method name suggestion
                 final Project finalProject = project;
@@ -593,7 +601,9 @@ public class ExtractionTask {
                                 methodNameLocal = getNewMethodName(finalContainingClass, "extractedMethod");
                             }
                             passPreds(predLocal);
-                            finalizeExtraction(finalProject, finalContainingClass, finalFactory, finalResults, finalTemplate, finalReturnType, finalLambdaArgs, methodNameLocal, finalExtractToStatic);
+                            ApplicationManager.getApplication().invokeLater(() ->
+                                    finalizeExtraction(finalProject, finalContainingClass, finalFactory, finalResults, finalTemplate, finalReturnType, finalLambdaArgs, methodNameLocal, finalExtractToStatic, false)
+                            );
                         }
                 );
                 return;
@@ -602,6 +612,11 @@ public class ExtractionTask {
     }
 
     private void finalizeExtraction(Project project, PsiClass containingClass, PsiElementFactory factory, List<Clone> results, Clone template, String returnType, List<List<Integer>> normalizedLambdaArgs, String methodName, boolean extractToStatic) {
+        finalizeExtraction(project, containingClass, factory, results, template, returnType, normalizedLambdaArgs, methodName, extractToStatic, true);
+    }
+
+
+    private void finalizeExtraction(Project project, PsiClass containingClass, PsiElementFactory factory, List<Clone> results, Clone template, String returnType, List<List<Integer>> normalizedLambdaArgs, String methodName, boolean extractToStatic, boolean triggerRename) {
         PsiMethod extractedMethodElement = factory.createMethodFromText(
                 buildMethodText(template, returnType, normalizedLambdaArgs, methodName, extractToStatic),
                 containingClass
@@ -622,20 +637,21 @@ public class ExtractionTask {
                         for (Clone location : results)
                             generateMethodCall(location, factory, normalizedLambdaArgs, methodName);
 
-                        ApplicationManager.getApplication().invokeLater(() ->
-                                RefactoringActionHandlerFactory.getInstance().createRenameHandler().invoke(
-                                        project,
-                                        new PsiElement[]{lastElement},
-                                        SimpleDataContext.getProjectContext(project)
-                                )
-                        );
+                        if (triggerRename) {
+                            ApplicationManager.getApplication().invokeLater(() ->
+                                    RefactoringActionHandlerFactory.getInstance().createRenameHandler().invoke(
+                                            project,
+                                            new PsiElement[]{lastElement},
+                                            SimpleDataContext.getProjectContext(project)
+                                    )
+                            );
+                        }
                     },
                     "Clone Extraction",
                     null
             );
         });
     }
-
     private static void notify(Project project, String content) {
         Notification notification = new Notification(
                 "AiderRefactor",
