@@ -20,6 +20,7 @@ import java.net.URISyntaxException;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Enumeration;
 
 public class ProjectSettingsComponent {
 
@@ -79,6 +80,7 @@ public class ProjectSettingsComponent {
     private JLabel filesToAnalyzeSelectionLabel;
     private JPanel filesCheckboxesPanel;
     private JPanel multFilesPanel;
+    private JScrollPane filesCheckboxesScrollPane;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
@@ -170,25 +172,7 @@ public class ProjectSettingsComponent {
         // Set default visibility for filesPanel and elements
         filesPanel.setVisible(true);
         multFilesPanel.setVisible(false);
-        filesCheckboxesPanel.setVisible(false);
-
-        // Initialize analysisSelectionButtonGroup
-        analysisSelectionButtonGroup = new ButtonGroup();
-
-        // Add currentFileButton, allFilesButton, and multipleFilesButton to analysisSelectionButtonGroup
-        analysisSelectionButtonGroup.add(currentFileButton);
-        analysisSelectionButtonGroup.add(allFilesButton);
-        analysisSelectionButtonGroup.add(multipleFilesButton);
-
-        // Add currentFileButton, allFilesButton, and multipleFilesButton to analysisSelectionButtonList
-        analysisSelectionButtonList = new ArrayList<>();
-        analysisSelectionButtonList.add(currentFileButton);
-        analysisSelectionButtonList.add(allFilesButton);
-        analysisSelectionButtonList.add(multipleFilesButton);
-
-        // Set default button status for currentFileButton, allFilesButton, and multipleFilesButton
-        // Default selected status: true, false, false (respectively)
-        currentFileButton.setSelected(true);
+        filesCheckboxesScrollPane.setVisible(false);
 
         // Add warning icon and tooltip for invalid directory path
         JLabel dirPathWarningLabel = new JLabel(warningIcon);
@@ -221,10 +205,10 @@ public class ProjectSettingsComponent {
         // (If user selects either of the other buttons, resort to default visibility)
         analysisSelectionButtonListener = e -> {
             JRadioButton selectedButton = (JRadioButton) e.getSource();
-            if( ((selectedButton.getText()).equals("Current File")) ||
-                ((selectedButton.getText()).equals("All Files in Current Directory"))) {
+            if((selectedButton.getText()).equals("Current File") ||
+               (selectedButton.getText()).equals("All Files in Current Directory")) {
                 multFilesPanel.setVisible(false);
-                filesCheckboxesPanel.setVisible(false);
+                filesCheckboxesScrollPane.setVisible(false);
             } else if(selectedButton.getText().equals("Multiple Files")) {
                 multFilesPanel.setVisible(true);
             }
@@ -281,7 +265,7 @@ public class ProjectSettingsComponent {
 
                             colNum++;
                         }
-                        filesCheckboxesPanel.setVisible(true);
+                        filesCheckboxesScrollPane.setVisible(true);
                         filesToAnalyzeSelectionLabel.setVisible(true);
                     } else {
                         // If an empty directory path was provided:
@@ -601,9 +585,11 @@ public class ProjectSettingsComponent {
 
     public String getSelectedAnalysisButton() {
         String selectedButton = "";
-        for(JRadioButton button : analysisSelectionButtonList) {
-            if(button.isSelected()) {
-                selectedButton = button.getText();
+        Enumeration<AbstractButton> analysisButtons = analysisSelectionButtonGroup.getElements();
+        while (analysisButtons.hasMoreElements()) {
+            AbstractButton currButton = analysisButtons.nextElement();
+            if (currButton.isSelected()) {
+                selectedButton = currButton.getText();
                 break;
             }
         }
@@ -611,10 +597,17 @@ public class ProjectSettingsComponent {
     }
 
     public void setSelectedAnalysisButton(String analysisButtonText) {
-        for(JRadioButton button : analysisSelectionButtonList) {
-            if((button.getText()).equals(analysisButtonText)) {
-                button.setSelected(true);
-            }
+        switch (analysisButtonText) {
+            case "Current File":
+                currentFileButton.setSelected(true);
+                break;
+            case "All Files in Current Directory":
+                allFilesButton.setSelected(true);
+                break;
+            case "Multiple Files":
+                multipleFilesButton.setSelected(true);
+                multFilesPanel.setVisible(true);
+                break;
         }
     }
 
