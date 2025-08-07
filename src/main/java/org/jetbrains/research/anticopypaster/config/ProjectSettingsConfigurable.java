@@ -69,18 +69,10 @@ public class ProjectSettingsConfigurable implements Configurable {
     // Save dialog inputs to ProjectSettingsState saved state
     @Override
     public void apply() throws ConfigurationException {
-
-
         if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
              settingsComponent.getNameModel() == 2) &&
             (settingsComponent.getAiderApiKey() == null || settingsComponent.getAiderApiKey().trim().isEmpty())) {
             throw new ConfigurationException("API Key must be provided when using Aider.");
-        }
-
-        if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
-                settingsComponent.getNameModel() == 2) &&
-                (settingsComponent.getAiderApiKey() != null )) {
-            settingsComponent.validateApiKeyPrefix();
         }
 
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
