@@ -88,3 +88,4 @@ tasks {
         token = config("publishToken")
     }
 }
+

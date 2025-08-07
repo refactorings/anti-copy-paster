@@ -29,13 +29,9 @@ import java.awt.*;
 import java.io.*;
 import java.net.Socket;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.*;
 import java.util.List;
 import java.util.regex.Pattern;
-
-import static org.jetbrains.research.anticopypaster.ide.AiderHelper.runAiderWithPrompt;
 
 public class ExtractionTask {
     public Project project;
@@ -379,52 +375,6 @@ public class ExtractionTask {
         return extractedText;
     }
 
-    public static void suggestMethodNameAsync(Project project, String codeSnippet, String provider, String model, String apikey, String aiderPath, int count, java.util.function.Consumer<String> callback) {
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            try {
-                File tempFile = File.createTempFile("aider_namegen_", ".java");
-                final String escapedCodeSnippet = codeSnippet.replaceAll("%", "%%");
-                Files.writeString(tempFile.toPath(), escapedCodeSnippet, StandardCharsets.UTF_8);
-
-                String prompt = String.format(
-                        "Suggest " + count + " concise and meaningful Java method names for the following extracted method:" + "\n\n" + escapedCodeSnippet + "\n\n" +
-                                "List only the method names, no method bodies. Use valid Java identifiers and place each name on a new line, ranked from most to least confident." +
-                                "Output the name suggestion in this format: rank method_name_1, for example, 1 name_1"
-                );
-                notify(project, "Aider is generating names...");
-                String output = runAiderWithPrompt(project, aiderPath, tempFile.getAbsolutePath(), prompt, provider, model, apikey);
-
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    String selected = null;
-                    if (output != null) {
-                        List<String> candidates = output.lines()
-                                .map(String::trim)
-                                .filter(line -> line.matches("\\d+\\s+[a-zA-Z_$][a-zA-Z\\d_$]*"))
-                                .map(line -> line.split("\\s+", 2)[1])
-                                .limit(count)
-                                .toList();
-
-                        if (!candidates.isEmpty()) {
-                            selected = Messages.showEditableChooseDialog(
-                                    "Choose a method name:",
-                                    "Aider Name Suggestions",
-                                    Messages.getQuestionIcon(),
-                                    candidates.toArray(new String[0]),
-                                    candidates.get(0),
-                                    null
-                            );
-                        }
-                    }
-                    callback.accept(selected);
-                });
-            } catch (Exception e) {
-                notify(project, "Failed to generate method names: " + e.getMessage());
-                e.printStackTrace();
-                ApplicationManager.getApplication().invokeLater(() -> callback.accept(null));
-            }
-        });
-    }
-
     public void passPreds(List<String> preds){
         String predstr = "";
         for (String pred : preds){
@@ -553,86 +503,75 @@ public class ExtractionTask {
                     }
                 }
                 methodName = getNewMethodName(containingClass, pred.get(0));
-                passPreds(pred);
-                finalizeExtraction(project, containingClass, factory, results, template, returnType, normalizedLambdaArgs, methodName, extractToStatic);
             }
             else if (ProjectSettingsState.getInstance(project).useNameRec == 1) {
                 pred = new ArrayList<>();
                 pred.add("extractedMethod");
                 methodName = getNewMethodName(containingClass, pred.get(0));
-                passPreds(pred);
-                finalizeExtraction(project, containingClass, factory, results, template, returnType, normalizedLambdaArgs, methodName, extractToStatic);
             } else {
-                // Use the new async method name suggestion
-                final Project finalProject = project;
-                final PsiClass finalContainingClass = containingClass;
-                final PsiElementFactory finalFactory = factory;
-                final List<Clone> finalResults = results;
-                final Clone finalTemplate = template;
-                final String finalReturnType = returnType;
-                final List<List<Integer>> finalLambdaArgs = normalizedLambdaArgs;
-                final boolean finalExtractToStatic = extractToStatic;
-                suggestMethodNameAsync(
-                        finalProject,
-                        buildMethodText(finalTemplate, finalReturnType, finalLambdaArgs, "tempName", finalExtractToStatic),
-                        ProjectSettingsState.getInstance(finalProject).getLlmprovider(),
-                        ProjectSettingsState.getInstance(finalProject).getAiderModel(),
-                        ProjectSettingsState.getInstance(finalProject).getAiderApiKey(),
-                        ProjectSettingsState.getInstance(finalProject).getAiderPath(),
-                        ProjectSettingsState.getInstance(finalProject).numOfPreds,
-                        (String methodSuggestion) -> {
-                            List<String> predLocal;
-                            String methodNameLocal;
-                            if (methodSuggestion != null && !methodSuggestion.isEmpty()) {
-                                predLocal = new ArrayList<>();
-                                predLocal.add(methodSuggestion);
-                                methodNameLocal = getNewMethodName(finalContainingClass, methodSuggestion);
-                            } else {
-                                predLocal = new ArrayList<>();
-                                predLocal.add("extractedMethod");
-                                methodNameLocal = getNewMethodName(finalContainingClass, "extractedMethod");
-                            }
-                            passPreds(predLocal);
-                            finalizeExtraction(finalProject, finalContainingClass, finalFactory, finalResults, finalTemplate, finalReturnType, finalLambdaArgs, methodNameLocal, finalExtractToStatic);
-                        }
-                );
-                return;
-            }
-        });
-    }
-
-    private void finalizeExtraction(Project project, PsiClass containingClass, PsiElementFactory factory, List<Clone> results, Clone template, String returnType, List<List<Integer>> normalizedLambdaArgs, String methodName, boolean extractToStatic) {
-        PsiMethod extractedMethodElement = factory.createMethodFromText(
-                buildMethodText(template, returnType, normalizedLambdaArgs, methodName, extractToStatic),
-                containingClass
-        );
-
-        JavaCodeStyleManager styleManagerForLambdas = JavaCodeStyleManager.getInstance(project);
-        styleManagerForLambdas.shortenClassReferences(extractedMethodElement);
-
-        ApplicationManager.getApplication().runWriteAction(() -> {
-            CommandProcessor.getInstance().executeCommand(
+                notify(project, "Aider is running name suggestion ...");
+                String methodSuggestion = AiderHelper.suggestMethodName(
                     project,
-                    () -> {
-                        PsiElement spacer = PsiParserFacade.getInstance(project).createWhiteSpaceFromText("\n");
-                        PsiElement lastElement = containingClass.addBefore(extractedMethodElement, containingClass.getRBrace());
-                        containingClass.addAfter(spacer, lastElement);
-                        CodeStyleManager styleManager = CodeStyleManager.getInstance(project);
-                        styleManager.reformat(lastElement);
-                        for (Clone location : results)
-                            generateMethodCall(location, factory, normalizedLambdaArgs, methodName);
+                    buildMethodText(template, returnType, normalizedLambdaArgs, "tempName", extractToStatic),
+                    ProjectSettingsState.getInstance(project).getLlmprovider(),
+                    ProjectSettingsState.getInstance(project).getAiderModel(),
+                    ProjectSettingsState.getInstance(project).getAiderApiKey(),
+                    ProjectSettingsState.getInstance(project).getAiderPath(),
+                    ProjectSettingsState.getInstance(project).numOfPreds
+                );
+                if (methodSuggestion != null && !methodSuggestion.isEmpty()) {
+                    pred = new ArrayList<>();
+                    pred.add(methodSuggestion);
+                    methodName = getNewMethodName(containingClass, methodSuggestion);
+                } else {
+                    pred = new ArrayList<>();
+                    pred.add("extractedMethod");
+                    methodName = getNewMethodName(containingClass, "extractedMethod");
+                }
+            }
+            passPreds(pred);
 
-                        ApplicationManager.getApplication().invokeLater(() ->
+            PsiMethod extractedMethodElement = factory.createMethodFromText(
+                    buildMethodText(
+                            template,
+                            returnType,
+                            normalizedLambdaArgs,
+                            methodName,
+                            extractToStatic
+                    ),
+                    containingClass
+            );
+
+            // shortens the lambda args from java.util.function.Function to just Function
+            // and imports the module if it needs to be imported (same for BiFunction)
+            JavaCodeStyleManager styleManagerForLambdas = JavaCodeStyleManager.getInstance(project);
+            styleManagerForLambdas.shortenClassReferences(extractedMethodElement);
+            ApplicationManager.getApplication().runWriteAction(() -> {
+                CommandProcessor.getInstance().executeCommand(
+                        project,
+                        () -> {
+                            PsiElement spacer = PsiParserFacade.getInstance(project).createWhiteSpaceFromText("\n");
+                            PsiElement lastElement = containingClass.addBefore(extractedMethodElement, containingClass.getRBrace());
+                            containingClass.addAfter(spacer, lastElement);
+                            CodeStyleManager styleManager = CodeStyleManager.getInstance(project);
+                            styleManager.reformat(lastElement);
+                            for (Clone location : results)
+                                generateMethodCall(location, factory, normalizedLambdaArgs, methodName);
+
+                            ApplicationManager.getApplication().invokeLater(() ->
                                 RefactoringActionHandlerFactory.getInstance().createRenameHandler().invoke(
                                         project,
                                         new PsiElement[]{lastElement},
                                         SimpleDataContext.getProjectContext(project)
                                 )
-                        );
-                    },
-                    "Clone Extraction",
-                    null
-            );
+                            );
+                        },
+                        "Clone Extraction",
+                        null
+                );
+            });
+
+
         });
     }
 
