@@ -319,6 +319,13 @@ public class ProjectSettingsComponent {
             public void changedUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
         });
 
+        // Check API key prefix consistency with selected provider
+        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
+        });
+
         // Watch for changes in the model selection combo box
         aidermodelComboBox.addActionListener(e -> notifySettingsChanged());
         llmProviderComboBox.addActionListener(e -> {
@@ -676,7 +683,7 @@ public class ProjectSettingsComponent {
         // This method exists solely to trigger IntelliJ's internal modified state tracking
     }
 
-    void validateApiKeyPrefix() {
+    private void validateApiKeyPrefix() {
         if (!apiKeyPanel.isVisible()) return;
 
         String apiKey = new String(aiderApiKey.getPassword()).trim();
