@@ -683,7 +683,7 @@ public class ProjectSettingsComponent {
         // This method exists solely to trigger IntelliJ's internal modified state tracking
     }
 
-    private void validateApiKeyPrefix() {
+    void validateApiKeyPrefix() {
         if (!apiKeyPanel.isVisible()) return;
 
         String apiKey = new String(aiderApiKey.getPassword()).trim();
