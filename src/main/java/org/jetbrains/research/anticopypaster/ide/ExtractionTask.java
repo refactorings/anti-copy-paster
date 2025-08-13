@@ -426,17 +426,11 @@ public class ExtractionTask {
     }
 
     public void passPreds(List<String> preds){
-        String predstr = "";
-        for (String pred : preds){
-            predstr += (pred+"-");
-        }
-        try{
-            Socket socket = new Socket("localhost", 8082);
-            PrintWriter out = new PrintWriter(socket.getOutputStream(),true);
+        String predstr = String.join("-", preds);
+        try (Socket socket = new Socket("localhost", 8082);
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
             out.println(predstr);
-            socket.close();
         } catch (IOException e) {
-            throw new RuntimeException(e);
         }
     }
 
