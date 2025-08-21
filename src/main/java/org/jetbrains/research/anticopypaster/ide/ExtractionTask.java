@@ -399,8 +399,11 @@ public class ExtractionTask {
                     if (output != null) {
                         List<String> candidates = output.lines()
                                 .map(String::trim)
-                                .filter(line -> line.matches("\\d+\\s+[a-zA-Z_$][a-zA-Z\\d_$]*"))
-                                .map(line -> line.split("\\s+", 2)[1])
+                                .filter(line -> !line.isEmpty())
+                                // accept formats like "1 name", "1) name", "1. name", "1: name", or just "name"
+                                .map(line -> line.replaceFirst("^[\\d]+[\\s\\).:]+", ""))
+                                .filter(name -> name.matches("[a-zA-Z_$][a-zA-Z\\d_$]*"))
+                                .distinct()
                                 .limit(count)
                                 .toList();
 
@@ -411,6 +414,17 @@ public class ExtractionTask {
                                     Messages.getQuestionIcon(),
                                     candidates.toArray(new String[0]),
                                     candidates.get(0),
+                                    null
+                            );
+                        } else {
+                            // Aider ran but no parseable candidates — ask user manually
+                            notify(project, "Aider didn't return any usable name suggestions. Please enter a method name.");
+                            selected = Messages.showInputDialog(
+                                    project,
+                                    "Enter a method name:",
+                                    "Aider Name Suggestions",
+                                    Messages.getQuestionIcon(),
+                                    "extractedMethod",
                                     null
                             );
                         }
@@ -590,6 +604,7 @@ public class ExtractionTask {
                                 predLocal.add(methodSuggestion);
                                 methodNameLocal = getNewMethodName(finalContainingClass, methodSuggestion);
                             } else {
+                                notify(finalProject, "Aider did not provide a name. Using default 'extractedMethod'.");
                                 predLocal = new ArrayList<>();
                                 predLocal.add("extractedMethod");
                                 methodNameLocal = getNewMethodName(finalContainingClass, "extractedMethod");
