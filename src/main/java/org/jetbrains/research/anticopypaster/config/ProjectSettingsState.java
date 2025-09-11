@@ -71,6 +71,10 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public String llmProvider = "";
 
+    public String apiBase = "";
+
+    public String apiVersion = "";
+
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);
     }
@@ -117,6 +121,14 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public void setLlmprovider(String provider) {
         this.llmProvider = provider;
     }
+
+    public String getApiBase() { return apiBase; }
+
+    public void setApiBase(String base) { this.apiBase = base; }
+
+    public String getApiVersion() { return apiVersion; }
+
+    public void setApiVersion(String version) { this.apiVersion = version; }
 
     public enum JudgementModel {
         TENSORFLOW(0),

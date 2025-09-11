@@ -63,6 +63,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= !Objects.equals(settingsComponent.getSelectedAiderModel(), settings.getAiderModel());
         modified |= !Objects.equals(settingsComponent.getLlmProvider(), settings.getLlmprovider());
         modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
+        modified |= !Objects.equals(settingsComponent.getApiBase(), settings.getApiBase());
+        modified |= !Objects.equals(settingsComponent.getApiVersion(), settings.getApiVersion());
         return modified;
     }
 
@@ -74,6 +76,15 @@ public class ProjectSettingsConfigurable implements Configurable {
             (settingsComponent.getAiderApiKey() == null || settingsComponent.getAiderApiKey().trim().isEmpty())) {
             throw new ConfigurationException("API Key must be provided when using Aider.");
         }
+        if ("Azure".equalsIgnoreCase(settingsComponent.getLlmProvider())) {
+            if (settingsComponent.getApiBase() == null || settingsComponent.getApiBase().trim().isEmpty()) {
+                throw new ConfigurationException("API Base must be provided when using Azure.");
+            }
+            if (settingsComponent.getApiVersion() == null || settingsComponent.getApiVersion().trim().isEmpty()) {
+                throw new ConfigurationException("API Version must be provided when using Azure.");
+            }
+        }
+
 
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         settings.minimumDuplicateMethods = settingsComponent.getMinimumDuplicateMethods();
@@ -100,6 +111,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.setLlmprovider(settingsComponent.getLlmProvider());
         settings.setAiderModel(settingsComponent.getSelectedAiderModel());
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
+        settings.setApiBase(settingsComponent.getApiBase());
+        settings.setApiVersion(settingsComponent.getApiVersion());
     }
 
     // Pull from saved state to preset dialog state upon opening
@@ -130,6 +143,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setLlmProvider(settings.getLlmprovider());
         settingsComponent.setSelectedAiderModel(settings.getAiderModel());
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());
+        settingsComponent.setApiBase(settings.getApiBase());
+        settingsComponent.setApiVersion(settings.getApiVersion());
     }
 
     @Override

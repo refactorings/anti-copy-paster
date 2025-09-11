@@ -60,10 +60,17 @@ public class ProjectSettingsComponent {
     private JTextField aiderPath;
     private JPanel pathPanel;
     private JButton reset;
+    private JTextField apiVersion;
+    private JPanel azureApiVersion;
+    private JPanel azureApiBase;
+    private JTextField apiBase;
+    private JPanel generalPreferencePanel;
+    private JPanel titlePanel;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
     public ProjectSettingsComponent(Project project) {
+
         advancedSettingsButton.addActionListener(e -> {
             AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
             boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
@@ -133,15 +140,16 @@ public class ProjectSettingsComponent {
         modelComboBox.addActionListener(e -> updatePanelVisibilities());
         nameModel.addActionListener(e -> updatePanelVisibilities());
         updatePanelVisibilities();
-        // Initialize provider and model dropdowns if empty
-        if (llmProviderComboBox.getSelectedItem() == null) {
-            llmProviderComboBox.setSelectedItem("OpenAI");
-        }
-
-        // Manually trigger action listener to populate models
-        if (llmProviderComboBox.getActionListeners().length > 0) {
-            llmProviderComboBox.getActionListeners()[0].actionPerformed(null);
-        }
+        // Ensure Azure fields are correctly hidden/shown at startup, even before any action events fire
+        String initProvider = (String) llmProviderComboBox.getSelectedItem();
+        boolean initIsAzure = "Azure".equalsIgnoreCase(initProvider);
+        azureApiVersion.setVisible(initIsAzure);
+        azureApiBase.setVisible(initIsAzure);
+        // Safely (re)fire provider change after UI is realized, without passing a null event
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            Object current = llmProviderComboBox.getSelectedItem();
+            llmProviderComboBox.setSelectedItem(current);
+        });
         // Watch for changes in the Aider API key field
         aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             public void insertUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
@@ -177,10 +185,19 @@ public class ProjectSettingsComponent {
                     case "DeepSeek" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "deepseek-chat", "deepseek-coder", "deepseek-reasoner"
                     }));
+                    case "Azure" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
+                            "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
+                    }));
                     default -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "gpt-4" // fallback
                     }));
                 }
+                // Toggle visibility of Azure-specific panels
+                boolean isAzure = selectedProvider != null && "Azure".equalsIgnoreCase(selectedProvider);
+                azureApiVersion.setVisible(isAzure);
+                azureApiBase.setVisible(isAzure);
+                mainPanel.revalidate();
+                mainPanel.repaint();
             }
         });
 
@@ -200,28 +217,25 @@ public class ProjectSettingsComponent {
         // Show Aider settings if either model selection is Aider
         boolean showAiderSettings = isMainModelAider || isNameModelAider;
         aiderSettingsPanel.setVisible(showAiderSettings);
-        aiderSettingsPanel.revalidate();
-        aiderSettingsPanel.repaint();
-        aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
 
-        // Filter nameModel options based on whether main model is Aider, preserving selection if possible
+        mainPanel.revalidate();
+        mainPanel.repaint();
+
+        // Filter nameModel options based on whether main model is Aider
         Object currentSelection = nameModel.getSelectedItem();
         if (isMainModelAider) {
-            // When Aider is selected as the main model, only allow "Aider" in name model
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Aider"});
             nameModel.setModel(model);
             nameModel.setSelectedItem("Aider");
         } else {
-            // When other main models are selected, restore all options
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Aider"});
             nameModel.setModel(model);
             if (currentSelection != null && model.getIndexOf(currentSelection) != -1) {
                 nameModel.setSelectedItem(currentSelection);
             } else {
-                nameModel.setSelectedIndex(0); // fallback to first item if previous selection no longer valid
+                nameModel.setSelectedIndex(0);
             }
         }
-
     }
 
     private void addConditionallyEnabledMetricGroup(JCheckBox ind, JSlider depslid, JCheckBox dep) {
@@ -431,6 +445,14 @@ public class ProjectSettingsComponent {
     public void setAiderPath(String path) {
         aiderPath.setText(path);
     }
+
+    public String getApiBase() {return apiBase.getText(); }
+
+    public void setApiBase(String base) { apiBase.setText(base); }
+
+    public String getApiVersion() {return apiVersion.getText(); }
+
+    public void setApiVersion(String version) { apiVersion.setText(version); }
 
     private void createUIComponents() {
         // Set link and icons for help features

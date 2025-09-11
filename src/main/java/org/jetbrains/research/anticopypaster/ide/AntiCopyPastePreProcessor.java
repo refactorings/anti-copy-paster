@@ -56,7 +56,13 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             String apiKey = state.getAiderApiKey();
             String provider = state.getLlmprovider();
             String aiderPath = state.getAiderPath();
-            AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath);
+            String apiBase = "";
+            String apiVersion = "";
+            if (provider.equals("Azure")) {
+                apiBase = state.getApiBase();
+                apiVersion = state.getApiVersion();
+            }
+            AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath, apiBase, apiVersion);
         }
         else{
             if (rnt == null) {
