@@ -61,7 +61,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= settingsComponent.getMaxParams() != settings.maxParams;
         modified |= !Objects.equals(settingsComponent.getAiderApiKey(), settings.getAiderApiKey());
         modified |= !Objects.equals(settingsComponent.getSelectedAiderModel(), settings.getAiderModel());
-        modified |= !Objects.equals(settingsComponent.getLlmProvider(), settings.getLlmprovider());
+        modified |= !Objects.equals(settingsComponent.getLlmProvider(), settings.getLlmProvider());
         modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
         modified |= !Objects.equals(settingsComponent.getApiBase(), settings.getApiBase());
         modified |= !Objects.equals(settingsComponent.getApiVersion(), settings.getApiVersion());
@@ -108,7 +108,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.modelSensitivity = settingsComponent.getModelSensitivity();
         settings.maxParams = settingsComponent.getMaxParams();
         settings.setAiderPath(settingsComponent.getAiderPath());
-        settings.setLlmprovider(settingsComponent.getLlmProvider());
+        settings.setLlmProvider(settingsComponent.getLlmProvider());
         settings.setAiderModel(settingsComponent.getSelectedAiderModel());
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
         settings.setApiBase(settingsComponent.getApiBase());
@@ -140,7 +140,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setModelSensitivity(settings.modelSensitivity);
         settingsComponent.setMaxParams(settings.maxParams);
         settingsComponent.setAiderPath(settings.getAiderPath());
-        settingsComponent.setLlmProvider(settings.getLlmprovider());
+        settingsComponent.setLlmProvider(settings.getLlmProvider());
         settingsComponent.setSelectedAiderModel(settings.getAiderModel());
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());
         settingsComponent.setApiBase(settings.getApiBase());

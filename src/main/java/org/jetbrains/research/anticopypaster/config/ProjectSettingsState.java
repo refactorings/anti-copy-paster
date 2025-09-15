@@ -106,6 +106,7 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
         this.aiderModel = model;
     }
 
+
     public String getAiderPath() {
         return aiderPath;
     }
@@ -118,7 +119,12 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
         return llmProvider;
     }
 
-    public void setLlmprovider(String provider) {
+    // Backwards-compatible, correctly cased accessors for llmProvider
+    public String getLlmProvider() {
+        return llmProvider;
+    }
+
+    public void setLlmProvider(String provider) {
         this.llmProvider = provider;
     }
 

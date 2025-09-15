@@ -157,17 +157,22 @@ public class ProjectSettingsComponent {
             public void changedUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
         });
 
-        // Check API key prefix consistency with selected provider
-        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            public void insertUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
-            public void removeUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
-            public void changedUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
-        });
+//        // Check API key prefix consistency with selected provider
+//        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+//            public void insertUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
+//            public void removeUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
+//            public void changedUpdate(javax.swing.event.DocumentEvent e) { validateApiKeyPrefix(); }
+//        });
+
 
         // Watch for changes in the model selection combo box
         aidermodelComboBox.addActionListener(e -> notifySettingsChanged());
+
+        boolean isInitializing = false;
         llmProviderComboBox.addActionListener(e -> {
+            if (isInitializing) {return;}
             String selectedProvider = (String) llmProviderComboBox.getSelectedItem();
+            String currentModel = (String) aidermodelComboBox.getSelectedItem();
             if (selectedProvider != null) {
                 switch (selectedProvider) {
                     case "OpenAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
@@ -186,12 +191,14 @@ public class ProjectSettingsComponent {
                             "deepseek-chat", "deepseek-coder", "deepseek-reasoner"
                     }));
                     case "Azure" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
+                            "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
                     }));
                     default -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "gpt-4" // fallback
                     }));
                 }
+
+                if (currentModel != null) {aidermodelComboBox.setSelectedItem(currentModel);}
                 // Toggle visibility of Azure-specific panels
                 boolean isAzure = selectedProvider != null && "Azure".equalsIgnoreCase(selectedProvider);
                 azureApiVersion.setVisible(isAzure);
