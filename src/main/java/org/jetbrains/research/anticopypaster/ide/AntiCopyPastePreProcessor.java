@@ -58,6 +58,9 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             String aiderPath = state.getAiderPath();
             String apiBase = "";
             String apiVersion = "";
+            if (provider.equals("Ollama")) {
+                model = state.getOllamaModel();
+            }
             if (provider.equals("Azure")) {
                 apiBase = state.getApiBase();
                 apiVersion = state.getApiVersion();

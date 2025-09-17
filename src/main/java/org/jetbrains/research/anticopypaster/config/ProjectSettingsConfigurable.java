@@ -65,6 +65,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
         modified |= !Objects.equals(settingsComponent.getApiBase(), settings.getApiBase());
         modified |= !Objects.equals(settingsComponent.getApiVersion(), settings.getApiVersion());
+        modified |= !Objects.equals(settingsComponent.getOllamaModel(), settings.getOllamaModel());
         return modified;
     }
 
@@ -113,6 +114,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
         settings.setApiBase(settingsComponent.getApiBase());
         settings.setApiVersion(settingsComponent.getApiVersion());
+        settings.setOllamaModel(settingsComponent.getOllamaModel());
     }
 
     // Pull from saved state to preset dialog state upon opening
@@ -145,6 +147,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());
         settingsComponent.setApiBase(settings.getApiBase());
         settingsComponent.setApiVersion(settings.getApiVersion());
+        settingsComponent.setOllamaModel(settings.getOllamaModel());
     }
 
     @Override

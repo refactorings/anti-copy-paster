@@ -144,6 +144,9 @@ public class AiderHelper {
         if (provider.equals("Azure")) {
             model = "azure/" + model;
         }
+        if (provider.equals("Ollama")) {
+            model = "ollama_chat/" + model;
+        }
         return runCommand(project, provider,
                 apikey,
                 apiBase,
@@ -172,6 +175,10 @@ public class AiderHelper {
                 pb.environment().put("AZURE_API_KEY", apikey);
                 pb.environment().put("AZURE_API_VERSION", apiVersion);
                 pb.environment().put("AZURE_API_BASE", apiBase);
+            }
+            case "OLLAMA" -> {
+                // Ollama does not require API key or extra environment variables.
+                pb.environment().put("OLLAMA_API_BASE", apiBase);
             }
             default -> throw new IllegalArgumentException("Unknown provider: " + provider);
         }

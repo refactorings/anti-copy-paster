@@ -75,6 +75,8 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public String apiVersion = "";
 
+    public String ollamaModel = "";
+
     public static ProjectSettingsState getInstance(Project project) {
         return project.getService(ProjectSettingsState.class);
     }
@@ -135,6 +137,10 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public String getApiVersion() { return apiVersion; }
 
     public void setApiVersion(String version) { this.apiVersion = version; }
+
+    public void setOllamaModel(String model) { this.ollamaModel = model; }
+
+    public String getOllamaModel() { return ollamaModel; }
 
     public enum JudgementModel {
         TENSORFLOW(0),

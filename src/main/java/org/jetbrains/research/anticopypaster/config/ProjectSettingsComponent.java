@@ -64,6 +64,9 @@ public class ProjectSettingsComponent {
     private JPanel azureApiVersion;
     private JPanel azureApiBase;
     private JTextField apiBase;
+    private JLabel apiBaseHelp;
+    private JTextField modelName;
+    private JPanel ollamaModel;
     private JPanel generalPreferencePanel;
     private JPanel titlePanel;
 
@@ -90,6 +93,7 @@ public class ProjectSettingsComponent {
         llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, or DeepSeek.");
         aidermodelComboBox.setToolTipText("Select the specific model you want to use from the provider.");
         aiderApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
+        modelName.setToolTipText("Enter the Ollama model name (e.g., \"llama3.1:8b\" or \"qwen2.5-coder:7b\").");
 
         // Add warning icon and tooltip for empty API key
         Icon warningIcon = AllIcons.General.Error;
@@ -140,11 +144,9 @@ public class ProjectSettingsComponent {
         modelComboBox.addActionListener(e -> updatePanelVisibilities());
         nameModel.addActionListener(e -> updatePanelVisibilities());
         updatePanelVisibilities();
-        // Ensure Azure fields are correctly hidden/shown at startup, even before any action events fire
+        // Ensure provider-specific panels are correctly hidden/shown at startup, even before any action events fire
         String initProvider = (String) llmProviderComboBox.getSelectedItem();
-        boolean initIsAzure = "Azure".equalsIgnoreCase(initProvider);
-        azureApiVersion.setVisible(initIsAzure);
-        azureApiBase.setVisible(initIsAzure);
+        updateProviderSpecificPanels(initProvider);
         // Safely (re)fire provider change after UI is realized, without passing a null event
         javax.swing.SwingUtilities.invokeLater(() -> {
             Object current = llmProviderComboBox.getSelectedItem();
@@ -177,15 +179,15 @@ public class ProjectSettingsComponent {
                 switch (selectedProvider) {
                     case "OpenAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
-                            "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
+                            "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
                     }));
                     case "Gemini" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "gemini-2.5-pro"
                     }));
                     case "Anthropic" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "claude-2", "claude-2.1", "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
-                            "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229",
-                            "claude-instant-1", "claude-instant-1.2"
+                            "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-4-opus-20250514", "claude-4-sonnet-20250514",
+                            "claude-opus-4-1", "claude-opus-4-1-20250805", "claude-instant-1", "claude-instant-1.2"
                     }));
                     case "DeepSeek" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "deepseek-chat", "deepseek-coder", "deepseek-reasoner"
@@ -193,16 +195,17 @@ public class ProjectSettingsComponent {
                     case "Azure" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
                     }));
+                    case "Ollama" -> {
+                        // Manual input via modelName field in ollamaModel panel; nothing to populate in aidermodelComboBox.
+                    }
                     default -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "gpt-4" // fallback
                     }));
                 }
 
                 if (currentModel != null) {aidermodelComboBox.setSelectedItem(currentModel);}
-                // Toggle visibility of Azure-specific panels
-                boolean isAzure = selectedProvider != null && "Azure".equalsIgnoreCase(selectedProvider);
-                azureApiVersion.setVisible(isAzure);
-                azureApiBase.setVisible(isAzure);
+                // Toggle visibility of provider-specific panels (Azure vs Ollama vs others)
+                updateProviderSpecificPanels(selectedProvider);
                 mainPanel.revalidate();
                 mainPanel.repaint();
             }
@@ -413,6 +416,10 @@ public class ProjectSettingsComponent {
     }
 
     public String getSelectedAiderModel() {
+        String provider = (String) llmProviderComboBox.getSelectedItem();
+        if (provider != null && "Ollama".equalsIgnoreCase(provider)) {
+            return modelName.getText().trim();
+        }
         return (String) aidermodelComboBox.getSelectedItem();
     }
 
@@ -421,7 +428,12 @@ public class ProjectSettingsComponent {
     }
 
     public void setSelectedAiderModel(String model) {
-        aidermodelComboBox.setSelectedItem(model);
+        String provider = (String) llmProviderComboBox.getSelectedItem();
+        if (provider != null && "Ollama".equalsIgnoreCase(provider)) {
+            modelName.setText(model);
+        } else {
+            aidermodelComboBox.setSelectedItem(model);
+        }
     }
 
     public String getLlmProvider() {
@@ -461,6 +473,10 @@ public class ProjectSettingsComponent {
 
     public void setApiVersion(String version) { apiVersion.setText(version); }
 
+    public void setOllamaModel(String model) { modelName.setText(model);}
+
+    public String getOllamaModel() {return modelName.getText();}
+
     private void createUIComponents() {
         // Set link and icons for help features
         helpLabel = new JLabel();
@@ -476,6 +492,8 @@ public class ProjectSettingsComponent {
         statisticsButtonHelp.setIcon(AllIcons.General.ContextHelp);
         modelSensitivityHelp = new JLabel();
         modelSensitivityHelp.setIcon(AllIcons.General.ContextHelp);
+        apiBaseHelp = new JLabel();
+        apiBaseHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
     public static void createLinkListener(JComponent component, String url) {
@@ -528,6 +546,45 @@ public class ProjectSettingsComponent {
                     "API Key Provider Mismatch",
                     JOptionPane.WARNING_MESSAGE
             );
+        }
+    }
+
+    /**
+     * Show/hide panels based on the selected provider.
+     *  - Azure: show apiKeyPanel, modelPanel, and Azure-specific fields; hide Ollama panel.
+     *  - Ollama: show ollamaModel panel; hide apiKeyPanel, modelPanel, and Azure-specific fields.
+     *  - Others: show apiKeyPanel and modelPanel; hide Azure-specific fields and Ollama panel.
+     */
+    private void updateProviderSpecificPanels(String provider) {
+        boolean isAzure = provider != null && "Azure".equalsIgnoreCase(provider);
+        boolean isOllama = provider != null && "Ollama".equalsIgnoreCase(provider);
+
+        // Ollama-specific: only Ollama model panel is visible
+        ollamaModel.setVisible(isOllama);
+
+        // API key & standard model panels hidden for Ollama, visible otherwise
+        apiKeyPanel.setVisible(!isOllama);
+        modelPanel.setVisible(!isOllama);
+
+        // Azure-specific fields only for Azure
+        azureApiVersion.setVisible(isAzure);
+        azureApiBase.setVisible(isAzure || isOllama);
+
+//        // Show the help icon only for Ollama
+//        if (apiBaseHelp != null) {
+//            apiBaseHelp.setVisible(isOllama);
+//        }
+
+        // Set default value for API Base per provider
+        if (isOllama) {
+            // For Ollama, default to local daemon
+            apiBase.setText("http://127.0.0.1:11434");
+        } else if (isAzure) {
+            // For Azure, leave empty
+            apiBase.setText("");
+        } else {
+            // For other providers, clear to avoid misleading leftovers
+            apiBase.setText("");
         }
     }
 }
