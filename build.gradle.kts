@@ -17,6 +17,18 @@ repositories {
     mavenCentral()
 }
 
+sourceSets {
+    main {
+        resources {
+            setSrcDirs(listOf("src/main/resources"))
+            exclude("**/*.index")
+            exclude("**/*.meta")
+            exclude("**/*.data*")
+            exclude("**/saved_model*/**")
+        }
+    }
+}
+
 dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.apache.commons:commons-lang3:3.12.0")
