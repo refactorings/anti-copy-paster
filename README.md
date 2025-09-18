@@ -102,10 +102,22 @@ AntiCopyPaster integrates with [Aider](https://aider.chat) to provide clone dete
      - [Gemini](https://ai.google.dev/gemini-api/docs/api-key)  
      - [DeepSeek](https://api-docs.deepseek.com/)  
      - [Anthropic](https://docs.anthropic.com/en/api/admin-api/apikeys/get-api-key)  
-
-Click **Apply** and then **OK** to save.  
-
 ![Aider configuration](images/aider_setting.png)
+
+#### Special Instructions for Ollama
+
+If you choose **Ollama** as the provider:
+
+1. Download and install Ollama from the [official website](https://ollama.com/).
+2. Search for available models at [Ollama Models](https://ollama.com/search).
+3. In the Aider settings, configure the following:
+   - **Aider Path**: the path to the `aider` binary (check with `which aider` in your terminal).
+   - **LLM Provider**: select **Ollama**.
+   - **API Base**: use the default value `http://127.0.0.1:11434`.
+   - **Model Name**: type in the exact model name you want to use, as listed on the [Ollama search page](https://ollama.com/search).
+
+Click **Apply** and then **OK** to save.
+![Ollama setting](images/ollama_setting.png)
 
 ---
 
