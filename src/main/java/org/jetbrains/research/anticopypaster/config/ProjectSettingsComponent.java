@@ -67,6 +67,7 @@ public class ProjectSettingsComponent {
     private JLabel apiBaseHelp;
     private JTextField modelName;
     private JPanel ollamaModel;
+    private JLabel aiderHelpLabel;
     private JPanel generalPreferencePanel;
     private JPanel titlePanel;
 
@@ -480,7 +481,7 @@ public class ProjectSettingsComponent {
     private void createUIComponents() {
         // Set link and icons for help features
         helpLabel = new JLabel();
-        createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/index.html");
+        createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster-Website/");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
         duplicateMethodsHelp = new JLabel();
         duplicateMethodsHelp.setIcon(AllIcons.General.ContextHelp);
@@ -494,6 +495,9 @@ public class ProjectSettingsComponent {
         modelSensitivityHelp.setIcon(AllIcons.General.ContextHelp);
         apiBaseHelp = new JLabel();
         apiBaseHelp.setIcon(AllIcons.General.ContextHelp);
+        aiderHelpLabel = new JLabel();
+        createLinkListener(aiderHelpLabel, "https://github.com/refactorings/anti-copy-paster");
+        aiderHelpLabel.setIcon(AllIcons.Ide.External_link_arrow);
     }
 
     public static void createLinkListener(JComponent component, String url) {

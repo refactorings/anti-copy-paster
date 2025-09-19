@@ -138,7 +138,7 @@ public class AiderHelper {
     }
 
     public static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt, String provider, String model, String apikey, String apiBase, String apiVersion) throws IOException, InterruptedException {
-        if (model.startsWith("deepseek-")) {
+        if ((model.startsWith("deepseek-")) && (provider.equals("DEEPSEEK"))) {
             model = "deepseek/" + model;
         }
         if (provider.equals("Azure")) {
