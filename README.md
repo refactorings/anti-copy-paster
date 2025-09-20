@@ -3,7 +3,7 @@
 AntiCopyPaster is a plugin for IntelliJ IDEA that tracks the copying and pasting carried out by the developer and
 suggests extracting duplicates into a new method as soon as they are introduced in the code.
 
-> **Warning**: Please note that AntiCopyPaster is a prototype and a work in progress. We appreciate any feedback
+> **Warning**: Please note that AntiCopyPaster has evolved from its prototype stage into a fully implemented tool. We appreciate any feedback
 > on both the concept itself and its implementation.
 
 ## How To Install
@@ -58,8 +58,103 @@ These categories can be individually configured further in the plugin's advanced
 The tool validation and embedded models are available here:
 https://github.com/JetBrains-Research/extract-method-experiments.
 
+## Aider
+
+AntiCopyPaster integrates with [Aider](https://aider.chat) to provide clone detection, automated refactoring, and method name recommendations powered by large language models (LLMs). This integration allows developers to leverage advanced AI models for real-time feedback when handling code duplication.
+
+---
+
+### Installation
+
+1. Make sure **Python 3.8 – 3.13** is installed on your system.  
+2. Install Aider by running the following commands in your terminal:  
+   ```bash
+   python -m pip install aider-install
+   aider-install
+   ```  
+   For more details, see the [official Aider installation guide](https://aider.chat/docs/install.html).  
+3. Confirm installation with:  
+   ```bash
+   aider --version
+   ```  
+
+*Placeholder for installation screenshot:*  
+`![Aider installation screenshot](images/aider-install.png)`
+
+---
+
+### Configuration in AntiCopyPaster
+
+1. Open IntelliJ IDEA and go to **Settings → Tools → AntiCopyPaster**.  
+2. In the section *“Extraction judgements should be performed by”*, select **Aider**.  
+3. Open the **Aider Settings** panel and configure:  
+   - **Aider Path**: the path to the `aider` binary. On terminal, use command:  
+     ```bash
+     which aider
+     ```  
+     might return `/Users/username/.local/bin/aider`.  
+   - **LLM Provider**: choose the provider you want to connect with (e.g., OpenAI, Gemini, DeepSeek, Anthropic).  
+   - **Model Selection**: specify the model you want to use (e.g., `gpt-4o`, `gemini-pro`).  
+   - **API Key**: enter your provider’s API key.  
+     - [OpenAI](https://platform.openai.com/api-keys)  
+     - [Gemini](https://ai.google.dev/gemini-api/docs/api-key)  
+     - [DeepSeek](https://api-docs.deepseek.com/)  
+     - [Anthropic](https://docs.anthropic.com/en/api/admin-api/apikeys/get-api-key)  
+
+#### Special Instructions for Ollama
+
+If you choose **Ollama** as the provider:
+
+1. Download and install Ollama from the [official website](https://ollama.com/).
+2. Search for available models at [Ollama Models](https://ollama.com/search).
+3. Pull the models you want to use, 
+4. In the Aider settings, configure the following:
+   - **Aider Path**: the path to the `aider` binary (check with `which aider` in your terminal).
+   - **LLM Provider**: select **Ollama**.
+   - **API Base**: use the default value `http://127.0.0.1:11434`.
+   - **Model Name**: type in the exact model name you want to use, as listed on the [Ollama Models](https://ollama.com/search).
+
+If you get the [model warnings](https://aider.chat/docs/llms/warnings.html), just ignore it and continue proceeding.
+
+5. Click **Apply** and then **OK** to save.
+
+
+---
+
+### Using Aider for Refactoring
+
+1. Select a code fragment in a Java file.  
+2. Perform a **copy** and then **paste** operation.  
+3. AntiCopyPaster will trigger Aider’s clone detection.  
+   - If clones are detected, a confirmation window will appear.  
+   - Click **Yes** to proceed.  
+4. Aider will generate a refactored version of the code.  
+   - A **side-by-side comparison** of the original and refactored code will be displayed.  
+   - After a few seconds, you will be asked whether to apply the change.  
+   - Selecting **Yes** will update the original code with the refactored version.  
+
+---
+
+### Using Aider for Naming Suggestions
+
+1. In **AntiCopyPaster Settings**, set **Aider** as the *Name recommendation model*.  
+   - (If Aider is already selected for extraction judgements, this is set automatically.)  
+2. Configure how many naming suggestions Aider should generate.
+3. Perform a copy-paste refactoring as usual.  
+4. Aider will generate multiple method name suggestions.  
+   - These will appear in a drop-down menu.  
+   - Select your preferred name to apply it.  
+
+
+---
+
+By integrating Aider, AntiCopyPaster makes it easier to manage code clones while improving code readability and maintainability.
+
+
 ### How to cite?
 Please, use the following bibtex entry:
+
+AlOmar, Eman Abdullah, Jacob Ashkenas, Robert Feliciano, Matthew Angelakos, Dimitrios Haralamppopoulos, Xing Qian, Mohamed Wiem Mkaouer, and Ali Ouni. "AntiCopyPaster 3.0: Just-in-Time Clone Refactoring." ACM Transactions on Software Engineering and Methodology (2025).
 
 ```tex
 @article{alomar2025anticopypaster,
@@ -72,7 +167,30 @@ Please, use the following bibtex entry:
 }
 ```
 
+AlOmar, Eman Abdullah, Benjamin Knobloch, Thomas Kain, Christopher Kalish, Mohamed Wiem Mkaouer, and Ali Ouni. "AntiCopyPaster 2.0: Whitebox just-in-time code duplicates extraction." In Proceedings of the 2024 IEEE/ACM 46th International Conference on Software Engineering: Companion Proceedings, pp. 84-88. 2024.
+
+```tex
+@inproceedings{alomar2024anticopypaster,
+  title={AntiCopyPaster 2.0: Whitebox just-in-time code duplicates extraction},
+  author={AlOmar, Eman Abdullah and Knobloch, Benjamin and Kain, Thomas and Kalish, Christopher and Mkaouer, Mohamed Wiem and Ouni, Ali},
+  booktitle={Proceedings of the 2024 IEEE/ACM 46th International Conference on Software Engineering: Companion Proceedings},
+  pages={84--88},
+  year={2024}
+}
+```
+
+AlOmar, Eman Abdullah, Anton Ivanov, Zarina Kurbatova, Yaroslav Golubev, Mohamed Wiem Mkaouer, Ali Ouni, Timofey Bryksin, Le Nguyen, Amit Kini, and Aditya Thakur. "AntiCopyPaster: extracting code duplicates as soon as they are introduced in the IDE." In Proceedings of the 37th IEEE/ACM International Conference on Automated Software Engineering, pp. 1-4. 2022.
+
+```tex
+@inproceedings{alomar2022anticopypaster,
+  title={AntiCopyPaster: extracting code duplicates as soon as they are introduced in the IDE},
+  author={AlOmar, Eman Abdullah and Ivanov, Anton and Kurbatova, Zarina and Golubev, Yaroslav and Mkaouer, Mohamed Wiem and Ouni, Ali and Bryksin, Timofey and Nguyen, Le and Kini, Amit and Thakur, Aditya},
+  booktitle={Proceedings of the 37th IEEE/ACM International Conference on Automated Software Engineering},
+  pages={1--4},
+  year={2022}
+}
+```
 
 ## Contacts
 
-If you have any questions or propositions, do not hesitate to contact Eman AlOmar at ealomar@stevens.edu.
+If you have any questions or propositions, do not hesitate to contact Eman Abdullah AlOmar at ealomar@stevens.edu.
