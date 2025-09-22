@@ -110,7 +110,10 @@ If you choose **Ollama** as the provider:
 
 1. Download and install Ollama from the [official website](https://ollama.com/).
 2. Search for available models at [Ollama Models](https://ollama.com/search).
-3. Pull the models you want to use, 
+3. Pull the models you want to use, use command
+ ```bash
+   ollama pull model_name
+   ```  
 4. In the Aider settings, configure the following:
    - **Aider Path**: the path to the `aider` binary (check with `which aider` in your terminal).
    - **LLM Provider**: select **Ollama**.
