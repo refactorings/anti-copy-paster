@@ -147,16 +147,31 @@ public class AiderHelper {
         if (provider.equals("Ollama")) {
             model = "ollama_chat/" + model;
         }
-        return runCommand(project, provider,
-                apikey,
-                apiBase,
-                apiVersion,
-                aiderPath,
-                "--model", model,
-                "--yes",
-                "--message", prompt,
-                filePath
-        );
+
+        if (model.equals("gpt-5")){
+            return runCommand(project, provider,
+                    apikey,
+                    apiBase,
+                    apiVersion,
+                    aiderPath,
+                    "--model", model,
+                    "--yes",
+                    "--no-stream",
+                    "--message", prompt,
+                    filePath
+            );
+        } else {
+            return runCommand(project, provider,
+                    apikey,
+                    apiBase,
+                    apiVersion,
+                    aiderPath,
+                    "--model", model,
+                    "--yes",
+                    "--message", prompt,
+                    filePath
+            );
+        }
     }
 
     private static String runCommand(Project project, String provider, String apikey, String apiBase, String apiVersion, String... command) throws IOException, InterruptedException {
