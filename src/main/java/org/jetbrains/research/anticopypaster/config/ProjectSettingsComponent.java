@@ -327,14 +327,15 @@ public class ProjectSettingsComponent {
                 switch (selectedProvider) {
                     case "OpenAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
-                            "gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
+                            "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
                     }));
                     case "Gemini" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "gemini-2.5-pro"
                     }));
                     case "Anthropic" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "claude-2", "claude-2.1", "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
-                            "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229",
+                            "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-4-opus-20250514", "claude-4-sonnet-20250514",
+                            "claude-opus-4-1", "claude-opus-4-1-20250805", 
                             "claude-instant-1", "claude-instant-1.2"
                     }));
                     case "DeepSeek" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
@@ -643,7 +644,7 @@ public class ProjectSettingsComponent {
     private void createUIComponents() {
         // Set link and icons for help features
         helpLabel = new JLabel();
-        createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster_Summer2023/index.html");
+        createLinkListener(helpLabel, "https://se4airesearch.github.io/AntiCopyPaster-Website/");
         helpLabel.setIcon(AllIcons.Ide.External_link_arrow);
         duplicateMethodsHelp = new JLabel();
         duplicateMethodsHelp.setIcon(AllIcons.General.ContextHelp);
