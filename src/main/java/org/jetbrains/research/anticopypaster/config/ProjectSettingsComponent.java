@@ -85,6 +85,7 @@ public class ProjectSettingsComponent {
     private JPanel azureApiBase;
     private JTextField apiBase;
     private JLabel aiderHelpLabel;
+    private JLabel apiBaseHelp;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
@@ -685,6 +686,8 @@ public class ProjectSettingsComponent {
         aiderHelpLabel = new JLabel();
         createLinkListener(aiderHelpLabel, "https://github.com/refactorings/anti-copy-paster");
         aiderHelpLabel.setIcon(AllIcons.Ide.External_link_arrow);
+        apiBaseHelp = new JLabel();
+        apiBaseHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
     public static void createLinkListener(JComponent component, String url) {

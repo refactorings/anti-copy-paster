@@ -12,14 +12,85 @@ import com.intellij.diff.DiffContentFactory;
 import com.intellij.diff.DiffManager;
 import com.intellij.diff.requests.SimpleDiffRequest;
 
+import com.intellij.execution.ui.ConsoleView;
+import com.intellij.execution.ui.ConsoleViewContentType;
+import com.intellij.execution.impl.ConsoleViewImpl;
+import com.intellij.execution.filters.TextConsoleBuilderFactory;
+import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowId;
+import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.openapi.wm.RegisterToolWindowTask;
+import com.intellij.ui.content.Content;
+import com.intellij.ui.content.ContentFactory;
+import java.util.function.Consumer;
+
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 public class AiderHelper {
+
+    private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
+
+    public static Consumer<String> openStreamingViewer(Project project, String title) {
+        final java.util.concurrent.atomic.AtomicReference<ConsoleView> consoleRef = new java.util.concurrent.atomic.AtomicReference<>();
+
+        ApplicationManager.getApplication().invokeAndWait(() -> {
+            // Ensure tool window exists (Run preferred, else custom)
+            ToolWindowManager twm = ToolWindowManager.getInstance(project);
+            ToolWindow toolWindow = twm.getToolWindow(ToolWindowId.RUN);
+            if (toolWindow == null) {
+                toolWindow = twm.getToolWindow("Aider Output");
+                if (toolWindow == null) {
+                    toolWindow = twm.registerToolWindow(RegisterToolWindowTask.notClosable("Aider Output"));
+                }
+            }
+
+            com.intellij.ui.content.ContentManager cm = toolWindow.getContentManager();
+
+            // Try to reuse existing console for this title
+            ConsoleView console = CONSOLE_BY_TITLE.get(title);
+            Content content = cm.findContent(title);
+
+            if (console == null || content == null) {
+                // Create new console + content if missing
+                console = TextConsoleBuilderFactory.getInstance().createBuilder(project).getConsole();
+                Content newContent = ContentFactory.getInstance().createContent(console.getComponent(), title, true);
+
+                // If a stale tab with the same title exists, remove it first
+                if (content != null) {
+                    cm.removeContent(content, true);
+                }
+                cm.addContent(newContent);
+                cm.setSelectedContent(newContent);
+                CONSOLE_BY_TITLE.put(title, console);
+            } else {
+                // Reuse tab and clear its console output
+                console.clear();
+                cm.setSelectedContent(content);
+            }
+
+            toolWindow.activate(null);
+
+            consoleRef.set(CONSOLE_BY_TITLE.get(title));
+        });
+
+        // Writer that prints to the console on EDT
+        return line -> ApplicationManager.getApplication().invokeLater(() -> {
+            ConsoleView console = consoleRef.get();
+            if (console != null) {
+                console.print(line, ConsoleViewContentType.NORMAL_OUTPUT);
+                if (!line.endsWith("\n")) {
+                    console.print("\n", ConsoleViewContentType.NORMAL_OUTPUT);
+                }
+            }
+        });
+    }
 
     public static void checkAndSuggestRefactor(Project project, VirtualFile file, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion) {
         String fileName = file.getName();
@@ -34,8 +105,9 @@ public class AiderHelper {
 
             ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
-                    String output = runAiderWithPrompt(project, aiderPath, tempFilePath,
-                            "Please detect any clones in this file. Response with either 'clones found' or 'no clones found'", provider, model, apikey, apiBase, apiVersion);
+                    Consumer<String> viewer = openStreamingViewer(project, "Aider Detection Output");
+                    String output = runAiderWithPromptStreaming(project, aiderPath, tempFilePath,
+                            "Please detect any clones in this file. Response with either 'clones found' or 'no clones found'", provider, model, apikey, apiBase, apiVersion, viewer);
 
                     if (output != null && containsDuplicateHint(output)) {
                         System.out.println("===> Aider Output:\n" + output);
@@ -75,8 +147,9 @@ public class AiderHelper {
                 File tempFile = File.createTempFile("aider_refactor_", ".java");
                 Files.copy(originalFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
-                String output = runAiderWithPrompt(project, aiderPath, tempFile.getAbsolutePath(),
-                        "Please refactor this file by Extraction Method to eliminate clones.", provider, model, apikey, apiBase, apiVersion);
+                Consumer<String> viewer = openStreamingViewer(project, "Aider Refactoring Output");
+                String output = runAiderWithPromptStreaming(project, aiderPath, tempFile.getAbsolutePath(),
+                        "Please refactor this file by Extraction Method to eliminate clones.", provider, model, apikey, apiBase, apiVersion, viewer);
                 System.out.println("===> Refactor output:\n" + output);
 
                 String originalContent = Files.readString(originalFile.toPath());
@@ -138,7 +211,10 @@ public class AiderHelper {
         return normalized.contains("clones found") && !normalized.contains("no clones found");
     }
 
-    public static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt, String provider, String model, String apikey, String apiBase, String apiVersion) throws IOException, InterruptedException {
+    public static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt,
+                                            String provider, String model, String apikey,
+                                            String apiBase, String apiVersion)
+            throws IOException, InterruptedException {
         if (model.startsWith("deepseek-")) {
             model = "deepseek/" + model;
         }
@@ -157,7 +233,38 @@ public class AiderHelper {
         );
     }
 
-    private static String runCommand(Project project, String provider, String apikey, String apiBase, String apiVersion, String... command) throws IOException, InterruptedException {
+    public static String runAiderWithPromptStreaming(Project project, String aiderPath, String filePath, String prompt,
+                                                     String provider, String model, String apikey,
+                                                     String apiBase, String apiVersion, Consumer<String> viewer)
+            throws IOException, InterruptedException {
+        if (model.startsWith("deepseek-")) {
+            model = "deepseek/" + model;
+        }
+        if (provider.equals("Azure")) {
+            model = "azure/" + model;
+        }
+        return runCommand(project, provider,
+                apikey,
+                apiBase,
+                apiVersion,
+                viewer,
+                aiderPath,
+                "--model", model,
+                "--yes",
+                "--message", prompt,
+                filePath
+        );
+    }
+
+    private static String runCommand(Project project, String provider, String apikey, String apiBase,
+                                     String apiVersion, String... command)
+            throws IOException, InterruptedException {
+        return runCommand(project, provider, apikey, apiBase, apiVersion, null, command);
+    }
+
+    private static String runCommand(Project project, String provider, String apikey, String apiBase,
+                                    String apiVersion, Consumer<String> viewer, String... command)
+            throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.redirectErrorStream(true);
         switch (provider.toUpperCase()) {
@@ -182,6 +289,9 @@ public class AiderHelper {
         StringBuilder output = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) {
+            if (viewer != null) {
+                viewer.accept(line);
+            }
             System.out.println("[AIDER] " + line);
             output.append(line).append("\n");
         }

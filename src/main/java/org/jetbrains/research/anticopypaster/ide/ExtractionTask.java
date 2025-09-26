@@ -36,6 +36,8 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 import static org.jetbrains.research.anticopypaster.ide.AiderHelper.runAiderWithPrompt;
+import static org.jetbrains.research.anticopypaster.ide.AiderHelper.openStreamingViewer;
+import static org.jetbrains.research.anticopypaster.ide.AiderHelper.runAiderWithPromptStreaming;
 
 public class ExtractionTask {
     public Project project;
@@ -392,7 +394,8 @@ public class ExtractionTask {
                                 "Output the name suggestion in this format: rank method_name_1, for example, 1 name_1"
                 );
                 notify(project, "Aider is generating names...");
-                String output = runAiderWithPrompt(project, aiderPath, tempFile.getAbsolutePath(), prompt, provider, model, apikey, apiBase, apiVersion);
+                java.util.function.Consumer<String> viewer = openStreamingViewer(project, "Aider Name Suggestions");
+                String output = runAiderWithPromptStreaming(project, aiderPath, tempFile.getAbsolutePath(), prompt, provider, model, apikey, apiBase, apiVersion, viewer);
 
                 ApplicationManager.getApplication().invokeLater(() -> {
                     String selected = null;
