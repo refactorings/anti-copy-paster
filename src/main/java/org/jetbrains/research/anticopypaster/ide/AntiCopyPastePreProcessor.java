@@ -65,6 +65,12 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             String provider = state.getLlmprovider();
             String aiderPath = state.getAiderPath();
             String filesPath = state.getFilesPath();
+            String apiBase = "";
+            String apiVersion = "";
+            if (provider.equals("Azure")) {
+                apiBase = state.getApiBase();
+                apiVersion = state.getApiVersion();
+            }
             ArrayList<JCheckBox> filesCheckboxes = new ArrayList<>(state.getAllFilesCheckboxes());
             String selectedAnalysisButton = state.getSelectedAnalysisButton();
 
@@ -78,7 +84,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 System.out.println("Current File properly selected");
                 System.out.println(file.getVirtualFile().getName());
 
-                AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath);
+                AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath, apiBase, apiVersion);
             } else if(selectedAnalysisButton.equals("All Files in Current Directory")) {
                 // If "All Files [...]": get dir of current file, get all files in dir
                 // Call checkAndSuggestRefactor on each file in dir
@@ -99,7 +105,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
 
                                 System.out.println(virtualFileInDir.getName());
 
-                                AiderHelper.checkAndSuggestRefactor(project, virtualFileInDir, provider, model, apiKey, aiderPath);
+                                AiderHelper.checkAndSuggestRefactor(project, virtualFileInDir, provider, model, apiKey, aiderPath, apiBase, apiVersion);
                             }
                         }
                     }
@@ -135,7 +141,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
 
                                     System.out.println(virtualFile.getName());
 
-                                    AiderHelper.checkAndSuggestRefactor(project, virtualFile, provider, model, apiKey, aiderPath);
+                                    AiderHelper.checkAndSuggestRefactor(project, virtualFile, provider, model, apiKey, aiderPath, apiBase, apiVersion);
                                 }
                             }
                         }

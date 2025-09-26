@@ -21,7 +21,7 @@ import java.util.List;
 
 public class AiderHelper {
 
-    public static void checkAndSuggestRefactor(Project project, VirtualFile file, String provider, String model, String apikey, String aiderPath) {
+    public static void checkAndSuggestRefactor(Project project, VirtualFile file, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion) {
         String fileName = file.getName();
         notify(project, "Aider is running clone detection on " + fileName + "...");
         String filePath = file.getPath();
@@ -35,7 +35,7 @@ public class AiderHelper {
             ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
                     String output = runAiderWithPrompt(project, aiderPath, tempFilePath,
-                            "Please detect any clones in this file. Response with either 'clones found' or 'no clones found'", provider, model, apikey);
+                            "Please detect any clones in this file. Response with either 'clones found' or 'no clones found'", provider, model, apikey, apiBase, apiVersion);
 
                     if (output != null && containsDuplicateHint(output)) {
                         System.out.println("===> Aider Output:\n" + output);
@@ -47,7 +47,7 @@ public class AiderHelper {
                                     Messages.getQuestionIcon()
                             );
                             if (choice == Messages.YES) {
-                                runRefactorWithPreview(project, fileName, filePath, provider, model, apikey, aiderPath);
+                                runRefactorWithPreview(project, fileName, filePath, provider, model, apikey, aiderPath, apiBase, apiVersion);
                             }
                         });
                     } else {
@@ -67,7 +67,7 @@ public class AiderHelper {
         }
     }
 
-    private static void runRefactorWithPreview(Project project, String fileName, String filePath, String provider, String model, String apikey, String aiderPath) {
+    private static void runRefactorWithPreview(Project project, String fileName, String filePath, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion) {
         notify(project, "Aider is running code refactoring on " + fileName + "...");
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
@@ -76,7 +76,7 @@ public class AiderHelper {
                 Files.copy(originalFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
                 String output = runAiderWithPrompt(project, aiderPath, tempFile.getAbsolutePath(),
-                        "Please refactor this file by Extraction Method to eliminate clones.", provider, model, apikey);
+                        "Please refactor this file by Extraction Method to eliminate clones.", provider, model, apikey, apiBase, apiVersion);
                 System.out.println("===> Refactor output:\n" + output);
 
                 String originalContent = Files.readString(originalFile.toPath());
@@ -138,12 +138,17 @@ public class AiderHelper {
         return normalized.contains("clones found") && !normalized.contains("no clones found");
     }
 
-    public static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt, String provider, String model, String apikey) throws IOException, InterruptedException {
+    public static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt, String provider, String model, String apikey, String apiBase, String apiVersion) throws IOException, InterruptedException {
         if (model.startsWith("deepseek-")) {
             model = "deepseek/" + model;
         }
+        if (provider.equals("Azure")) {
+            model = "azure/" + model;
+        }
         return runCommand(project, provider,
                 apikey,
+                apiBase,
+                apiVersion,
                 aiderPath,
                 "--model", model,
                 "--yes",
@@ -152,7 +157,7 @@ public class AiderHelper {
         );
     }
 
-    private static String runCommand(Project project, String provider, String apikey, String... command) throws IOException, InterruptedException {
+    private static String runCommand(Project project, String provider, String apikey, String apiBase, String apiVersion, String... command) throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.redirectErrorStream(true);
         switch (provider.toUpperCase()) {
@@ -163,6 +168,11 @@ public class AiderHelper {
             }
             case "ANTHROPIC" -> pb.environment().put("ANTHROPIC_API_KEY", apikey);
             case "DEEPSEEK" -> pb.environment().put("DEEPSEEK_API_KEY", apikey);
+            case "AZURE" -> {
+                pb.environment().put("AZURE_API_KEY", apikey);
+                pb.environment().put("AZURE_API_VERSION", apiVersion);
+                pb.environment().put("AZURE_API_BASE", apiBase);
+            }
             default -> throw new IllegalArgumentException("Unknown provider: " + provider);
         }
 

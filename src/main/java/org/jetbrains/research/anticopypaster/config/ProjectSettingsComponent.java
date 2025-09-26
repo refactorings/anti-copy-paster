@@ -6,7 +6,6 @@ import com.intellij.icons.AllIcons;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 
-import com.intellij.util.ui.WrapLayout;
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialogWrapper;
 
@@ -81,6 +80,11 @@ public class ProjectSettingsComponent {
     private JPanel filesCheckboxesPanel;
     private JPanel multFilesPanel;
     private JScrollPane filesCheckboxesScrollPane;
+    private JPanel azureApiVersion;
+    private JTextField apiVersion;
+    private JPanel azureApiBase;
+    private JTextField apiBase;
+    private JLabel aiderHelpLabel;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
@@ -102,7 +106,7 @@ public class ProjectSettingsComponent {
         });
         // Add tooltips for Aider-related fields
         aiderPath.setToolTipText("Specify the path to the aider executable (The path to where you installed Aider). Default is 'aider'.");
-        llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, or DeepSeek.");
+        llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, DeepSeek or Azure.");
         aidermodelComboBox.setToolTipText("Select the specific model you want to use from the provider.");
         aiderApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
         filesPath.setToolTipText("Specify the path to the directory with the files you would like to search for clones in.");
@@ -303,6 +307,8 @@ public class ProjectSettingsComponent {
         modelComboBox.addActionListener(e -> updatePanelVisibilities());
         nameModel.addActionListener(e -> updatePanelVisibilities());
         updatePanelVisibilities();
+        String initProvider = (String) llmProviderComboBox.getSelectedItem();
+        updateProviderSpecificPanels(initProvider);
         // Initialize provider and model dropdowns if empty
         if (llmProviderComboBox.getSelectedItem() == null) {
             llmProviderComboBox.setSelectedItem("OpenAI");
@@ -341,10 +347,22 @@ public class ProjectSettingsComponent {
                     case "DeepSeek" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "deepseek-chat", "deepseek-coder", "deepseek-reasoner"
                     }));
+                    case "Azure" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
+                            "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
+                    }));
                     default -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "gpt-4" // fallback
                     }));
                 }
+                // Toggle Azure-specific fields on provider change
+                updateProviderSpecificPanels(selectedProvider);
+                // Refresh layout to reflect visibility changes
+                azureApiVersion.revalidate();
+                azureApiVersion.repaint();
+                azureApiBase.revalidate();
+                azureApiBase.repaint();
+                mainPanel.revalidate();
+                mainPanel.repaint();
             }
         });
 
@@ -575,6 +593,14 @@ public class ProjectSettingsComponent {
         llmProviderComboBox.setSelectedItem(provider);
     }
 
+    public String getApiBase() {return apiBase.getText(); }
+
+    public void setApiBase(String base) { apiBase.setText(base); }
+
+    public String getApiVersion() {return apiVersion.getText(); }
+
+    public void setApiVersion(String version) { apiVersion.setText(version); }
+
     public ArrayList<JCheckBox> getAllFilesCheckboxes() {
         return allFilesCheckboxes;
     }
@@ -656,6 +682,9 @@ public class ProjectSettingsComponent {
         statisticsButtonHelp.setIcon(AllIcons.General.ContextHelp);
         modelSensitivityHelp = new JLabel();
         modelSensitivityHelp.setIcon(AllIcons.General.ContextHelp);
+        aiderHelpLabel = new JLabel();
+        createLinkListener(aiderHelpLabel, "https://github.com/refactorings/anti-copy-paster");
+        aiderHelpLabel.setIcon(AllIcons.Ide.External_link_arrow);
     }
 
     public static void createLinkListener(JComponent component, String url) {
@@ -709,5 +738,13 @@ public class ProjectSettingsComponent {
                     JOptionPane.WARNING_MESSAGE
             );
         }
+    }
+
+    private void updateProviderSpecificPanels(String provider) {
+        boolean isAzure = provider != null && "Azure".equalsIgnoreCase(provider);
+
+        // Azure-specific fields only for Azure
+        azureApiVersion.setVisible(isAzure);
+        azureApiBase.setVisible(isAzure);
     }
 }

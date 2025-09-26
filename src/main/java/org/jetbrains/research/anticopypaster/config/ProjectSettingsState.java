@@ -75,6 +75,10 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public String filesPath = "";
 
+    public String apiBase = "";
+
+    public String apiVersion = "";
+
     public ArrayList<JCheckBox> allFilesCheckboxes = new ArrayList<>();
 
     public String selectedAnalysisButton;
@@ -137,6 +141,14 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public ArrayList<JCheckBox> getAllFilesCheckboxes() {
         return allFilesCheckboxes;
     }
+
+    public String getApiBase() { return apiBase; }
+
+    public void setApiBase(String base) { this.apiBase = base; }
+
+    public String getApiVersion() { return apiVersion; }
+
+    public void setApiVersion(String version) { this.apiVersion = version; }
 
     public void setAllFilesCheckboxes(ArrayList<JCheckBox> filesCheckboxes) {
         (this.allFilesCheckboxes).clear();

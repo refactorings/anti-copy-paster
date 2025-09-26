@@ -63,6 +63,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= !Objects.equals(settingsComponent.getSelectedAiderModel(), settings.getAiderModel());
         modified |= !Objects.equals(settingsComponent.getLlmProvider(), settings.getLlmprovider());
         modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
+        modified |= !Objects.equals(settingsComponent.getApiBase(), settings.getApiBase());
+        modified |= !Objects.equals(settingsComponent.getApiVersion(), settings.getApiVersion());
         modified |= !Objects.equals(settingsComponent.getFilesPath(), settings.getFilesPath());
         modified |= !Objects.equals(settingsComponent.getAllFilesCheckboxes(), settings.getAllFilesCheckboxes());
         modified |= !Objects.equals(settingsComponent.getSelectedAnalysisButton(), settings.getSelectedAnalysisButton());
@@ -80,11 +82,21 @@ public class ProjectSettingsConfigurable implements Configurable {
             throw new ConfigurationException("API Key must be provided when using Aider.");
         }
 
-        if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
-                settingsComponent.getNameModel() == 2) &&
-                (settingsComponent.getAiderApiKey() != null )) {
-            settingsComponent.validateApiKeyPrefix();
+        if ("Azure".equalsIgnoreCase(settingsComponent.getLlmProvider())) {
+            if (settingsComponent.getApiBase() == null || settingsComponent.getApiBase().trim().isEmpty()) {
+                throw new ConfigurationException("API Base must be provided when using Azure.");
+            }
+            if (settingsComponent.getApiVersion() == null || settingsComponent.getApiVersion().trim().isEmpty()) {
+                throw new ConfigurationException("API Version must be provided when using Azure.");
+            }
         }
+
+//        If you want to validate the api key, just remove the comment out of this part
+//        if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
+//                settingsComponent.getNameModel() == 2) &&
+//                (settingsComponent.getAiderApiKey() != null )) {
+//            settingsComponent.validateApiKeyPrefix();
+//        }
 
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         settings.minimumDuplicateMethods = settingsComponent.getMinimumDuplicateMethods();
@@ -111,6 +123,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.setLlmprovider(settingsComponent.getLlmProvider());
         settings.setAiderModel(settingsComponent.getSelectedAiderModel());
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
+        settings.setApiBase(settingsComponent.getApiBase());
+        settings.setApiVersion(settingsComponent.getApiVersion());
         settings.setFilesPath(settingsComponent.getFilesPath());
         settings.setAllFilesCheckboxes(settingsComponent.getAllFilesCheckboxes());
         settings.setSelectedAnalysisButton(settingsComponent.getSelectedAnalysisButton());
@@ -145,6 +159,8 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setSelectedAiderModel(settings.getAiderModel());
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());
         settingsComponent.setFilesPath(settings.getFilesPath());
+        settingsComponent.setApiBase(settings.getApiBase());
+        settingsComponent.setApiVersion(settings.getApiVersion());
         settingsComponent.setAllFilesCheckboxes(settings.getAllFilesCheckboxes());
         settingsComponent.setSelectedAnalysisButton(settings.getSelectedAnalysisButton());
     }

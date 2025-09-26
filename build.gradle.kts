@@ -46,6 +46,29 @@ dependencies {
     testImplementation("org.mockito:mockito-junit-jupiter:5.4.0")
 }
 
+sourceSets.main {
+    resources {
+        exclude(
+            "venv/**", ".venv/**",
+            "node_modules/**",
+            ".idea/**", ".git/**", "build/**",
+            "**/*.log", "**/*.md", "**/*.txt",
+            "models/**", "aider/**", "sample_repos/**", "datasets/**", "tmp/**", "logs/**"
+        )
+    }
+}
+
+tasks.withType<Jar>().configureEach {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    exclude(
+        "venv/**", ".venv/**",
+        "node_modules/**",
+        ".idea/**", ".git/**", "build/**",
+        "**/*.log", "logs/**",
+        "models/**", "aider/**", "sample_repos/**", "datasets/**", "tmp/**"
+    )
+}
+
 fun properties(key: String) = project.findProperty(key).toString()
 fun config(name: String) = project.findProperty(name).toString()
 val ideaVersion = config("ideaVersion")

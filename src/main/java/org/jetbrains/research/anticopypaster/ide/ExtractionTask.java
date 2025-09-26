@@ -379,7 +379,7 @@ public class ExtractionTask {
         return extractedText;
     }
 
-    public static void suggestMethodNameAsync(Project project, String codeSnippet, String provider, String model, String apikey, String aiderPath, int count, java.util.function.Consumer<String> callback) {
+    public static void suggestMethodNameAsync(Project project, String codeSnippet, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion, int count, java.util.function.Consumer<String> callback) {
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
                 File tempFile = File.createTempFile("aider_namegen_", ".java");
@@ -392,7 +392,7 @@ public class ExtractionTask {
                                 "Output the name suggestion in this format: rank method_name_1, for example, 1 name_1"
                 );
                 notify(project, "Aider is generating names...");
-                String output = runAiderWithPrompt(project, aiderPath, tempFile.getAbsolutePath(), prompt, provider, model, apikey);
+                String output = runAiderWithPrompt(project, aiderPath, tempFile.getAbsolutePath(), prompt, provider, model, apikey, apiBase, apiVersion);
 
                 ApplicationManager.getApplication().invokeLater(() -> {
                     String selected = null;
@@ -595,6 +595,8 @@ public class ExtractionTask {
                         ProjectSettingsState.getInstance(finalProject).getAiderModel(),
                         ProjectSettingsState.getInstance(finalProject).getAiderApiKey(),
                         ProjectSettingsState.getInstance(finalProject).getAiderPath(),
+                        ProjectSettingsState.getInstance(finalProject).getApiBase(),
+                        ProjectSettingsState.getInstance(finalProject).getApiVersion(),
                         ProjectSettingsState.getInstance(finalProject).numOfPreds,
                         (String methodSuggestion) -> {
                             List<String> predLocal;
