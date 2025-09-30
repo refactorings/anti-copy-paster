@@ -21,6 +21,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Enumeration;
 
+import org.jetbrains.research.anticopypaster.ide.AiderHelper;
+
 public class ProjectSettingsComponent {
 
     private JPanel mainPanel;
@@ -87,10 +89,12 @@ public class ProjectSettingsComponent {
     private JLabel aiderHelpLabel;
     private JLabel apiBaseHelp;
     private ArrayList<JCheckBox> allFilesCheckboxes;
-    
+    private final Project projectRef;
+
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
     public ProjectSettingsComponent(Project project) {
+        this.projectRef = project;
         advancedSettingsButton.addActionListener(e -> {
             AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
             boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
@@ -342,7 +346,7 @@ public class ProjectSettingsComponent {
                     case "Anthropic" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                         "claude-2", "claude-2.1", "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
                             "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-4-opus-20250514", "claude-4-sonnet-20250514",
-                            "claude-opus-4-1", "claude-opus-4-1-20250805", 
+                            "claude-opus-4-1", "claude-opus-4-1-20250805",
                             "claude-instant-1", "claude-instant-1.2"
                     }));
                     case "DeepSeek" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
@@ -386,6 +390,11 @@ public class ProjectSettingsComponent {
         aiderSettingsPanel.revalidate();
         aiderSettingsPanel.repaint();
         aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
+
+        // Auto-close Name Suggestions viewer if Extract Model (main model) is set to Aider
+        if (isMainModelAider) {
+            AiderHelper.closeViewerByTitle(projectRef, "Aider Name Suggestions");
+        }
 
         // Filter nameModel options based on whether main model is Aider, preserving selection if possible
         Object currentSelection = nameModel.getSelectedItem();
