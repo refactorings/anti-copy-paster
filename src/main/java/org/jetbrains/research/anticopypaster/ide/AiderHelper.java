@@ -388,6 +388,61 @@ public class AiderHelper {
         });
     }
 
+    /**
+     * Close all Aider-related viewer tabs. This will:
+     * 1) Close every console we have tracked in CONSOLE_BY_TITLE.
+     * 2) Additionally sweep the Run/Aider Output tool windows and remove any tabs whose title
+     *    starts with "Aider ", in case some tabs were created without being tracked.
+     */
+    public static void closeAllViewers(Project project) {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            try {
+                // First close everything we explicitly tracked
+                java.util.List<String> titles = new java.util.ArrayList<>(CONSOLE_BY_TITLE.keySet());
+                for (String title : titles) {
+                    closeViewerByTitle(project, title);
+                }
+
+                // Then sweep tool windows to catch any stray tabs not tracked in the map
+                ToolWindowManager twm = ToolWindowManager.getInstance(project);
+                ToolWindow[] tws = new ToolWindow[] {
+                        twm.getToolWindow(ToolWindowId.RUN),
+                        twm.getToolWindow("Aider Output")
+                };
+                for (ToolWindow tw : tws) {
+                    if (tw == null) continue;
+                    com.intellij.ui.content.ContentManager cm = tw.getContentManager();
+                    // Take a snapshot to avoid concurrent modification while removing
+                    java.util.List<Content> list = new java.util.ArrayList<>();
+                    for (int i = 0; i < cm.getContentCount(); i++) {
+                        list.add(cm.getContent(i));
+                    }
+                    for (Content c : list) {
+                        if (c != null) {
+                            String title = c.getDisplayName();
+                            if (title != null && title.startsWith("Aider ")) {
+                                cm.removeContent(c, true);
+                                // Clean any console we may have tracked under this title
+                                ConsoleView console = CONSOLE_BY_TITLE.remove(title);
+                                if (console != null) {
+                                    console.clear();
+                                    if (console instanceof ConsoleViewImpl cvi) {
+                                        cvi.dispose();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (cm.getContentCount() == 0) {
+                        tw.hide(null);
+                    }
+                }
+            } catch (Throwable t) {
+                System.err.println("Failed to close all Aider viewers: " + t.getMessage());
+            }
+        });
+    }
+
     // Remove ANSI escape sequences (colors, cursor moves, etc.)
     private static String stripAnsi(String s) {
         if (s == null) return null;

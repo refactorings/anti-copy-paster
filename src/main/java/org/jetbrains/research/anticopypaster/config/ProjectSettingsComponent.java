@@ -93,6 +93,12 @@ public class ProjectSettingsComponent {
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
+    // Suppress auto-close of Aider windows during initial render
+    private boolean suppressAutoCloseOnInit = true;
+    private boolean isLoadingSettings = false;
+    private Object lastMainModel = null;
+    private Object lastNameModel = null;
+
     public ProjectSettingsComponent(Project project) {
         this.projectRef = project;
         advancedSettingsButton.addActionListener(e -> {
@@ -215,7 +221,7 @@ public class ProjectSettingsComponent {
         analysisSelectionButtonListener = e -> {
             JRadioButton selectedButton = (JRadioButton) e.getSource();
             if((selectedButton.getText()).equals("Current File") ||
-               (selectedButton.getText()).equals("All Files in Current Directory")) {
+                    (selectedButton.getText()).equals("All Files in Current Directory")) {
                 multFilesPanel.setVisible(false);
                 filesCheckboxesScrollPane.setVisible(false);
             } else if(selectedButton.getText().equals("Multiple Files")) {
@@ -309,8 +315,21 @@ public class ProjectSettingsComponent {
         addConditionallyEnabledMetricGroup(couplingEnabledCheckBox,couplingSlider,couplingRequiredCheckBox);
         addConditionallyEnabledMetricGroup(complexityEnabledCheckBox, complexitySlider, complexityRequiredCheckBox);
         addConditionallyEnabledMetricGroup(sizeEnabledCheckBox, sizeSlider, sizeRequiredCheckBox);
-        modelComboBox.addActionListener(e -> updatePanelVisibilities());
-        nameModel.addActionListener(e -> updatePanelVisibilities());
+
+        modelComboBox.addActionListener(e -> {
+            if (!suppressAutoCloseOnInit) {
+                checkAndHandleModelChange();
+            }
+            updatePanelVisibilities();
+        });
+
+        nameModel.addActionListener(e -> {
+            if (!suppressAutoCloseOnInit) {
+                checkAndHandleModelChange();
+            }
+            updatePanelVisibilities();
+        });
+
         updatePanelVisibilities();
         String initProvider = (String) llmProviderComboBox.getSelectedItem();
         updateProviderSpecificPanels(initProvider);
@@ -337,14 +356,14 @@ public class ProjectSettingsComponent {
             if (selectedProvider != null) {
                 switch (selectedProvider) {
                     case "OpenAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                        "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
+                            "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
                             "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
                     }));
                     case "Gemini" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                        "gemini-2.5-pro"
+                            "gemini-2.5-pro"
                     }));
                     case "Anthropic" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                        "claude-2", "claude-2.1", "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
+                            "claude-2", "claude-2.1", "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
                             "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-4-opus-20250514", "claude-4-sonnet-20250514",
                             "claude-opus-4-1", "claude-opus-4-1-20250805",
                             "claude-instant-1", "claude-instant-1.2"
@@ -356,7 +375,7 @@ public class ProjectSettingsComponent {
                             "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
                     }));
                     default -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                        "gpt-4" // fallback
+                            "gpt-4" // fallback
                     }));
                 }
                 // Toggle Azure-specific fields on provider change
@@ -375,6 +394,32 @@ public class ProjectSettingsComponent {
         minimumMethodSelector.setModel(new SpinnerNumberModel(2, 2, Integer.MAX_VALUE, 1));
         maxParamsSpinner.setModel(new SpinnerNumberModel(10, 0, 255, 1));
         createUIComponents();
+
+        // Record initial model state
+        lastMainModel = modelComboBox.getSelectedItem();
+        lastNameModel = nameModel.getSelectedItem();
+
+        // Mark initialization complete; subsequent visibility updates may close Aider windows
+        suppressAutoCloseOnInit = false;
+    }
+
+    private void checkAndHandleModelChange() {
+        if (suppressAutoCloseOnInit || isLoadingSettings) {
+            return;
+        }
+
+        Object currentMainModel = modelComboBox.getSelectedItem();
+        Object currentNameModel = nameModel.getSelectedItem();
+
+        // Only close windows when model actually changes
+        boolean mainModelChanged = (lastMainModel != null && !lastMainModel.equals(currentMainModel));
+        boolean nameModelChanged = (lastNameModel != null && !lastNameModel.equals(currentNameModel));
+
+        if (mainModelChanged || nameModelChanged) {
+            AiderHelper.closeAllViewers(projectRef);
+            lastMainModel = currentMainModel;
+            lastNameModel = currentNameModel;
+        }
     }
 
     private void updatePanelVisibilities() {
@@ -390,11 +435,6 @@ public class ProjectSettingsComponent {
         aiderSettingsPanel.revalidate();
         aiderSettingsPanel.repaint();
         aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
-
-        // Auto-close Name Suggestions viewer if Extract Model (main model) is set to Aider
-        if (isMainModelAider) {
-            AiderHelper.closeViewerByTitle(projectRef, "Aider Name Suggestions");
-        }
 
         // Filter nameModel options based on whether main model is Aider, preserving selection if possible
         Object currentSelection = nameModel.getSelectedItem();
@@ -457,8 +497,14 @@ public class ProjectSettingsComponent {
     }
 
     public void setJudgementModel(ProjectSettingsState.JudgementModel model) {
-        modelComboBox.setSelectedIndex(model.getIdx());
-        updatePanelVisibilities();
+        isLoadingSettings = true;
+        try {
+            modelComboBox.setSelectedIndex(model.getIdx());
+            lastMainModel = modelComboBox.getSelectedItem();
+            updatePanelVisibilities();
+        } finally {
+            isLoadingSettings = false;
+        }
     }
 
     public ProjectSettingsState.ExtractionType getExtractionType() {
@@ -651,7 +697,15 @@ public class ProjectSettingsComponent {
     public void setComplexityRequired(boolean required) {
         complexityRequiredCheckBox.setSelected(required);
     }
-    public void setNameModel(int selectedIndex) { nameModel.setSelectedIndex(selectedIndex); }
+    public void setNameModel(int selectedIndex) {
+        isLoadingSettings = true;
+        try {
+            nameModel.setSelectedIndex(selectedIndex);
+            lastNameModel = nameModel.getSelectedItem();
+        } finally {
+            isLoadingSettings = false;
+        }
+    }
     public int getNameModel() { return (nameModel.getSelectedIndex()); }
     public int getNumOfPreds() {
         return numOfPred.getValue();
