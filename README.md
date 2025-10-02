@@ -173,6 +173,14 @@ AlOmar, Eman Abdullah, Anton Ivanov, Zarina Kurbatova, Yaroslav Golubev, Mohamed
 }
 ```
 
+## Troubleshooting Installation
+
+If you encounter issues installing or running the tool, try upgrading pip and reinstalling aider-chat:
+
+```bash
+python -m pip install --upgrade pip
+pip install --upgrade aider-chat
+```
 ## Contacts
 
 If you have any questions or propositions, do not hesitate to contact Eman Abdullah AlOmar at ealomar@stevens.edu.
