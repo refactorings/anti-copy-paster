@@ -90,6 +90,8 @@ public class ProjectSettingsComponent {
     private JLabel apiBaseHelp;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     private final Project projectRef;
+    private Integer pendingMainModelIndex = null;
+    private Integer pendingNameModelIndex = null;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
 
@@ -317,15 +319,15 @@ public class ProjectSettingsComponent {
         addConditionallyEnabledMetricGroup(sizeEnabledCheckBox, sizeSlider, sizeRequiredCheckBox);
 
         modelComboBox.addActionListener(e -> {
-            if (!suppressAutoCloseOnInit) {
-                checkAndHandleModelChange();
+            if (!suppressAutoCloseOnInit && !isLoadingSettings) {
+                pendingMainModelIndex = modelComboBox.getSelectedIndex();
             }
             updatePanelVisibilities();
         });
 
         nameModel.addActionListener(e -> {
-            if (!suppressAutoCloseOnInit) {
-                checkAndHandleModelChange();
+            if (!suppressAutoCloseOnInit && !isLoadingSettings) {
+                pendingNameModelIndex = nameModel.getSelectedIndex();
             }
             updatePanelVisibilities();
         });
@@ -403,24 +405,24 @@ public class ProjectSettingsComponent {
         suppressAutoCloseOnInit = false;
     }
 
-    private void checkAndHandleModelChange() {
-        if (suppressAutoCloseOnInit || isLoadingSettings) {
-            return;
-        }
-
-        Object currentMainModel = modelComboBox.getSelectedItem();
-        Object currentNameModel = nameModel.getSelectedItem();
-
-        // Only close windows when model actually changes
-        boolean mainModelChanged = (lastMainModel != null && !lastMainModel.equals(currentMainModel));
-        boolean nameModelChanged = (lastNameModel != null && !lastNameModel.equals(currentNameModel));
+    public void applyModelChanges() {
+        boolean mainModelChanged = (pendingMainModelIndex != null);
+        boolean nameModelChanged = (pendingNameModelIndex != null);
 
         if (mainModelChanged || nameModelChanged) {
             AiderHelper.closeAllViewers(projectRef);
-            lastMainModel = currentMainModel;
-            lastNameModel = currentNameModel;
+            lastMainModel = modelComboBox.getSelectedItem();
+            lastNameModel = nameModel.getSelectedItem();
+            pendingMainModelIndex = null;
+            pendingNameModelIndex = null;
         }
     }
+
+    public void cancelModelChanges() {
+        pendingMainModelIndex = null;
+        pendingNameModelIndex = null;
+    }
+
 
     private void updatePanelVisibilities() {
         boolean isMainModelAider = (modelComboBox.getSelectedIndex() == 2);
