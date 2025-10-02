@@ -383,27 +383,34 @@ public class ExtractionTask {
 
     public static void suggestMethodNameAsync(Project project, String codeSnippet, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion, int count, java.util.function.Consumer<String> callback) {
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            File tempFile = null;
             try {
-                File tempFile = File.createTempFile("aider_namegen_", ".java");
-                final String escapedCodeSnippet = codeSnippet.replaceAll("%", "%%");
-                Files.writeString(tempFile.toPath(), escapedCodeSnippet, StandardCharsets.UTF_8);
+                File tempDir = new File(System.getProperty("java.io.tmpdir"));
+                tempFile = File.createTempFile("aider_namegen_", ".java", tempDir);
+
+                Files.writeString(tempFile.toPath(), codeSnippet, StandardCharsets.UTF_8);
 
                 String prompt = String.format(
-                        "Suggest " + count + " concise and meaningful Java method names for the following extracted method:" + "\n\n" + escapedCodeSnippet + "\n\n" +
-                                "List only the method names, no method bodies. Use valid Java identifiers and place each name on a new line, ranked from most to least confident." +
-                                "Output the name suggestion in this format: rank method_name_1, for example, 1 name_1"
+                        "Suggest %d concise and meaningful Java method names for the extracted method in this file. " +
+                                "List ONLY the method names, one per line, ranked from most to least confident. " +
+                                "Format: 1 methodName1\\n2 methodName2\\n etc. " +
+                                "Use valid Java identifiers (camelCase). Do not include method bodies or explanations.",
+                        count
                 );
+
                 notify(project, "Aider is generating names...");
                 java.util.function.Consumer<String> viewer = openStreamingViewer(project, "Aider Name Suggestions");
-                String output = runAiderWithPromptStreaming(project, aiderPath, tempFile.getAbsolutePath(), prompt, provider, model, apikey, apiBase, apiVersion, viewer);
 
+                String filePath = tempFile.getAbsolutePath();
+                String output = runAiderWithPromptStreaming(project, aiderPath, filePath, prompt, provider, model, apikey, apiBase, apiVersion, viewer);
+
+                final File finalTempFile = tempFile;
                 ApplicationManager.getApplication().invokeLater(() -> {
                     String selected = null;
                     if (output != null) {
                         List<String> candidates = output.lines()
                                 .map(String::trim)
                                 .filter(line -> !line.isEmpty())
-                                // accept formats like "1 name", "1) name", "1. name", "1: name", or just "name"
                                 .map(line -> line.replaceFirst("^[\\d]+[\\s\\).:]+", ""))
                                 .filter(name -> name.matches("[a-zA-Z_$][a-zA-Z\\d_$]*"))
                                 .distinct()
@@ -420,7 +427,6 @@ public class ExtractionTask {
                                     null
                             );
                         } else {
-                            // Aider ran but no parseable candidates — ask user manually
                             notify(project, "Aider didn't return any usable name suggestions. Please enter a method name.");
                             selected = Messages.showInputDialog(
                                     project,
@@ -433,11 +439,29 @@ public class ExtractionTask {
                         }
                     }
                     callback.accept(selected);
+
+                    if (finalTempFile != null && finalTempFile.exists()) {
+                        try {
+                            finalTempFile.delete();
+                        } catch (Exception e) {
+
+                        }
+                    }
                 });
             } catch (Exception e) {
                 notify(project, "Failed to generate method names: " + e.getMessage());
                 e.printStackTrace();
-                ApplicationManager.getApplication().invokeLater(() -> callback.accept(null));
+
+                final File finalTempFile = tempFile;
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    callback.accept(null);
+                    if (finalTempFile != null && finalTempFile.exists()) {
+                        try {
+                            finalTempFile.delete();
+                        } catch (Exception ex) {
+                        }
+                    }
+                });
             }
         });
     }

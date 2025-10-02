@@ -46,15 +46,15 @@ dependencies {
     testImplementation("org.mockito:mockito-junit-jupiter:5.4.0")
 }
 
-sourceSets.main {
-    resources {
-        exclude(
-            "venv/**", ".venv/**",
-            "node_modules/**",
-            ".idea/**", ".git/**", "build/**",
-            "**/*.log", "**/*.md", "**/*.txt",
-            "models/**", "aider/**", "sample_repos/**", "datasets/**", "tmp/**", "logs/**"
-        )
+sourceSets {
+    main {
+        resources {
+            setSrcDirs(listOf("src/main/resources"))
+            exclude("**/*.index")
+            exclude("**/*.meta")
+            exclude("**/*.data*")
+            exclude("**/saved_model*/**")
+        }
     }
 }
 

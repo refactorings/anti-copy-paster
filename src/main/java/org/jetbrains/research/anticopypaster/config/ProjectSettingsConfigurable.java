@@ -71,14 +71,11 @@ public class ProjectSettingsConfigurable implements Configurable {
         return modified;
     }
 
-    // Save dialog inputs to ProjectSettingsState saved state
     @Override
     public void apply() throws ConfigurationException {
-
-
         if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
-             settingsComponent.getNameModel() == 2) &&
-            (settingsComponent.getAiderApiKey() == null || settingsComponent.getAiderApiKey().trim().isEmpty())) {
+                settingsComponent.getNameModel() == 2) &&
+                (settingsComponent.getAiderApiKey() == null || settingsComponent.getAiderApiKey().trim().isEmpty())) {
             throw new ConfigurationException("API Key must be provided when using Aider.");
         }
 
@@ -90,13 +87,6 @@ public class ProjectSettingsConfigurable implements Configurable {
                 throw new ConfigurationException("API Version must be provided when using Azure.");
             }
         }
-
-//        If you want to validate the api key, just remove the comment out of this part
-//        if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
-//                settingsComponent.getNameModel() == 2) &&
-//                (settingsComponent.getAiderApiKey() != null )) {
-//            settingsComponent.validateApiKeyPrefix();
-//        }
 
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         settings.minimumDuplicateMethods = settingsComponent.getMinimumDuplicateMethods();
@@ -128,9 +118,11 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.setFilesPath(settingsComponent.getFilesPath());
         settings.setAllFilesCheckboxes(settingsComponent.getAllFilesCheckboxes());
         settings.setSelectedAnalysisButton(settingsComponent.getSelectedAnalysisButton());
+
+        // Apply model changes and close Aider windows if needed
+        settingsComponent.applyModelChanges();
     }
 
-    // Pull from saved state to preset dialog state upon opening
     @Override
     public void reset() {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
@@ -163,6 +155,9 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setApiVersion(settings.getApiVersion());
         settingsComponent.setAllFilesCheckboxes(settings.getAllFilesCheckboxes());
         settingsComponent.setSelectedAnalysisButton(settings.getSelectedAnalysisButton());
+
+        // Cancel any pending model changes
+        settingsComponent.cancelModelChanges();
     }
 
     @Override
