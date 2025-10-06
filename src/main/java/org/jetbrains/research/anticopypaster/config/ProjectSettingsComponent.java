@@ -345,11 +345,11 @@ public class ProjectSettingsComponent {
             llmProviderComboBox.getActionListeners()[0].actionPerformed(null);
         }
         // Watch for changes in the Aider API key field
-        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            public void insertUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
-            public void removeUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
-            public void changedUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
-        });
+//        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+//            public void insertUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
+//            public void removeUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
+//            public void changedUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
+//        });
 
         // Watch for changes in the model selection combo box
         aidermodelComboBox.addActionListener(e -> notifySettingsChanged());
