@@ -181,6 +181,18 @@ If you encounter issues installing or running the tool, try upgrading pip and re
 python -m pip install --upgrade pip
 pip install --upgrade aider-chat
 ```
+If you encounter an error similar to UnicodeEncodeError 'UnicodeEncodeError: 'charmap' codec can't encode character '\u2588' in position XX: character maps to <undefined>', it means that Windows terminal is not using UTF-8 encoding by default.
+To fix it, follow these steps:
+
+1. Open Command Prompt as Administrator
+   -- Press Start, type cmd, right-click Command Prompt, and choose Run as administrator.
+2. Run the following commands:
+```bash
+setx PYTHONIOENCODING utf-8
+chcp 65001
+```
+3. Restart your Command Prompt and re-run Aider.
+
 ## Contacts
 
 If you have any questions or propositions, do not hesitate to contact Eman Abdullah AlOmar at ealomar@stevens.edu.
