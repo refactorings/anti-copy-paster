@@ -987,6 +987,7 @@
                     <item value="OpenAI"/>
                     <item value="Anthropic"/>
                     <item value="DeepSeek"/>
+                    <item value="xAI"/>
                     <item value="Azure"/>
                   </model>
                 </properties>

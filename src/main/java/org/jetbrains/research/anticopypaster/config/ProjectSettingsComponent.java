@@ -94,6 +94,10 @@ public class ProjectSettingsComponent {
     private Integer pendingNameModelIndex = null;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
+    private JButton toggleApiKeyVisibilityButton;
+    private JPanel passwordWithEyePanel;
+    private boolean apiKeyVisible = false;
+    private char defaultApiKeyEchoChar;
 
     // Suppress auto-close of Aider windows during initial render
     private boolean suppressAutoCloseOnInit = true;
@@ -132,8 +136,55 @@ public class ProjectSettingsComponent {
 
         // Set layout and add aiderApiKey and warning label with proper constraints
         apiKeyPanel.setLayout(new GridBagLayout());
+        defaultApiKeyEchoChar = aiderApiKey.getEchoChar();
 
-        // Add aiderApiKey field with constraints
+        // Wrap the password field with an eye icon drawn "inside" the field at the far right
+        passwordWithEyePanel = new JPanel();
+        passwordWithEyePanel.setLayout(new OverlayLayout(passwordWithEyePanel));
+        passwordWithEyePanel.setOpaque(false);
+        // Ensure the wrapper uses the same height as the field (prevents icon from floating vertically)
+        Dimension fieldSize = aiderApiKey.getPreferredSize();
+        passwordWithEyePanel.setPreferredSize(new Dimension(fieldSize.width, fieldSize.height));
+        passwordWithEyePanel.setMinimumSize(new Dimension(0, fieldSize.height));
+        passwordWithEyePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, fieldSize.height));
+
+        Icon eyeIcon = AllIcons.General.InspectionsEye;
+        toggleApiKeyVisibilityButton = new JButton(eyeIcon); // IntelliJ eye icon
+        toggleApiKeyVisibilityButton.setFocusable(false);
+        toggleApiKeyVisibilityButton.setBorderPainted(false);
+        toggleApiKeyVisibilityButton.setContentAreaFilled(false);
+        toggleApiKeyVisibilityButton.setOpaque(false);
+        toggleApiKeyVisibilityButton.setMargin(new Insets(0, 0, 0, 0));
+        toggleApiKeyVisibilityButton.setBorder(BorderFactory.createEmptyBorder());
+        // Tight preferred size around the icon to avoid extra blank space
+        toggleApiKeyVisibilityButton.setPreferredSize(new Dimension(eyeIcon.getIconWidth() + 2, eyeIcon.getIconHeight() + 2));
+        toggleApiKeyVisibilityButton.setToolTipText("Show/Hide the API key");
+
+        // Align eye icon horizontally with combo-box arrows by adding a right inset
+        int eyeRightInset = 6; // tweak this to nudge left/right as desired
+        int eyePad = eyeIcon.getIconWidth() + eyeRightInset + 4; // keep a small gap between text and icon
+        aiderApiKey.setBorder(BorderFactory.createCompoundBorder(
+                aiderApiKey.getBorder(),
+                BorderFactory.createEmptyBorder(0, 0, 0, eyePad)
+        ));
+
+        // A transparent right-aligned holder laid over the password field, vertically centered
+        int vpad = Math.max(0, (fieldSize.height - eyeIcon.getIconHeight()) / 2 - 1); // -1 to visually nudge to true center
+        JPanel eyeOverlay = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        eyeOverlay.setOpaque(false);
+        eyeOverlay.setBorder(BorderFactory.createEmptyBorder(vpad, 0, vpad, eyeRightInset));
+        eyeOverlay.add(toggleApiKeyVisibilityButton);
+
+        // Ensure both components fill the same bounds for proper overlay
+        aiderApiKey.setAlignmentX(0.0f);
+        aiderApiKey.setAlignmentY(0.5f);
+        eyeOverlay.setAlignmentX(0.0f);
+        eyeOverlay.setAlignmentY(0.5f);
+
+        passwordWithEyePanel.add(eyeOverlay);
+        passwordWithEyePanel.add(aiderApiKey);
+
+        // Add aiderApiKey field (now wrapped) with constraints
         GridBagConstraints apiKeyGbc = new GridBagConstraints();
         apiKeyGbc.gridx = 1;
         apiKeyGbc.gridy = 0;
@@ -141,7 +192,8 @@ public class ProjectSettingsComponent {
         apiKeyGbc.fill = GridBagConstraints.HORIZONTAL;
         apiKeyGbc.anchor = GridBagConstraints.WEST;
         apiKeyGbc.insets = new Insets(0, 0, 0, 0);
-        apiKeyPanel.add(aiderApiKey, apiKeyGbc);
+        apiKeyPanel.add(passwordWithEyePanel, apiKeyGbc);
+        scrollApiKeyToStart();
 
         // Add warning icon with constraints
         GridBagConstraints warningGbc = new GridBagConstraints();
@@ -150,6 +202,22 @@ public class ProjectSettingsComponent {
         warningGbc.anchor = GridBagConstraints.WEST;
         warningGbc.insets = new Insets(0, 5, 0, 0);
         apiKeyPanel.add(apiKeyWarningLabel, warningGbc);
+
+        // Toggle API key visibility via the eye button
+        toggleApiKeyVisibilityButton.addActionListener(e2 -> {
+            apiKeyVisible = !apiKeyVisible;
+            if (apiKeyVisible) {
+                aiderApiKey.setEchoChar((char) 0); // show characters
+                toggleApiKeyVisibilityButton.setIcon(AllIcons.General.InspectionsEye); // fallback: use eye icon for both states
+                toggleApiKeyVisibilityButton.setToolTipText("Hide the API key");
+                scrollApiKeyToStart();
+            } else {
+                aiderApiKey.setEchoChar(defaultApiKeyEchoChar); // restore default echo char
+                toggleApiKeyVisibilityButton.setIcon(AllIcons.General.InspectionsEye); // eye icon
+                toggleApiKeyVisibilityButton.setToolTipText("Show the API key");
+                scrollApiKeyToStart();
+            }
+        });
 
         // Set layout for filesPanel and filesCheckboxesPanel; initialize ArrayList to keep track of checkboxes
         filesPanel.setLayout(new GridBagLayout());
@@ -376,6 +444,10 @@ public class ProjectSettingsComponent {
                     case "Azure" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
                     }));
+                    case "xAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
+                           "grok-2", "grok-2-latest", "grok-3", "grok-3-beta", "grok-3-fast-beta", "grok-3-latest", "grok-3-mini", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-4", "grok-4-0709", "grok-4-fast-non-reasoning", "grok-4-latest"
+                    }));
+
                     default -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "gpt-4" // fallback
                     }));
@@ -637,6 +709,7 @@ public class ProjectSettingsComponent {
 
     public void setAiderApiKey(String apiKey) {
         aiderApiKey.setText(apiKey);
+        scrollApiKeyToStart();
     }
 
     public void setSelectedAiderModel(String model) {
@@ -814,5 +887,16 @@ public class ProjectSettingsComponent {
         // Azure-specific fields only for Azure
         azureApiVersion.setVisible(isAzure);
         azureApiBase.setVisible(isAzure);
+    }
+
+    private void scrollApiKeyToStart() {
+        SwingUtilities.invokeLater(() -> {
+            aiderApiKey.setCaretPosition(0);
+            try {
+                aiderApiKey.setScrollOffset(0);
+            } catch (Exception ignored) {
+                // setScrollOffset may behave differently across LAFs; caret is enough
+            }
+        });
     }
 }
