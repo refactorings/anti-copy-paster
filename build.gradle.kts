@@ -54,6 +54,7 @@ sourceSets {
             exclude("**/*.meta")
             exclude("**/*.data*")
             exclude("**/saved_model*/**")
+            exclude("code2vec/**")
         }
     }
 }
@@ -65,7 +66,8 @@ tasks.withType<Jar>().configureEach {
         "node_modules/**",
         ".idea/**", ".git/**", "build/**",
         "**/*.log", "logs/**",
-        "models/**", "aider/**", "sample_repos/**", "datasets/**", "tmp/**"
+        "models/**", "aider/**", "sample_repos/**", "datasets/**", "tmp/**",
+        "code2vec/**",
     )
 }
 

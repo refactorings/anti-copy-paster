@@ -209,7 +209,7 @@ public class AiderHelper {
                         }, ModalityState.NON_MODAL);
                     });
                 } else {
-                    notify(project, "No meaningful changes in refactored code for file " + fileName + ".");
+                    notify(project, "No changes in refactored code for file " + fileName + ".");
                 }
 
             } catch (Exception e) {
@@ -255,6 +255,9 @@ public class AiderHelper {
         }
         if (provider.equals("Azure")) {
             model = "azure/" + model;
+        }
+        if (provider.equals("xAI")) {
+            model = "xai/" + model;
         }
         return runCommand(project, provider,
                 apikey,

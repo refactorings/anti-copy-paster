@@ -29,6 +29,8 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public int maxParams = 10;
 
+    public int test = 0;
+
     public boolean keywordsEnabled = true, couplingEnabled = true, sizeEnabled = true, complexityEnabled = true,
             keywordsRequired = false, couplingRequired = false, sizeRequired = false, complexityRequired = false;
 
