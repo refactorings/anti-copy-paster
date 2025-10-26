@@ -37,6 +37,14 @@ public class AiderHelper {
 
     private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
 
+    /**
+     * Opens or reuses a console tab for streaming output and returns a line consumer that appends on the EDT.
+     * Ensures a tool window exists, reuses a same‑titled tab if present, and appends a newline when missing.
+     *
+     * @param project current IntelliJ project (used to resolve ToolWindow and threading helpers)
+     * @param title   console tab title; reused to de‑duplicate tabs
+     * @return a thread‑safe line consumer that streams to the console
+     */
     public static Consumer<String> openStreamingViewer(Project project, String title) {
         final java.util.concurrent.atomic.AtomicReference<ConsoleView> consoleRef = new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -92,6 +100,19 @@ public class AiderHelper {
         });
     }
 
+    /**
+     * Runs a quick Aider‑based clone check for the file and, if clones are indicated, asks the user whether to refactor.
+     * Copies the file to a temp path, streams detector output, and prompts for a refactor preview on positive signals.
+     *
+     * @param project    the IntelliJ project
+     * @param file       file to analyze for clones
+     * @param provider   model provider identifier (e.g., OpenAI, Gemini, Anthropic, Azure, Deepseek, xAI)
+     * @param model      model name (provider‑specific; some are normalized inside)
+     * @param apikey     API key to expose via environment variables to the Aider process
+     * @param aiderPath  path to the {@code aider} executable
+     * @param apiBase    optional API base (used by Azure and some custom deployments)
+     * @param apiVersion optional API version (used by Azure)
+     */
     public static void checkAndSuggestRefactor(Project project, VirtualFile file, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion) {
         String fileName = file.getName();
         notify(project, "Aider is running clone detection on " + fileName + "...");
@@ -139,6 +160,20 @@ public class AiderHelper {
         }
     }
 
+    /**
+     * Performs an Extract‑Method style refactor via Aider on a temp copy, shows a side‑by‑side diff, and
+     * applies the result to the original file only if the user confirms.
+     *
+     * @param project    the IntelliJ project
+     * @param fileName   display name used in messages
+     * @param filePath   absolute path to the source file to refactor
+     * @param provider   LLM provider identifier
+     * @param model      model name (may be normalized)
+     * @param apikey     API key for the provider
+     * @param aiderPath  path to the {@code aider} executable
+     * @param apiBase    optional API base (e.g., Azure endpoint)
+     * @param apiVersion optional API version (for Azure)
+     */
     private static void runRefactorWithPreview(Project project, String fileName, String filePath, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion) {
         notify(project, "Aider is running code refactoring on " + fileName + "...");
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
@@ -219,11 +254,35 @@ public class AiderHelper {
         });
     }
 
+    /**
+     * Heuristically checks whether Aider's output indicates that clones were found.
+     * It requires the phrase "clones found" and rejects "no clones found".
+     *
+     * @param output raw stdout collected from the Aider process
+     * @return {@code true} if the output suggests clones were found; {@code false} otherwise
+     */
     private static boolean containsDuplicateHint(String output) {
         String normalized = output.toLowerCase().trim();
         return normalized.contains("clones found") && !normalized.contains("no clones found");
     }
 
+    /**
+     * Runs Aider once with the given prompt and file, returning its full (cleaned) stdout.
+     * This non‑streaming variant normalizes certain provider/model names (e.g., deepseek/azure).
+     *
+     * @param project    current project (used for working directory and notifications)
+     * @param aiderPath  path to {@code aider}
+     * @param filePath   path to a file to include in the Aider context
+     * @param prompt     message to send to the model
+     * @param provider   provider identifier (OpenAI/Gemini/Anthropic/DeepSeek/Azure/xAI)
+     * @param model      model name; may be prefixed for provider as needed
+     * @param apikey     API key exposed to the subprocess
+     * @param apiBase    optional API base (provider specific)
+     * @param apiVersion optional API version (provider specific)
+     * @return combined standard output of the Aider subprocess
+     * @throws IOException          if launching the process fails
+     * @throws InterruptedException if the process is interrupted while waiting
+     */
     public static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt,
                                             String provider, String model, String apikey,
                                             String apiBase, String apiVersion)
@@ -246,6 +305,24 @@ public class AiderHelper {
         );
     }
 
+    /**
+     * Runs Aider in streaming mode, forwarding cleaned stdout lines to the given viewer and returning the full output.
+     * Also normalizes provider/model identifiers (e.g., deepseek/, azure/, xai/).
+     *
+     * @param project    current project (working directory and notifications)
+     * @param aiderPath  path to {@code aider}
+     * @param filePath   path to the file to include in context
+     * @param prompt     instruction to send
+     * @param provider   provider identifier
+     * @param model      model name (may be normalized with a provider prefix)
+     * @param apikey     API key for the provider
+     * @param apiBase    optional API base
+     * @param apiVersion optional API version
+     * @param viewer     consumer that receives each cleaned line as it arrives; may be {@code null}
+     * @return the full combined output captured from the Aider subprocess
+     * @throws IOException          if the process cannot be started
+     * @throws InterruptedException if the process is interrupted
+     */
     public static String runAiderWithPromptStreaming(Project project, String aiderPath, String filePath, String prompt,
                                                      String provider, String model, String apikey,
                                                      String apiBase, String apiVersion, Consumer<String> viewer)
@@ -272,12 +349,32 @@ public class AiderHelper {
         );
     }
 
+    /**
+     * Convenience overload of {@link #runCommand(Project, String, String, String, String, java.util.function.Consumer, String...)}
+     * with no streaming viewer. Executes the given command and returns combined stdout.
+     */
     private static String runCommand(Project project, String provider, String apikey, String apiBase,
                                      String apiVersion, String... command)
             throws IOException, InterruptedException {
         return runCommand(project, provider, apikey, apiBase, apiVersion, null, command);
     }
 
+    /**
+     * Executes an external process with provider‑specific environment variables, cleans and optionally streams stdout,
+     * and returns the combined output as a string. Sets the project root as the working directory and filters noisy lines.
+     *
+     * @param project    IntelliJ project (used for working directory and notifications)
+     * @param provider   provider identifier (case‑insensitive)
+     * @param apikey     API key to export in the environment
+     * @param apiBase    optional API base (Azure)
+     * @param apiVersion optional API version (Azure)
+     * @param viewer     optional streaming sink for cleaned lines (may be {@code null})
+     * @param command    full command array to run (executable plus args)
+     * @return combined stdout from the process
+     * @throws IOException          if process start fails
+     * @throws InterruptedException if waiting on the process is interrupted
+     * @throws RuntimeException     if the process exits non‑zero
+     */
     private static String runCommand(Project project, String provider, String apikey, String apiBase,
                                      String apiVersion, Consumer<String> viewer, String... command)
             throws IOException, InterruptedException {
@@ -341,6 +438,12 @@ public class AiderHelper {
         return output.toString();
     }
 
+    /**
+     * Shows a simple informational notification under the "Aider Refactoring" group.
+     *
+     * @param project IntelliJ project used as the notification context
+     * @param content message body to display
+     */
     private static void notify(Project project, String content) {
         Notification notification = new Notification(
                 "AiderRefactor",
@@ -352,8 +455,11 @@ public class AiderHelper {
     }
 
     /**
-     * Close the streaming viewer tab identified by title, if present.
-     * Safe to call from any thread.
+     * Closes a single streaming console tab identified by its title, if present. Safe to call from any thread.
+     * Disposes tracked consoles and hides the tool window if it becomes empty.
+     *
+     * @param project IntelliJ project
+     * @param title   console tab title to close
      */
     public static void closeViewerByTitle(Project project, String title) {
         ApplicationManager.getApplication().invokeLater(() -> {
@@ -392,10 +498,11 @@ public class AiderHelper {
     }
 
     /**
-     * Close all Aider-related viewer tabs. This will:
-     * 1) Close every console we have tracked in CONSOLE_BY_TITLE.
-     * 2) Additionally sweep the Run/Aider Output tool windows and remove any tabs whose title
-     *    starts with "Aider ", in case some tabs were created without being tracked.
+     * Closes all Aider‑related viewer tabs.
+     * First closes any consoles tracked internally, then sweeps the Run/Aider Output tool windows
+     * to remove any tabs whose title starts with "Aider ".
+     *
+     * @param project IntelliJ project
      */
     public static void closeAllViewers(Project project) {
         ApplicationManager.getApplication().invokeLater(() -> {
@@ -446,13 +553,24 @@ public class AiderHelper {
         });
     }
 
-    // Remove ANSI escape sequences (colors, cursor moves, etc.)
+    /**
+     * Removes ANSI escape sequences from a line, which prevents garbled output in the UI.
+     *
+     * @param s input string possibly containing ANSI codes
+     * @return the input without ANSI escape sequences (or {@code null} if input is null)
+     */
     private static String stripAnsi(String s) {
         if (s == null) return null;
         return s.replaceAll("\u001B\\[[;?0-9]*[ -/]*[@-~]", "");
     }
 
-    // Remove non-printable control characters except standard whitespace (tab/newline/CR)
+    /**
+     * Filters out non‑printable control characters (except tab/newline/CR) and surrogate code points
+     * that tend to appear as broken glyphs in console output.
+     *
+     * @param s input string
+     * @return sanitized string with only printable characters and standard whitespace
+     */
     private static String stripNonPrintable(String s) {
         if (s == null) return null;
         StringBuilder sb = new StringBuilder(s.length());
@@ -467,7 +585,12 @@ public class AiderHelper {
         }
         return sb.toString();
     }
-    // Extract the first ```java ... ``` or ``` ... ``` fenced block from Aider output
+    /**
+     * Extracts the first fenced code block from {@code text} whose language is either empty or starts with "java".
+     *
+     * @param text full Aider response text, possibly containing fenced code blocks
+     * @return the inner content of the first matching fenced block, or {@code null} if none is found
+     */
     private static String extractJavaCodeBlock(String text) {
         if (text == null) return null;
         int i = 0;
