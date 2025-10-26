@@ -105,6 +105,12 @@ public class ProjectSettingsComponent {
     private Object lastMainModel = null;
     private Object lastNameModel = null;
 
+    /**
+     * Builds and wires the Project Settings UI for AntiCopyPaster, including provider/model pickers,
+     * Aider fields, validation, and dynamic panel visibility.
+     *
+     * @param project IntelliJ project used for dialogs and helper calls
+     */
     public ProjectSettingsComponent(Project project) {
         this.projectRef = project;
         advancedSettingsButton.addActionListener(e -> {
@@ -477,6 +483,9 @@ public class ProjectSettingsComponent {
         suppressAutoCloseOnInit = false;
     }
 
+    /**
+     * Applies pending model combo-box changes and closes any open Aider viewer tabs if models changed.
+     */
     public void applyModelChanges() {
         boolean mainModelChanged = (pendingMainModelIndex != null);
         boolean nameModelChanged = (pendingNameModelIndex != null);
@@ -490,12 +499,19 @@ public class ProjectSettingsComponent {
         }
     }
 
+    /**
+     * Discards pending model selection changes without altering the UI state.
+     */
     public void cancelModelChanges() {
         pendingMainModelIndex = null;
         pendingNameModelIndex = null;
     }
 
 
+    /**
+     * Toggles visibility of manual/AI/Aider settings panels based on current model selections
+     * and synchronizes the available options in the name model dropdown.
+     */
     private void updatePanelVisibilities() {
         boolean isMainModelAider = (modelComboBox.getSelectedIndex() == 2);
         boolean isNameModelAider = (nameModel.getSelectedIndex() == 2);
@@ -530,6 +546,9 @@ public class ProjectSettingsComponent {
 
     }
 
+    /**
+     * Links a metric's enable checkbox to its slider and "required" checkbox so they enable/disable together.
+     */
     private void addConditionallyEnabledMetricGroup(JCheckBox ind, JSlider depslid, JCheckBox dep) {
         ind.addActionListener(e -> {
                     if (ind.isSelected()) {
@@ -545,22 +564,43 @@ public class ProjectSettingsComponent {
         );
     }
 
+    /**
+     * Returns the root settings panel for embedding into dialogs.
+     */
     public JPanel getPanel() {
         return mainPanel;
     }
 
+    /**
+     * Returns the component that should receive initial focus when the settings are shown.
+     */
     public JComponent getPreferredFocusedComponent() {
         return minimumMethodSelector;
     }
 
+    /**
+     * Gets the minimum number of duplicate methods required before suggestions are shown.
+     */
     public int getMinimumDuplicateMethods() { return (int) minimumMethodSelector.getValue(); }
 
+    /**
+     * Sets the minimum number of duplicate methods required before suggestions are shown.
+     */
     public void setMinimumDuplicateMethods(int minimumMethods) { minimumMethodSelector.setValue(minimumMethods); }
 
+    /**
+     * Gets the time buffer (in seconds) used to delay or throttle analyses.
+     */
     public int getTimeBuffer() { return (int) timeBufferSelector.getValue(); }
 
+    /**
+     * Sets the time buffer (in seconds) used to delay or throttle analyses.
+     */
     public void setTimeBuffer(int timeBuffer) { timeBufferSelector.setValue(timeBuffer); }
 
+    /**
+     * Returns which judgement model to use (ML, manual heuristics, or Aider).
+     */
     public ProjectSettingsState.JudgementModel getJudgementModel() {
         return switch (modelComboBox.getSelectedIndex()) {
             case 0 -> ProjectSettingsState.JudgementModel.TENSORFLOW;
@@ -570,6 +610,9 @@ public class ProjectSettingsComponent {
         };
     }
 
+    /**
+     * Updates the judgement model and refreshes panel visibility accordingly.
+     */
     public void setJudgementModel(ProjectSettingsState.JudgementModel model) {
         isLoadingSettings = true;
         try {
@@ -581,6 +624,9 @@ public class ProjectSettingsComponent {
         }
     }
 
+    /**
+     * Returns the selected extraction type (e.g., Type-1 or Type-2).
+     */
     public ProjectSettingsState.ExtractionType getExtractionType() {
         return switch (cloneTypeComboBox.getSelectedIndex()) {
             case 0 -> ProjectSettingsState.ExtractionType.TYPE_ONE;
@@ -589,158 +635,281 @@ public class ProjectSettingsComponent {
         };
     }
 
+    /**
+     * Sets the extraction type in the UI.
+     */
     public void setExtractionType(ProjectSettingsState.ExtractionType cloneType) { cloneTypeComboBox.setSelectedIndex(cloneType.getIdx()); }
 
+    /**
+     * Gets the maximum allowed number of parameters for extracted methods.
+     */
     public int getMaxParams() {
         return (int) maxParamsSpinner.getValue();
     }
 
+    /**
+     * Sets the maximum allowed number of parameters for extracted methods.
+     */
     public void setMaxParams(int maxParams) {
         maxParamsSpinner.setValue(maxParams);
     }
 
+    /**
+     * Gets the model sensitivity slider value (0.0–1.0).
+     */
     public float getModelSensitivity() {
         return ((float)modelSensitivitySlider.getValue()) / 100.0f;
     }
 
+    /**
+     * Sets the model sensitivity slider value (0.0–1.0).
+     */
     public void setModelSensitivity(float sensitivity) {
         modelSensitivitySlider.setValue((int)(sensitivity * 100));
     }
 
+    /**
+     * Gets the keywords sensitivity value from the slider.
+     */
     public int getKeywordsSensitivity() {
         return keywordsSlider.getValue();
     }
 
+    /**
+     * Sets the keywords sensitivity slider value.
+     */
     public void setKeywordsSensitivity(int sensitivity) {
         keywordsSlider.setValue(sensitivity);
     }
 
+    /**
+     * Returns whether the keywords heuristic is enabled.
+     */
     public boolean getKeywordsEnabled() {
         return keywordsEnabledCheckBox.isSelected();
     }
 
+    /**
+     * Enables or disables the keywords heuristic and its controls.
+     */
     public void setKeywordsEnabled(boolean enabled) {
         keywordsEnabledCheckBox.setSelected(enabled);
     }
 
+    /**
+     * Returns whether keywords are required for a positive judgement.
+     */
     public boolean getKeywordsRequired() {
         return keywordsRequiredCheckBox.isSelected();
     }
 
+    /**
+     * Sets whether keywords are required for a positive judgement.
+     */
     public void setKeywordsRequired(boolean required) {
         keywordsRequiredCheckBox.setSelected(required);
     }
 
+    /**
+     * Gets the coupling sensitivity slider value.
+     */
     public int getCouplingSensitivity() {
         return couplingSlider.getValue();
     }
 
+    /**
+     * Sets the coupling sensitivity slider value.
+     */
     public void setCouplingSensitivity(int sensitivity) {
         couplingSlider.setValue(sensitivity);
     }
 
+    /**
+     * Returns whether the coupling heuristic is enabled.
+     */
     public boolean getCouplingEnabled() {
         return couplingEnabledCheckBox.isSelected();
     }
 
+    /**
+     * Enables or disables the coupling heuristic and its controls.
+     */
     public void setCouplingEnabled(boolean enabled) {
         couplingEnabledCheckBox.setSelected(enabled);
     }
 
+    /**
+     * Returns whether coupling is required for a positive judgement.
+     */
     public boolean getCouplingRequired() {
         return couplingRequiredCheckBox.isSelected();
     }
 
+    /**
+     * Sets whether coupling is required for a positive judgement.
+     */
     public void setCouplingRequired(boolean required) {
         couplingRequiredCheckBox.setSelected(required);
     }
 
+    /**
+     * Gets the size sensitivity slider value.
+     */
     public int getSizeSensitivity() {
         return sizeSlider.getValue();
     }
 
+    /**
+     * Sets the size sensitivity slider value.
+     */
     public void setSizeSensitivity(int sensitivity) {
         sizeSlider.setValue(sensitivity);
     }
 
+    /**
+     * Returns whether the size heuristic is enabled.
+     */
     public boolean getSizeEnabled() {
         return sizeEnabledCheckBox.isSelected();
     }
 
+    /**
+     * Enables or disables the size heuristic and its controls.
+     */
     public void setSizeEnabled(boolean enabled) {
         sizeEnabledCheckBox.setSelected(enabled);
     }
 
+    /**
+     * Returns whether size is required for a positive judgement.
+     */
     public boolean getSizeRequired() {
         return sizeRequiredCheckBox.isSelected();
     }
 
+    /**
+     * Sets whether size is required for a positive judgement.
+     */
     public void setSizeRequired(boolean required) {
         sizeRequiredCheckBox.setSelected(required);
     }
 
+    /**
+     * Gets the complexity sensitivity slider value.
+     */
     public int getComplexitySensitivity() {
         return complexitySlider.getValue();
     }
 
+    /**
+     * Sets the complexity sensitivity slider value.
+     */
     public void setComplexitySensitivity(int sensitivity) {
         complexitySlider.setValue(sensitivity);
     }
 
+    /**
+     * Returns whether the complexity heuristic is enabled.
+     */
     public boolean getComplexityEnabled() {
         return complexityEnabledCheckBox.isSelected();
     }
 
+    /**
+     * Enables or disables the complexity heuristic and its controls.
+     */
     public void setComplexityEnabled(boolean enabled) {
         complexityEnabledCheckBox.setSelected(enabled);
     }
 
+    /**
+     * Returns whether complexity is required for a positive judgement.
+     */
     public boolean getComplexityRequired() {
         return complexityRequiredCheckBox.isSelected();
     }
 
+    /**
+     * Returns the Aider API key from the password field.
+     */
     public String getAiderApiKey() {
         return new String(aiderApiKey.getPassword());
     }
 
+    /**
+     * Returns the selected Aider model name.
+     */
     public String getSelectedAiderModel() {
         return (String) aidermodelComboBox.getSelectedItem();
     }
 
+    /**
+     * Sets the Aider API key and scrolls the field to the start.
+     */
     public void setAiderApiKey(String apiKey) {
         aiderApiKey.setText(apiKey);
         scrollApiKeyToStart();
     }
 
+    /**
+     * Selects the Aider model in the combo box.
+     */
     public void setSelectedAiderModel(String model) {
         aidermodelComboBox.setSelectedItem(model);
     }
 
+    /**
+     * Returns the selected LLM provider.
+     */
     public String getLlmProvider() {
         return (String) llmProviderComboBox.getSelectedItem();
     }
 
+    /**
+     * Selects the LLM provider in the combo box.
+     */
     public void setLlmProvider(String provider) {
         llmProviderComboBox.setSelectedItem(provider);
     }
 
+    /**
+     * Returns the Azure/OpenAI API base URL text.
+     */
     public String getApiBase() {return apiBase.getText(); }
 
+    /**
+     * Sets the Azure/OpenAI API base URL text.
+     */
     public void setApiBase(String base) { apiBase.setText(base); }
 
+    /**
+     * Returns the Azure API version text.
+     */
     public String getApiVersion() {return apiVersion.getText(); }
 
+    /**
+     * Sets the Azure API version text.
+     */
     public void setApiVersion(String version) { apiVersion.setText(version); }
 
+    /**
+     * Returns the list backing the dynamically generated file checkboxes.
+     */
     public ArrayList<JCheckBox> getAllFilesCheckboxes() {
         return allFilesCheckboxes;
     }
 
+    /**
+     * Replaces the tracked file checkboxes list with the given items.
+     */
     public void setAllFilesCheckboxes(ArrayList<JCheckBox> filesCheckboxes) {
         allFilesCheckboxes.clear();
         allFilesCheckboxes.addAll(filesCheckboxes);
     }
 
+    /**
+     * Returns the label of the currently selected analysis scope radio button.
+     */
     public String getSelectedAnalysisButton() {
         String selectedButton = "";
         Enumeration<AbstractButton> analysisButtons = analysisSelectionButtonGroup.getElements();
@@ -754,6 +923,9 @@ public class ProjectSettingsComponent {
         return selectedButton;
     }
 
+    /**
+     * Selects an analysis scope radio button by its display text and updates visibility accordingly.
+     */
     public void setSelectedAnalysisButton(String analysisButtonText) {
         switch (analysisButtonText) {
             case "Current File":
@@ -769,9 +941,15 @@ public class ProjectSettingsComponent {
         }
     }
 
+    /**
+     * Sets whether complexity is required for a positive judgement.
+     */
     public void setComplexityRequired(boolean required) {
         complexityRequiredCheckBox.setSelected(required);
     }
+    /**
+     * Sets the name-model selection by index while suppressing change side-effects during load.
+     */
     public void setNameModel(int selectedIndex) {
         isLoadingSettings = true;
         try {
@@ -781,31 +959,55 @@ public class ProjectSettingsComponent {
             isLoadingSettings = false;
         }
     }
+    /**
+     * Returns the index of the selected name-model option.
+     */
     public int getNameModel() { return (nameModel.getSelectedIndex()); }
+    /**
+     * Returns the number of predicted names to request for suggestions.
+     */
     public int getNumOfPreds() {
         return numOfPred.getValue();
     }
 
+    /**
+     * Sets the number of predicted names to request for suggestions.
+     */
     public void setNumOfPreds(int preds) {
         numOfPred.setValue(preds);
     }
 
+    /**
+     * Returns the configured path to the Aider executable.
+     */
     public String getAiderPath() {
         return aiderPath.getText();
     }
 
+    /**
+     * Sets the path to the Aider executable.
+     */
     public void setAiderPath(String path) {
         aiderPath.setText(path);
     }
 
+    /**
+     * Returns the directory path used for multi-file analysis.
+     */
     public String getFilesPath() {
         return filesPath.getText();
     }
 
+    /**
+     * Sets the directory path used for multi-file analysis.
+     */
     public void setFilesPath(String path) {
         filesPath.setText(path);
     }
 
+    /**
+     * Initializes custom UI components, icons, and clickable help links.
+     */
     private void createUIComponents() {
         // Set link and icons for help features
         helpLabel = new JLabel();
@@ -828,6 +1030,9 @@ public class ProjectSettingsComponent {
         apiBaseHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
+    /**
+     * Makes a label or component behave like a link that opens the given URL in the system browser.
+     */
     public static void createLinkListener(JComponent component, String url) {
         component.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         component.addMouseListener(new MouseAdapter() {
@@ -843,10 +1048,16 @@ public class ProjectSettingsComponent {
         });
     }
 
+    /**
+     * No-op used to trigger IntelliJ's modified-state tracking when fields change.
+     */
     private void notifySettingsChanged() {
         // This method exists solely to trigger IntelliJ's internal modified state tracking
     }
 
+    /**
+     * Warns the user if the entered API key's prefix does not match the selected provider.
+     */
     void validateApiKeyPrefix() {
         if (!apiKeyPanel.isVisible()) return;
 
@@ -881,6 +1092,9 @@ public class ProjectSettingsComponent {
         }
     }
 
+    /**
+     * Shows or hides Azure-specific fields based on the selected provider.
+     */
     private void updateProviderSpecificPanels(String provider) {
         boolean isAzure = provider != null && "Azure".equalsIgnoreCase(provider);
 
@@ -889,6 +1103,9 @@ public class ProjectSettingsComponent {
         azureApiBase.setVisible(isAzure);
     }
 
+    /**
+     * Scrolls the API key field to the beginning so the prefix is visible.
+     */
     private void scrollApiKeyToStart() {
         SwingUtilities.invokeLater(() -> {
             aiderApiKey.setCaretPosition(0);
