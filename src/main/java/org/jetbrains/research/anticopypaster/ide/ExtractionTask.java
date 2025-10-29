@@ -381,6 +381,26 @@ public class ExtractionTask {
         return extractedText;
     }
 
+    /**
+     * Asynchronously generates Java method-name suggestions for a given code snippet using Aider,
+     * shows a chooser dialog to the user, and returns the selected name via the callback.
+     * Runs work on a pooled thread, streams output to a console tab, and switches to the EDT for UI.
+     *
+     * Behavior: creates a temporary file from the snippet, prompts Aider to list N names (one per line),
+     * cleans and ranks the suggestions, lets the user pick (or enter a fallback), then deletes the temp file.
+     * On errors or empty results, notifies the user and invokes the callback with a default or null.
+     *
+     * @param project     current IntelliJ project
+     * @param codeSnippet Java code for which to propose an extracted method name
+     * @param provider    LLM provider identifier (e.g., OpenAI, Gemini, Anthropic, Azure, Deepseek, xAI)
+     * @param model       model name for Aider
+     * @param apikey      API key to set in the subprocess environment
+     * @param aiderPath   path to the {@code aider} executable
+     * @param apiBase     optional API base (used by Azure or custom deployments)
+     * @param apiVersion  optional API version (used by Azure)
+     * @param count       number of name suggestions to request and consider
+     * @param callback    consumer that receives the chosen name (or {@code null} if none)
+     */
     public static void suggestMethodNameAsync(Project project, String codeSnippet, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion, int count, java.util.function.Consumer<String> callback) {
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             File tempFile = null;
@@ -649,11 +669,41 @@ public class ExtractionTask {
         });
     }
 
+    /**
+     * Builds the extracted method text, inserts it into the containing class, formats it,
+     * and replaces each clone occurrence with a call to the new method. Triggers a rename dialog.
+     *
+     * @param project            current IntelliJ project
+     * @param containingClass    class where the new method will be inserted
+     * @param factory            PSI element factory used to create the method
+     * @param results            clone locations to replace with calls
+     * @param template           clone chosen as the template for the new method
+     * @param returnType         return type of the new method (null means void)
+     * @param normalizedLambdaArgs normalized lambda arguments per parameter
+     * @param methodName         base name for the new method
+     * @param extractToStatic    whether to mark the method as static
+     */
     private void finalizeExtraction(Project project, PsiClass containingClass, PsiElementFactory factory, List<Clone> results, Clone template, String returnType, List<List<Integer>> normalizedLambdaArgs, String methodName, boolean extractToStatic) {
         finalizeExtraction(project, containingClass, factory, results, template, returnType, normalizedLambdaArgs, methodName, extractToStatic, true);
     }
 
 
+    /**
+     * Creates the extracted method PSI from generated text, inserts it before the class closing brace,
+     * shortens fully-qualified references, reformats, and replaces each clone occurrence with a call.
+     * Optionally opens the Rename dialog for the newly inserted method.
+     *
+     * @param project            current IntelliJ project
+     * @param containingClass    class where the new method is added
+     * @param factory            PSI element factory
+     * @param results            clone locations to be replaced by a call
+     * @param template           representative clone used to generate the method body
+     * @param returnType         return type for the new method (null for void)
+     * @param normalizedLambdaArgs normalized lambda arguments per parameter
+     * @param methodName         name of the new method to insert
+     * @param extractToStatic    true to make the new method static
+     * @param triggerRename      true to invoke the Rename refactoring UI after insertion
+     */
     private void finalizeExtraction(Project project, PsiClass containingClass, PsiElementFactory factory, List<Clone> results, Clone template, String returnType, List<List<Integer>> normalizedLambdaArgs, String methodName, boolean extractToStatic, boolean triggerRename) {
         PsiMethod extractedMethodElement = factory.createMethodFromText(
                 buildMethodText(template, returnType, normalizedLambdaArgs, methodName, extractToStatic),
