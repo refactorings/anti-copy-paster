@@ -107,7 +107,7 @@ AntiCopyPaster integrates with [Aider](https://aider.chat) to provide clone dete
 #### Special Instructions for Ollama
 
 If you choose **Ollama** as the provider:
-
+(Make sure you keep Ollama running in the background)
 1. Download and install Ollama from the [official website](https://ollama.com/).
 2. Search for available models at [Ollama Models](https://ollama.com/search).
 3. Pull the models you want to use, use command
@@ -124,6 +124,32 @@ If you get the [model warnings](https://aider.chat/docs/llms/warnings.html), jus
 
 Click **Apply** and then **OK** to save.
 ![Ollama setting](images/ollama_setting.png)
+
+##### Choosing the Right Ollama Model for Your Device
+
+**Important:** Ollama model performance heavily depends on your device's available RAM and processing power. Choose an appropriate model size to ensure responsive refactoring.
+
+**⚠️ Performance Warning:**
+
+Based on our testing, models larger than **14B parameters** may cause:
+- Extremely slow response times (several minutes per request)
+- High memory usage and system freezes
+- Aider timeouts or process crashes
+- Poor user experience in the IDE
+
+**Testing Your Model:**
+
+Before configuring AntiCopyPaster, test if your chosen model runs smoothly:
+
+```bash
+# Pull the model
+ollama pull llama3.1:8b
+
+# Test it (should respond within 10-20 seconds)
+ollama run llama3.1:8b "Write a hello world function in Java"
+```
+
+If the response takes longer than 30 seconds, consider using a smaller model or switching to a cloud-based API provider.
 
 ---
 
