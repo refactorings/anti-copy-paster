@@ -75,6 +75,8 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public String llmProvider = "";
 
+    public String ollamaModelName = "";
+
     public String filesPath = "";
 
     public String apiBase = "";
@@ -151,6 +153,10 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public String getApiVersion() { return apiVersion; }
 
     public void setApiVersion(String version) { this.apiVersion = version; }
+
+    public void setOllamaName(String model) { this.ollamaModelName = model; }
+
+    public String getOllamaModelName() { return ollamaModelName; }
 
     public void setAllFilesCheckboxes(ArrayList<JCheckBox> filesCheckboxes) {
         (this.allFilesCheckboxes).clear();

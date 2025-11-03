@@ -71,6 +71,10 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 apiBase = state.getApiBase();
                 apiVersion = state.getApiVersion();
             }
+            if (provider.equals("Ollama")) {
+                apiBase = state.getApiBase();
+                model = state.getOllamaModelName();
+            }
             ArrayList<JCheckBox> filesCheckboxes = new ArrayList<>(state.getAllFilesCheckboxes());
             String selectedAnalysisButton = state.getSelectedAnalysisButton();
 

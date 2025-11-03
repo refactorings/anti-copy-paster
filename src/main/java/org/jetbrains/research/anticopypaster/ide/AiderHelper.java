@@ -327,7 +327,7 @@ public class AiderHelper {
                                                      String provider, String model, String apikey,
                                                      String apiBase, String apiVersion, Consumer<String> viewer)
             throws IOException, InterruptedException {
-        if (model.startsWith("deepseek-")) {
+        if (provider.equals("DeepSeek")) {
             model = "deepseek/" + model;
         }
         if (provider.equals("Azure")) {
@@ -335,6 +335,10 @@ public class AiderHelper {
         }
         if (provider.equals("xAI")) {
             model = "xai/" + model;
+        }
+
+        if (provider.equals("Ollama")) {
+            model = "ollama_chat/" + model;
         }
         return runCommand(project, provider,
                 apikey,
@@ -393,6 +397,9 @@ public class AiderHelper {
             }
             case "ANTHROPIC" -> pb.environment().put("ANTHROPIC_API_KEY", apikey);
             case "DEEPSEEK" -> pb.environment().put("DEEPSEEK_API_KEY", apikey);
+            case "OLLAMA" -> {
+                pb.environment().put("OLLAMA_API_BASE", apiBase);
+            }
             case "AZURE" -> {
                 pb.environment().put("AZURE_API_KEY", apikey);
                 pb.environment().put("AZURE_API_VERSION", apiVersion);

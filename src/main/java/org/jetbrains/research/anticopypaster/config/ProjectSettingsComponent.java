@@ -88,6 +88,8 @@ public class ProjectSettingsComponent {
     private JTextField apiBase;
     private JLabel aiderHelpLabel;
     private JLabel apiBaseHelp;
+    private JPanel ollamaModelPanel;
+    private JTextField ollamaModel;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     private final Project projectRef;
     private Integer pendingMainModelIndex = null;
@@ -104,13 +106,15 @@ public class ProjectSettingsComponent {
     private boolean isLoadingSettings = false;
     private Object lastMainModel = null;
     private Object lastNameModel = null;
-
+    private JLabel apiBaseWarningLabel;
+    private JLabel ollamaModelWarningLabel;
     /**
      * Builds and wires the Project Settings UI for AntiCopyPaster, including provider/model pickers,
      * Aider fields, validation, and dynamic panel visibility.
      *
      * @param project IntelliJ project used for dialogs and helper calls
      */
+    // Simple warning icons like API key for Ollama-required field
     public ProjectSettingsComponent(Project project) {
         this.projectRef = project;
         advancedSettingsButton.addActionListener(e -> {
@@ -139,6 +143,7 @@ public class ProjectSettingsComponent {
         JLabel apiKeyWarningLabel = new JLabel(warningIcon);
         apiKeyWarningLabel.setToolTipText("API key not found for selected provider");
         apiKeyWarningLabel.setVisible(false);
+
 
         // Set layout and add aiderApiKey and warning label with proper constraints
         apiKeyPanel.setLayout(new GridBagLayout());
@@ -208,6 +213,27 @@ public class ProjectSettingsComponent {
         warningGbc.anchor = GridBagConstraints.WEST;
         warningGbc.insets = new Insets(0, 5, 0, 0);
         apiKeyPanel.add(apiKeyWarningLabel, warningGbc);
+
+        // Warning labels for Ollama-required fields (simple and consistent with API key)
+        apiBaseWarningLabel = new JLabel(AllIcons.General.Error);
+        apiBaseWarningLabel.setToolTipText("API Base is required when provider is Ollama");
+        apiBaseWarningLabel.setVisible(false);
+
+        ollamaModelWarningLabel = new JLabel(AllIcons.General.Error);
+        ollamaModelWarningLabel.setToolTipText("Ollama Model Name is required when provider is Ollama");
+        ollamaModelWarningLabel.setVisible(false);
+
+        // Safely add warning icons without altering layout or reparenting existing fields
+        try {
+            if (apiBaseWarningLabel.getParent() == null) {
+                azureApiBase.add(apiBaseWarningLabel);
+            }
+        } catch (Exception ignored) {}
+        try {
+            if (ollamaModelWarningLabel.getParent() == null) {
+                ollamaModelPanel.add(ollamaModelWarningLabel);
+            }
+        } catch (Exception ignored) {}
 
         // Toggle API key visibility via the eye button
         toggleApiKeyVisibilityButton.addActionListener(e2 -> {
@@ -407,6 +433,17 @@ public class ProjectSettingsComponent {
         });
 
         updatePanelVisibilities();
+
+        apiBase.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+        });
+        ollamaModel.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+        });
         String initProvider = (String) llmProviderComboBox.getSelectedItem();
         updateProviderSpecificPanels(initProvider);
         // Initialize provider and model dropdowns if empty
@@ -418,7 +455,14 @@ public class ProjectSettingsComponent {
         if (llmProviderComboBox.getActionListeners().length > 0) {
             llmProviderComboBox.getActionListeners()[0].actionPerformed(null);
         }
+        // Watch for changes in the Aider API key field
+//        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+//            public void insertUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
+//            public void removeUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
+//            public void changedUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
+//        });
 
+        // Watch for changes in the model selection combo box
         aidermodelComboBox.addActionListener(e -> notifySettingsChanged());
         // Update model list when provider changes. You can add different providers and their models here.
         llmProviderComboBox.addActionListener(e -> {
@@ -463,6 +507,9 @@ public class ProjectSettingsComponent {
                 mainPanel.repaint();
             }
         });
+
+        // Ensure warning icons are up-to-date at startup
+        updateOllamaWarnings();
 
         timeBufferSelector.setModel(new SpinnerNumberModel(10, 0, Integer.MAX_VALUE, 1));
         minimumMethodSelector.setModel(new SpinnerNumberModel(2, 2, Integer.MAX_VALUE, 1));
@@ -870,6 +917,13 @@ public class ProjectSettingsComponent {
      * Returns the Azure/OpenAI API base URL text.
      */
     public String getApiBase() {return apiBase.getText(); }
+    public void setOllamaModel(String model) {
+        ollamaModel.setText(model);
+    }
+
+    public String getOllamaModel() {
+        return ollamaModel.getText();
+    }
 
     /**
      * Sets the Azure/OpenAI API base URL text.
@@ -1049,6 +1103,39 @@ public class ProjectSettingsComponent {
         // This method exists solely to trigger IntelliJ's internal modified state tracking
     }
 
+//    void validateApiKeyPrefix() {
+//        if (!apiKeyPanel.isVisible()) return;
+//
+//        String apiKey = new String(aiderApiKey.getPassword()).trim();
+//        String provider = (String) llmProviderComboBox.getSelectedItem();
+//        boolean mismatch = false;
+//
+//        if (provider != null && !apiKey.isEmpty()) {
+//            switch (provider) {
+//                case "OpenAI":
+//                    mismatch = !apiKey.startsWith("sk-proj-");
+//                    break;
+//                case "Gemini":
+//                    mismatch = !apiKey.startsWith("AIzaSy");
+//                    break;
+//                case "DeepSeek":
+//                    mismatch = !apiKey.startsWith("sk-");
+//                    break;
+//                case "Anthropic":
+//                    mismatch = !apiKey.startsWith("sk-ant-");
+//                    break;
+//            }
+//        }
+//
+//        if (mismatch) {
+//            JOptionPane.showMessageDialog(
+//                    mainPanel,
+//                    "The API key prefix does not match the selected provider.\nPlease verify your key.",
+//                    "API Key Provider Mismatch",
+//                    JOptionPane.WARNING_MESSAGE
+//            );
+//        }
+//    }
     /**
      * Warns the user if the entered API key's prefix does not match the selected provider.
      */
@@ -1091,10 +1178,29 @@ public class ProjectSettingsComponent {
      */
     private void updateProviderSpecificPanels(String provider) {
         boolean isAzure = provider != null && "Azure".equalsIgnoreCase(provider);
+        boolean isOllama = provider != null && "Ollama".equalsIgnoreCase(provider);
+
+        // Hide API key column when using Ollama (no API key needed)
+        if (apiKeyPanel != null) {
+            apiKeyPanel.setVisible(!isOllama);
+        }
 
         // Azure-specific fields only for Azure
         azureApiVersion.setVisible(isAzure);
-        azureApiBase.setVisible(isAzure);
+        azureApiBase.setVisible(isAzure || isOllama);
+
+        if (ollamaModelPanel != null) {
+            ollamaModelPanel.setVisible(isOllama);
+        }
+        if (modelPanel != null) {
+            modelPanel.setVisible(!isOllama);
+        }
+
+        // Refresh layouts so UI updates immediately
+        if (apiKeyPanel != null) { apiKeyPanel.revalidate(); apiKeyPanel.repaint(); }
+        if (mainPanel != null) { mainPanel.revalidate(); mainPanel.repaint(); }
+
+        updateOllamaWarnings();
     }
 
     /**
@@ -1109,5 +1215,22 @@ public class ProjectSettingsComponent {
                 // setScrollOffset may behave differently across LAFs; caret is enough
             }
         });
+    }
+
+    private void updateOllamaWarnings() {
+        boolean isOllama = (llmProviderComboBox.getSelectedItem() != null)
+                && "Ollama".equalsIgnoreCase((String) llmProviderComboBox.getSelectedItem());
+
+        if (apiBaseWarningLabel != null) {
+            boolean showApiBase = isOllama && (apiBase.getText() == null || apiBase.getText().trim().isEmpty());
+            apiBaseWarningLabel.setVisible(showApiBase);
+        }
+        if (ollamaModelWarningLabel != null) {
+            boolean showModel = isOllama && (ollamaModel.getText() == null || ollamaModel.getText().trim().isEmpty());
+            ollamaModelWarningLabel.setVisible(showModel);
+        }
+
+        if (azureApiBase != null) { azureApiBase.revalidate(); azureApiBase.repaint(); }
+        if (ollamaModelPanel != null) { ollamaModelPanel.revalidate(); ollamaModelPanel.repaint(); }
     }
 }
