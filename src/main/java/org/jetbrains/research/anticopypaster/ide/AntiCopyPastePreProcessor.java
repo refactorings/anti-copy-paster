@@ -24,6 +24,7 @@ import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 import javax.swing.*;
+import org.jetbrains.research.anticopypaster.Copilot.CopilotBridge;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Timer;
@@ -58,6 +59,29 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     public String preprocessOnPaste(Project project, PsiFile file, Editor editor, String text, RawText rawText) {
         RefactoringNotificationTask rnt = getRefactoringTask(project);
         ProjectSettingsState.JudgementModel currentModelType = ProjectSettingsState.getInstance(project).judgementModel;
+
+        // If user selects Copilot as the judgement model, hand off to Copilot Chat UI.
+        if (currentModelType == ProjectSettingsState.JudgementModel.COPILOT) {
+            if (editor != null) {
+                // Standard combined detection + refactoring prompt.
+                String prompt = ("Please detect any clones in this file. " +
+                                 "If there are clones, refactor them by Extract Method. " +
+                                 "Keep behavior identical, use a clear intention-revealing method name, " +
+                                 "update all call sites, and show the final version of the class.");
+
+                // Prefer a friendly guard in case Copilot plugin is missing.
+                if (CopilotBridge.isCopilotChatAvailable()) {
+                    CopilotBridge.openChatWithClipboardPrompt(project, editor, prompt);
+                } else {
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        notify(project, "GitHub Copilot Chat is not available. Please install/enable the Copilot plugin.");
+                    });
+                }
+            }
+            // We still return the original text so the paste content remains unchanged.
+            return text;
+        }
+
         if (currentModelType == ProjectSettingsState.JudgementModel.AIDER) {
             ProjectSettingsState state = ProjectSettingsState.getInstance(project);
             String model = state.getAiderModel();

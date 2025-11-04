@@ -174,7 +174,8 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public enum JudgementModel {
         TENSORFLOW(0),
         USER_SETTINGS(1),
-        AIDER(2);
+        AIDER(2),
+        COPILOT(3);
         private int idx;
         JudgementModel(int idx) {
             this.idx = idx;

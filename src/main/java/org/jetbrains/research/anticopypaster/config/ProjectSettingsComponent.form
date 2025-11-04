@@ -132,6 +132,7 @@
                     <item value="the AI model"/>
                     <item value="my manual heuristics"/>
                     <item value="Aider"/>
+                    <item value="Copilot"/>
                   </model>
                 </properties>
               </component>

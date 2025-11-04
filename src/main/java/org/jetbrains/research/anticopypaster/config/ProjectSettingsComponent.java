@@ -556,25 +556,39 @@ public class ProjectSettingsComponent {
     private void updatePanelVisibilities() {
         boolean isMainModelAider = (modelComboBox.getSelectedIndex() == 2);
         boolean isNameModelAider = (nameModel.getSelectedIndex() == 2);
+        boolean isMainModelCopilot = (modelComboBox.getSelectedIndex() == 3);
 
         manualHeuristicsPanel.setVisible(modelComboBox.getSelectedIndex() == 1);
         aiSettingsPanel.setVisible(modelComboBox.getSelectedIndex() == 0);
 
-        // Show Aider settings if either model selection is Aider
-        boolean showAiderSettings = isMainModelAider || isNameModelAider;
+        // Show Aider settings if either model selection is Aider, but hide if main model is Copilot
+        boolean showAiderSettings = (isMainModelAider || isNameModelAider) && !isMainModelCopilot;
         aiderSettingsPanel.setVisible(showAiderSettings);
         aiderSettingsPanel.revalidate();
         aiderSettingsPanel.repaint();
         aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
+        // Keep Aider help label visibility in sync with the Aider settings panel.
+        if (aiderHelpLabel != null) {
+            aiderHelpLabel.setVisible(showAiderSettings);
+            aiderHelpLabel.revalidate();
+            aiderHelpLabel.repaint();
+        }
 
-        // Filter nameModel options based on whether main model is Aider, preserving selection if possible
+        // Filter nameModel options based on whether main model is Aider or Copilot, preserving selection if possible
         Object currentSelection = nameModel.getSelectedItem();
         if (isMainModelAider) {
             // When Aider is selected as the main model, only allow "Aider" in name model
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Aider"});
             nameModel.setModel(model);
             nameModel.setSelectedItem("Aider");
-        } else {
+        }
+        else if (isMainModelCopilot) {
+            // When Copilot is selected as the main model, only allow "Copilot" in name model
+            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Copilot"});
+            nameModel.setModel(model);
+            nameModel.setSelectedItem("Copilot");
+        }
+        else {
             // When other main models are selected, restore all options
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Aider"});
             nameModel.setModel(model);
@@ -647,6 +661,7 @@ public class ProjectSettingsComponent {
             case 0 -> ProjectSettingsState.JudgementModel.TENSORFLOW;
             case 1 -> ProjectSettingsState.JudgementModel.USER_SETTINGS;
             case 2 -> ProjectSettingsState.JudgementModel.AIDER;
+            case 3 -> ProjectSettingsState.JudgementModel.COPILOT;
             default -> throw new IllegalStateException("Unknown option selected.");
         };
     }
@@ -1102,40 +1117,6 @@ public class ProjectSettingsComponent {
     private void notifySettingsChanged() {
         // This method exists solely to trigger IntelliJ's internal modified state tracking
     }
-
-//    void validateApiKeyPrefix() {
-//        if (!apiKeyPanel.isVisible()) return;
-//
-//        String apiKey = new String(aiderApiKey.getPassword()).trim();
-//        String provider = (String) llmProviderComboBox.getSelectedItem();
-//        boolean mismatch = false;
-//
-//        if (provider != null && !apiKey.isEmpty()) {
-//            switch (provider) {
-//                case "OpenAI":
-//                    mismatch = !apiKey.startsWith("sk-proj-");
-//                    break;
-//                case "Gemini":
-//                    mismatch = !apiKey.startsWith("AIzaSy");
-//                    break;
-//                case "DeepSeek":
-//                    mismatch = !apiKey.startsWith("sk-");
-//                    break;
-//                case "Anthropic":
-//                    mismatch = !apiKey.startsWith("sk-ant-");
-//                    break;
-//            }
-//        }
-//
-//        if (mismatch) {
-//            JOptionPane.showMessageDialog(
-//                    mainPanel,
-//                    "The API key prefix does not match the selected provider.\nPlease verify your key.",
-//                    "API Key Provider Mismatch",
-//                    JOptionPane.WARNING_MESSAGE
-//            );
-//        }
-//    }
     /**
      * Warns the user if the entered API key's prefix does not match the selected provider.
      */
