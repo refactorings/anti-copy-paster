@@ -86,22 +86,23 @@ AntiCopyPaster integrates with [Aider](https://aider.chat) to provide clone dete
 ### Configuration in AntiCopyPaster
 
 1. Open IntelliJ IDEA and go to **Settings → Tools → AntiCopyPaster**.
-2. In the section *“Extraction judgements should be performed by”*, select **Aider**.  
-   ![Aider extraction judgement screenshot](images/aider_extraction.png)
+2. In the section *“Extraction judgements should be performed by”*, select **Aider**.
 3. Open the **Aider Settings** panel and configure:
-    - **Aider Path**: the path to the `aider` binary. On terminal, use command:
-      ```bash
-      which aider
-      ```  
-      might return `/Users/username/.local/bin/aider`.
-    - **LLM Provider**: choose the provider you want to connect with (e.g., OpenAI, Gemini, DeepSeek, Anthropic).
-    - **Model Selection**: specify the model you want to use (e.g., `gpt-4o`, `gemini-pro`).
-    - **API Key**: enter your provider’s API key.
-        - [OpenAI](https://platform.openai.com/api-keys)
-        - [Gemini](https://ai.google.dev/gemini-api/docs/api-key)
-        - [DeepSeek](https://api-docs.deepseek.com/)
-        - [Anthropic](https://docs.anthropic.com/en/api/admin-api/apikeys/get-api-key)  
-          ![Aider configuration](images/aider_setting.png)
+   - **Aider Path**: the path to the `aider` binary. On terminal, use command:
+     ```bash
+     which aider
+     ```  
+     might return `/Users/username/.local/bin/aider`.
+   - **LLM Provider**: choose the provider you want to connect with (e.g., OpenAI, Gemini, DeepSeek, Anthropic).
+   - **Model Selection**: specify the model you want to use (e.g., `gpt-4o`, `gemini-pro`).
+   - **API Key**: enter your provider’s API key.
+      - [OpenAI](https://platform.openai.com/api-keys)
+      - [Gemini](https://ai.google.dev/gemini-api/docs/api-key)
+      - [DeepSeek](https://api-docs.deepseek.com/)
+      - [Anthropic](https://docs.anthropic.com/en/api/admin-api/apikeys/get-api-key)
+      - [xAI](https://x.ai/api)
+
+---
 
 #### Special Instructions for Ollama
 
@@ -122,7 +123,7 @@ If you choose **Ollama** as the provider:
 If you get the [model warnings](https://aider.chat/docs/llms/warnings.html), just ignore it and continue proceeding.
 
 Click **Apply** and then **OK** to save.
-![Ollama setting](images/ollama_setting.png)
+
 
 ##### Choosing the Right Ollama Model for Your Device
 
@@ -152,35 +153,31 @@ If the response takes longer than 30 seconds, consider using a smaller model or 
 
 ---
 
+
 ### Using Aider for Refactoring
 
 1. Select a code fragment in a Java file.
 2. Perform a **copy** and then **paste** operation.
 3. AntiCopyPaster will trigger Aider’s clone detection.
-    - If clones are detected, a confirmation window will appear.
-    - Click **Yes** to proceed.  
-      ![Aider refactoring confirmation window](images/code_refactoring_selection.png)
+   - If clones are detected, a confirmation window will appear.
+   - Click **Yes** to proceed.
 4. Aider will generate a refactored version of the code.
-    - A **side-by-side comparison** of the original and refactored code will be displayed.
-    - After a few seconds, you will be asked whether to apply the change.
-    - Selecting **Yes** will update the original code with the refactored version.  
-      ![Side by side comparison](images/side_by_side_comparison.png)
+   - A **side-by-side comparison** of the original and refactored code will be displayed.
+   - After a few seconds, you will be asked whether to apply the change.
+   - Selecting **Yes** will update the original code with the refactored version.
 
 ---
 
 ### Using Aider for Naming Suggestions
 
 1. In **AntiCopyPaster Settings**, set **Aider** as the *Name recommendation model*.
-    - (If Aider is already selected for extraction judgements, this is set automatically.)  
-      ![Aider rename model](images/aider_rename.png)
+   - (If Aider is already selected for extraction judgements, this is set automatically.)
 2. Configure how many naming suggestions Aider should generate.
-   ![Aider name suggestion number](images/name_suggestions_number.png)
 3. Perform a copy-paste refactoring as usual.
 4. Aider will generate multiple method name suggestions.
-    - These will appear in a drop-down menu.
-    - Select your preferred name to apply it.
+   - These will appear in a drop-down menu.
+   - Select your preferred name to apply it.
 
-![Aider naming suggestion window](images/name_suggestion_window.png)
 
 ---
 
