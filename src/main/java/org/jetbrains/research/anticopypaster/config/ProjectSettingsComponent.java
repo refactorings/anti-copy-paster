@@ -90,6 +90,7 @@ public class ProjectSettingsComponent {
     private JLabel apiBaseHelp;
     private JPanel ollamaModelPanel;
     private JTextField ollamaModel;
+    private JPanel fileSelectionPanel;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     private final Project projectRef;
     private Integer pendingMainModelIndex = null;
@@ -572,6 +573,14 @@ public class ProjectSettingsComponent {
             aiderHelpLabel.setVisible(showAiderSettings);
             aiderHelpLabel.revalidate();
             aiderHelpLabel.repaint();
+        }
+
+        // Show file-selection scope controls only for Aider or Copilot as main model
+        boolean showFileSelection = isMainModelAider || isMainModelCopilot;
+        if (fileSelectionPanel != null) {
+            fileSelectionPanel.setVisible(showFileSelection);
+            fileSelectionPanel.revalidate();
+            fileSelectionPanel.repaint();
         }
 
         // Filter nameModel options based on whether main model is Aider or Copilot, preserving selection if possible

@@ -28,6 +28,7 @@ import org.jetbrains.research.anticopypaster.Copilot.CopilotBridge;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Timer;
+import java.util.List;
 
 import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOffset;
 
@@ -60,16 +61,43 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         RefactoringNotificationTask rnt = getRefactoringTask(project);
         ProjectSettingsState.JudgementModel currentModelType = ProjectSettingsState.getInstance(project).judgementModel;
 
+        ProjectSettingsState state = ProjectSettingsState.getInstance(project);
+        String selectedAnalysisButton = state.getSelectedAnalysisButton();
+        String filesPath = state.getFilesPath();
+        ArrayList<JCheckBox> filesCheckboxes = new ArrayList<>(state.getAllFilesCheckboxes());
+
         // If user selects Copilot as the judgement model, hand off to Copilot Chat UI.
         if (currentModelType == ProjectSettingsState.JudgementModel.COPILOT) {
             if (editor != null) {
-                // Standard combined detection + refactoring prompt.
-                String prompt = ("Please detect any clones in this file. " +
-                                 "If there are clones, refactor them by Extract Method. " +
-                                 "Keep behavior identical, use a clear intention-revealing method name, " +
-                                 "update all call sites, and show the final version of the class.");
+                // Reuse unified target file collection for three scopes
+                List<VirtualFile> targets = collectTargetFiles(project, file, selectedAnalysisButton, filesPath, filesCheckboxes);
 
-                // Prefer a friendly guard in case Copilot plugin is missing.
+                // Friendly validations mirroring previous behavior
+                if ("Multiple Files".equals(selectedAnalysisButton)) {
+                    if (filesPath == null || filesPath.isEmpty()) {
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            notify(project, "No directory path provided. Please configure a valid directory for Copilot multi-file analysis.");
+                        });
+                        return text;
+                    }
+                    File filesDir = new File(filesPath);
+                    if (!filesDir.isDirectory()) {
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            notify(project, "Invalid directory path for Copilot multi-file analysis. Please select a valid directory.");
+                        });
+                        return text;
+                    }
+                    boolean filesSelected = targets != null && !targets.isEmpty();
+                    if (!filesSelected) {
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            notify(project, "No files have been selected. Please pick at least one file for Copilot to analyze.");
+                        });
+                        return text;
+                    }
+                }
+
+                String prompt = buildCopilotPrompt(project, targets);
+
                 if (CopilotBridge.isCopilotChatAvailable()) {
                     CopilotBridge.openChatWithClipboardPrompt(project, editor, prompt);
                 } else {
@@ -83,12 +111,10 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         }
 
         if (currentModelType == ProjectSettingsState.JudgementModel.AIDER) {
-            ProjectSettingsState state = ProjectSettingsState.getInstance(project);
             String model = state.getAiderModel();
             String apiKey = state.getAiderApiKey();
             String provider = state.getLlmprovider();
             String aiderPath = state.getAiderPath();
-            String filesPath = state.getFilesPath();
             String apiBase = "";
             String apiVersion = "";
             if (provider.equals("Azure")) {
@@ -99,89 +125,43 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 apiBase = state.getApiBase();
                 model = state.getOllamaModelName();
             }
-            ArrayList<JCheckBox> filesCheckboxes = new ArrayList<>(state.getAllFilesCheckboxes());
-            String selectedAnalysisButton = state.getSelectedAnalysisButton();
 
-            System.out.println("Selected button: '" + selectedAnalysisButton + "'");
+            // Reuse unified target selection across three scopes
+            List<VirtualFile> targets = collectTargetFiles(project, file, selectedAnalysisButton, filesPath, filesCheckboxes);
 
-            // Check which analysis option was chosen ("Current File", "All Files in Current Directory", or "Multiple Files")
-            // Take proper action according to selected option
-            if(selectedAnalysisButton.equals("Current File")) {
-                // If "Current File": default operation occurs (analysis of only the file that is currently open by the user).
-
-                System.out.println("Current File properly selected");
-                System.out.println(file.getVirtualFile().getName());
-
-                AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath, apiBase, apiVersion);
-            } else if(selectedAnalysisButton.equals("All Files in Current Directory")) {
-                // If "All Files [...]": get dir of current file, get all files in dir
-                // Call checkAndSuggestRefactor on each file in dir
-
-                System.out.println("All Files in Current Directory properly selected");
-
-                VirtualFile currFileVF = file.getVirtualFile();
-                VirtualFile parentDir = currFileVF.getParent();
-                String dirPath = parentDir.getPath();
-                File currDir = new File(dirPath);
-                if(currDir.isDirectory()) {
-                    File[] filesInDir = currDir.listFiles();
-                    if(filesInDir != null) {
-                        for(File fileInDir : filesInDir) {
-                            String fileAbsPath = fileInDir.getAbsolutePath();
-                            VirtualFile virtualFileInDir = LocalFileSystem.getInstance().findFileByPath(fileAbsPath);
-                            if(virtualFileInDir != null) {
-
-                                System.out.println(virtualFileInDir.getName());
-
-                                AiderHelper.checkAndSuggestRefactor(project, virtualFileInDir, provider, model, apiKey, aiderPath, apiBase, apiVersion);
-                            }
-                        }
-                    }
+            if ("Multiple Files".equals(selectedAnalysisButton)) {
+                if (filesPath == null || filesPath.isEmpty()) {
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file for Aider to run on.");
+                    });
+                    return text;
                 }
-            } else if(selectedAnalysisButton.equals("Multiple Files")) {
-                // If "Multiple Files":
-                // If a path to search for files has been provided and a file's checkbox has been selected:
-                // Call checkAndSuggestRefactor on the particular file
-
-                System.out.println("Multiple Files properly selected");
-
-                if (!(filesPath == null || filesPath.equals(""))) {
-                    File filesDir = new File(filesPath);
-                    if(!filesDir.isDirectory()) {
-                        System.out.println("Invalid directory path");
-                        ApplicationManager.getApplication().invokeLater(() -> {
-                            notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file for Aider to run on.");
-                        });
-                    } else if(filesCheckboxes.isEmpty()) {
-                        System.out.println("No files exist within the provided directory");
-                        ApplicationManager.getApplication().invokeLater(() -> {
-                            notify(project, "No files exist in the directory provided in the plugin menu. Please input a non-empty directory and select at least one file for Aider to run on.");
-                        });
-                    } else {
-                        boolean filesSelected = false;
-                        for (int i = 0; i < filesCheckboxes.size(); i++) {
-                            if(filesCheckboxes.get(i).isSelected()) {
-                                filesSelected = true;
-                                String fileName = (filesCheckboxes.get(i)).getText();
-                                String filePath = filesPath + "/" + fileName;
-                                VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath(filePath);
-                                if (virtualFile != null) {
-
-                                    System.out.println(virtualFile.getName());
-
-                                    AiderHelper.checkAndSuggestRefactor(project, virtualFile, provider, model, apiKey, aiderPath, apiBase, apiVersion);
-                                }
-                            }
-                        }
-                        if(!filesSelected) {
-                            System.out.println("No file checkbox(es) selected within plugin menu");
-                            ApplicationManager.getApplication().invokeLater(() -> {
-                                notify(project, "No files have been selected in the plugin menu. Please select at least one file to run Aider on.");
-                            });
-                        }
-                    }
+                File filesDir = new File(filesPath);
+                if (!filesDir.isDirectory()) {
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file for Aider to run on.");
+                    });
+                    return text;
+                }
+                if (targets == null || targets.isEmpty()) {
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        notify(project, "No files have been selected in the plugin menu. Please select at least one file to run Aider on.");
+                    });
+                    return text;
                 }
             }
+
+            // Execute Aider for each selected target file
+            if (targets != null && !targets.isEmpty()) {
+                for (VirtualFile vf : targets) {
+                    AiderHelper.checkAndSuggestRefactor(project, vf, provider, model, apiKey, aiderPath, apiBase, apiVersion);
+                }
+            } else if (file != null && file.getVirtualFile() != null) {
+                // Fallback to current file only
+                AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath, apiBase, apiVersion);
+            }
+
+            return text;
         }
         else{
             if (rnt == null) {
@@ -209,6 +189,96 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     }
 
     /**
+     * Collect target files according to the selected analysis scope.
+     * Mirrors the three scopes used by both Aider and Copilot:
+     * "Current File", "All Files in Current Directory", "Multiple Files".
+     */
+    private static List<VirtualFile> collectTargetFiles(Project project,
+                                                       @Nullable PsiFile currentPsiFile,
+                                                       String selectedAnalysisButton,
+                                                       String filesPath,
+                                                       ArrayList<JCheckBox> filesCheckboxes) {
+        ArrayList<VirtualFile> result = new ArrayList<>();
+
+        if ("Current File".equals(selectedAnalysisButton)) {
+            if (currentPsiFile != null && currentPsiFile.getVirtualFile() != null) {
+                result.add(currentPsiFile.getVirtualFile());
+            }
+            return result;
+        }
+
+        if ("All Files in Current Directory".equals(selectedAnalysisButton)) {
+            if (currentPsiFile != null && currentPsiFile.getVirtualFile() != null) {
+                VirtualFile parentDir = currentPsiFile.getVirtualFile().getParent();
+                if (parentDir != null) {
+                    File currDir = new File(parentDir.getPath());
+                    if (currDir.isDirectory()) {
+                        File[] filesInDir = currDir.listFiles();
+                        if (filesInDir != null) {
+                            for (File fInDir : filesInDir) {
+                                if (fInDir.isFile()) {
+                                    VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(fInDir.getAbsolutePath());
+                                    if (vf != null) result.add(vf);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        if ("Multiple Files".equals(selectedAnalysisButton)) {
+            if (filesPath == null || filesPath.isEmpty()) return result;
+            File filesDir = new File(filesPath);
+            if (!filesDir.isDirectory()) return result;
+            if (filesCheckboxes == null || filesCheckboxes.isEmpty()) return result;
+
+            for (JCheckBox cb : filesCheckboxes) {
+                if (cb.isSelected()) {
+                    String singleName = cb.getText();
+                    String abs = filesPath + "/" + singleName;
+                    File f = new File(abs);
+                    if (f.isFile()) {
+                        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(f.getAbsolutePath());
+                        if (vf != null) result.add(vf);
+                    }
+                }
+            }
+            return result;
+        }
+
+        // Fallback to current file if no option matched or not selected.
+        if (currentPsiFile != null && currentPsiFile.getVirtualFile() != null) {
+            result.add(currentPsiFile.getVirtualFile());
+        }
+        return result;
+    }
+
+    /**
+     * Build a Copilot prompt that enumerates project-relative file paths,
+     * so Copilot Chat can auto-load them as context.
+     */
+    private static String buildCopilotPrompt(Project project, List<VirtualFile> targets) {
+        StringBuilder promptBuilder = new StringBuilder();
+        promptBuilder.append("Please detect any clones across the following files and refactor them by Extract Method.\n")
+                .append("Keep behavior identical, use a clear intention-revealing method name, update all call sites,\n")
+                .append("and show the final version of the class or classes.\n\n");
+
+        if (targets != null && !targets.isEmpty()) {
+            promptBuilder.append("Files:\n");
+            for (VirtualFile vf : targets) {
+                String abs = vf.getPath();
+                promptBuilder.append("- ").append(toProjectRelative(project, abs)).append("\n");
+            }
+            promptBuilder.append("\n");
+        } else {
+            promptBuilder.append("Files: (current editor file)\n\n");
+        }
+        return promptBuilder.toString();
+    }
+
+    /**
      * Finds the RefactoringNotificationTask in the refactoringNotificationTask ArrayList that is associated with the
      * given project. Returns the RefactoringNotificationTask if it exists, and null if it does not.
      * */
@@ -233,6 +303,24 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         } catch (Exception ex) {
             LOG.error("[ACP] Failed to schedule the checking for refactorings.", ex.getMessage());
         }
+    }
+
+    /**
+     * Returns a project-relative path if possible, otherwise returns the original absolute path.
+     * This produces cleaner paths that Copilot Chat can often resolve within the current project.
+     */
+    private static String toProjectRelative(Project project, String absolutePath) {
+        if (project == null || absolutePath == null) return absolutePath;
+        String base = project.getBasePath();
+        if (base == null) return absolutePath;
+        if (absolutePath.startsWith(base)) {
+            String rel = absolutePath.substring(base.length());
+            if (rel.startsWith("/") || rel.startsWith("\\")) {
+                rel = rel.substring(1);
+            }
+            return rel.isEmpty() ? absolutePath : rel;
+        }
+        return absolutePath;
     }
 
     private static void notify(Project project, String content) {
