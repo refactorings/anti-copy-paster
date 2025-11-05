@@ -478,23 +478,22 @@ public class ProjectSettingsComponent {
                             "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-pro-exp-03-25", "gemini-2.5-flash", "gemini-2.5-flash-lite-preview-06-17", "gemini-2.5-flash-lite-preview-09-2025", "gemini-2.5-flash-preview-09-2025"
                     }));
                     case "Anthropic" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "claude-2", "claude-2.1", "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
+                           "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
                             "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-4-opus-20250514", "claude-4-sonnet-20250514",
-                            "claude-opus-4-1", "claude-opus-4-1-20250805",
-                            "claude-instant-1", "claude-instant-1.2"
+                            "claude-opus-4-1", "claude-opus-4-1-20250805", "claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929",
                     }));
                     case "DeepSeek" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "deepseek-chat", "deepseek-coder", "deepseek-reasoner"
+                            "deepseek-chat", "deepseek-coder", "deepseek-reasoner", "deepseek-v3"
                     }));
                     case "Azure" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
                     }));
                     case "xAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                           "grok-2", "grok-2-latest", "grok-3", "grok-3-beta", "grok-3-fast-beta", "grok-3-latest", "grok-3-mini", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-4", "grok-4-0709", "grok-4-fast-non-reasoning", "grok-4-latest"
+                           "grok-2", "grok-2-latest", "grok-3", "grok-3-beta", "grok-3-fast-beta", "grok-3-latest", "grok-3-mini", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-4", "grok-4-0709", "grok-4-fast-non-reasoning", "grok-4-latest", "grok-beta", "grok-code-fast", "grok-code-fast-1", "grok-code-fast-1-0825"
                     }));
 
                     default -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gpt-4" // fallback
+                            "gpt-5" // fallback
                     }));
                 }
                 // Toggle Azure-specific fields on provider change
