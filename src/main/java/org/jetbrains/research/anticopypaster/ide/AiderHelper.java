@@ -30,10 +30,17 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
 public class AiderHelper {
+
+    // Change this to your CSV location. Supports either a classpath resource (e.g., "clone_database.csv" or "db/clone_database.csv")
+    // or a filesystem path (absolute or relative to the project root), e.g., "resources/clone_database.csv". Expected headers include code1/code_1, code2/code_2, and output|response|label.
+    private static final String CLONE_DB_PATH = "resources/clone_database.csv";
 
     private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
 
@@ -127,8 +134,18 @@ public class AiderHelper {
             ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
                     Consumer<String> viewer = openStreamingViewer(project, "Aider Detection Output");
+                    String detectionPrompt = buildDetectionPromptWithFewShot(project, 3, 400);
+                    int _fewShotCount = loadFewShotExamples(CLONE_DB_PATH, project, 3, 400).size();
+                    viewer.accept("[RAG] Few-shot examples loaded: " + _fewShotCount + " from " + CLONE_DB_PATH);
+                    if (_fewShotCount == 0) {
+                        viewer.accept("[RAG] No examples loaded. Check path and headers. Expected headers include code1/code_1, code2/code_2, and output|response|label.");
+                    }
+                    // Preview the prompt so users can verify few-shot examples are injected
+                    viewer.accept("---- Detection Prompt (preview) ----");
+                    viewer.accept(detectionPrompt);
+                    viewer.accept("---- End Prompt ----");
                     String output = runAiderWithPromptStreaming(project, aiderPath, tempFilePath,
-                            "Please detect any clones in this file. Response with either 'clones found' or 'no clones found'", provider, model, apikey, apiBase, apiVersion, viewer);
+                            detectionPrompt, provider, model, apikey, apiBase, apiVersion, viewer);
 
                     if (output != null && containsDuplicateHint(output)) {
                         System.out.println("===> Aider Output:\n" + output);
@@ -616,5 +633,248 @@ public class AiderHelper {
             i = lineEnd + 1;
         }
         return null;
+    }
+
+    /**
+     * Builds the detection prompt and injects few-shot examples sampled from a CSV in resources or filesystem.
+     * The CSV can be specified via CLONE_DB_PATH and supports classpath or filesystem loading.
+     *
+     * @param project IntelliJ project (used for project-relative paths)
+     * @param k number of examples to include
+     * @param maxChars maximum characters to keep for each code snippet (to control token usage)
+     * @return final detection prompt string (falls back to the default if CSV missing)
+     *
+     * For each example, two code snippets (A/B) are provided along with the correct label (from the 'output' column).
+     */
+    private static String buildDetectionPromptWithFewShot(Project project, int k, int maxChars) {
+        String base = "Please detect any clones in this file. Respond with either 'clones found' or 'no clones found'.";
+        java.util.List<FewShotExample> examples = loadFewShotExamples(CLONE_DB_PATH, project, k, maxChars);
+        if (examples.isEmpty()) {
+            return base;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(base).append("\n\n");
+        sb.append("Here are ").append(examples.size()).append(" labeled examples.\n")
+          .append("For each example, two code snippets (A/B) are provided along with the correct label (from the 'output' column).\n")
+          .append("Use these as few-shot guidance; DO NOT copy the code. Your final answer must be only 'clones found' or 'no clones found'.\n\n");
+        int idx = 1;
+        for (FewShotExample ex : examples) {
+            sb.append("Example ").append(idx++).append(":\n");
+            sb.append("Code A:\n```\n").append(ex.codeA).append("\n```\n");
+            sb.append("Code B:\n```\n").append(ex.codeB).append("\n```\n");
+            sb.append("Label: ").append(ex.label).append("\n\n");
+        }
+        sb.append("Now, based on the file content provided, answer with exactly one of: 'clones found' or 'no clones found'.");
+        return sb.toString();
+    }
+    /**
+     * Flexible loader that accepts either a classpath resource name (e.g., "clone_database.csv" or "db/clone_database.csv")
+     * or a filesystem path (absolute or relative to the project root, e.g., "resources/clone_database.csv").
+     */
+    private static java.util.List<FewShotExample> loadFewShotExamples(String pathOrResource, Project project, int k, int maxChars) {
+        // 1) Try classpath as given
+        java.util.List<FewShotExample> ex = loadFewShotExamplesFromResources(pathOrResource, k, maxChars);
+        if (!ex.isEmpty()) return ex;
+
+        // 2) If "resources/..." was provided, also try just the tail as a classpath resource (common Gradle/Maven layout)
+        int slash = pathOrResource.lastIndexOf('/');
+        if (slash >= 0) {
+            String tail = pathOrResource.substring(slash + 1);
+            ex = loadFewShotExamplesFromResources(tail, k, maxChars);
+            if (!ex.isEmpty()) return ex;
+        }
+
+        // 3) Try as filesystem path (absolute or relative to project root)
+        java.io.File f = new java.io.File(pathOrResource);
+        if (!f.isAbsolute()) {
+            String base = project != null ? project.getBasePath() : null;
+            if (base != null && !base.isBlank()) {
+                f = new java.io.File(base, pathOrResource);
+            }
+        }
+        if (f.exists() && f.isFile()) {
+            return loadFewShotExamplesFromFile(f, k, maxChars);
+        }
+
+        // 4) Last resort: try user.dir as base
+        String userDir = System.getProperty("user.dir");
+        if (userDir != null) {
+            java.io.File f2 = new java.io.File(userDir, pathOrResource);
+            if (f2.exists() && f2.isFile()) {
+                return loadFewShotExamplesFromFile(f2, k, maxChars);
+            }
+        }
+        return java.util.Collections.emptyList();
+    }
+
+    private static class FewShotExample {
+        final String codeA;
+        final String codeB;
+        final String label;
+        FewShotExample(String a, String b, String l) {
+            this.codeA = a;
+            this.codeB = b;
+            this.label = l;
+        }
+    }
+
+    /**
+     * Reads the next logical CSV record from a BufferedReader, allowing newlines inside quoted fields.
+     * Returns {@code null} on EOF. Implements simple RFC4180-style quote handling with double-quote escapes.
+     */
+    private static String readNextCsvRecord(java.io.BufferedReader br) throws java.io.IOException {
+        StringBuilder sb = new StringBuilder();
+        String line;
+        boolean inQuotes = false;
+        while (true) {
+            line = br.readLine();
+            if (line == null) {
+                // EOF
+                if (sb.length() == 0) return null;
+                break;
+            }
+            if (sb.length() > 0) {
+                sb.append("\n");
+            }
+            sb.append(line);
+            // Toggle quote state accounting for escaped quotes ("")
+            for (int i = 0; i < line.length(); i++) {
+                char ch = line.charAt(i);
+                if (ch == '\"') {
+                    if (i + 1 < line.length() && line.charAt(i + 1) == '\"') {
+                        i++; // skip escaped quote
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                }
+            }
+            if (!inQuotes) {
+                break; // a complete logical record
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Loads up to k random few-shot examples from a CSV bundled in resources.
+     * The CSV is expected to have a header with columns: code1, code2, output (also accepts response/label).
+     * Extra columns are ignored. Quoted fields and commas within quotes are supported.
+     */
+    private static java.util.List<FewShotExample> loadFewShotExamplesFromResources(String resourceName, int k, int maxChars) {
+        java.util.List<FewShotExample> all = new java.util.ArrayList<>();
+        try (java.io.InputStream is = AiderHelper.class.getClassLoader().getResourceAsStream(resourceName)) {
+            if (is == null) {
+                return all; // No resource available; fall back to no few-shot
+            }
+            try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(is, java.nio.charset.StandardCharsets.UTF_8))) {
+                String header = readNextCsvRecord(br);
+                if (header == null) return all;
+                String[] hdr = splitCsvLine(header);
+                if (hdr == null || hdr.length == 0) return all;
+                int idxCode1 = -1, idxCode2 = -1, idxResp = -1;
+                for (int i = 0; i < hdr.length; i++) {
+                    String h = hdr[i].trim().toLowerCase();
+                    if (h.equals("code1") || h.equals("code_1")) idxCode1 = i;
+                    else if (h.equals("code2") || h.equals("code_2")) idxCode2 = i;
+                    else if (h.equals("output") || h.equals("response") || h.equals("label")) idxResp = i;
+                }
+                if (idxCode1 < 0 || idxCode2 < 0 || idxResp < 0) {
+                    return all; // header doesn't match; bail out
+                }
+                String line;
+                while ((line = readNextCsvRecord(br)) != null) {
+                    if (line.isBlank()) continue;
+                    String[] cols = splitCsvLine(line);
+                    if (cols.length <= Math.max(idxResp, Math.max(idxCode1, idxCode2))) continue;
+                    String c1 = safeTruncate(cols[idxCode1], maxChars);
+                    String c2 = safeTruncate(cols[idxCode2], maxChars);
+                    String resp = cols[idxResp] == null ? "" : cols[idxResp].trim();
+                    if (!c1.isBlank() && !c2.isBlank() && !resp.isBlank()) {
+                        all.add(new FewShotExample(c1, c2, resp));
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // On any error, just return empty and fall back to base prompt
+        }
+        if (all.size() <= k) {
+            return all;
+        }
+        // Sample k uniformly at random
+        java.util.Collections.shuffle(all, new java.util.Random());
+        return all.subList(0, k);
+    }
+
+    /**
+     * Minimal CSV splitter that supports quotes and commas inside quotes.
+     */
+    private static String[] splitCsvLine(String line) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            if (ch == '\"') {
+                if (inQuotes && i + 1 < line.length() && line.charAt(i + 1) == '\"') {
+                    // Escaped quote
+                    cur.append('\"');
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (ch == ',' && !inQuotes) {
+                out.add(cur.toString());
+                cur.setLength(0);
+            } else {
+                cur.append(ch);
+            }
+        }
+        out.add(cur.toString());
+        return out.toArray(new String[0]);
+    }
+
+    private static String safeTruncate(String s, int maxChars) {
+        if (s == null) return "";
+        s = s.trim();
+        if (maxChars > 0 && s.length() > maxChars) {
+            return s.substring(0, maxChars) + "\n/* …truncated… */";
+        }
+        return s;
+    }
+
+    private static java.util.List<FewShotExample> loadFewShotExamplesFromFile(java.io.File file, int k, int maxChars) {
+        java.util.List<FewShotExample> all = new java.util.ArrayList<>();
+        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(new java.io.FileInputStream(file), java.nio.charset.StandardCharsets.UTF_8))) {
+            String header = readNextCsvRecord(br);
+            if (header == null) return all;
+            String[] hdr = splitCsvLine(header);
+            if (hdr == null || hdr.length == 0) return all;
+            int idxCode1 = -1, idxCode2 = -1, idxResp = -1;
+            for (int i = 0; i < hdr.length; i++) {
+                String h = hdr[i].trim().toLowerCase();
+                if (h.equals("code1") || h.equals("code_1")) idxCode1 = i;
+                else if (h.equals("code2") || h.equals("code_2")) idxCode2 = i;
+                else if (h.equals("output") || h.equals("response") || h.equals("label")) idxResp = i;
+            }
+            if (idxCode1 < 0 || idxCode2 < 0 || idxResp < 0) {
+                return all;
+            }
+            String line;
+            while ((line = readNextCsvRecord(br)) != null) {
+                if (line.isBlank()) continue;
+                String[] cols = splitCsvLine(line);
+                if (cols.length <= Math.max(idxResp, Math.max(idxCode1, idxCode2))) continue;
+                String c1 = safeTruncate(cols[idxCode1], maxChars);
+                String c2 = safeTruncate(cols[idxCode2], maxChars);
+                String resp = cols[idxResp] == null ? "" : cols[idxResp].trim();
+                if (!c1.isBlank() && !c2.isBlank() && !resp.isBlank()) {
+                    all.add(new FewShotExample(c1, c2, resp));
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        if (all.size() <= k) return all;
+        java.util.Collections.shuffle(all, new java.util.Random());
+        return all.subList(0, k);
     }
 }
