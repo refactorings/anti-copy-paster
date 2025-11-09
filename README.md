@@ -127,6 +127,9 @@ Click **Apply** and then **OK** to save.
 
 ##### Choosing the Right Ollama Model for Your Device
 
+In our evaluation, we tested the following Ollama models to assess performance: `dolphin3:8b`, `phi4:14b`, `gemma2:9b`, `qwen2.5:7b`, `mistral:7b`, `qwen3:8b`, `llama3.1:8b`, `deepseek-r1:8b`, `llama3.2:3b`, `phi3:3.8b`, `qwen2.5-coder:7b`, `codellama:7b`, `olmo2:7b`, `deepseek-coder:6.7b`, `starcoder2:7b`, `falcon3:7b`, and `granite3.3:8b`.
+
+
 **Important:** Ollama model performance heavily depends on your device's available RAM and processing power. Choose an appropriate model size to ensure responsive refactoring.
 
 **⚠️ Performance Warning:**
