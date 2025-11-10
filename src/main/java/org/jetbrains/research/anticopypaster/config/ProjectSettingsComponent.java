@@ -109,6 +109,10 @@ public class ProjectSettingsComponent {
     private Object lastNameModel = null;
     private JLabel apiBaseWarningLabel;
     private JLabel ollamaModelWarningLabel;
+    // Remember the last user-entered Azure API Base and the fixed Ollama base
+    private String lastAzureApiBase = "";
+    private static final String OLLAMA_DEFAULT_API_BASE = "http://127.0.0.1:11434/";
+
     /**
      * Builds and wires the Project Settings UI for AntiCopyPaster, including provider/model pickers,
      * Aider fields, validation, and dynamic panel visibility.
@@ -436,10 +440,22 @@ public class ProjectSettingsComponent {
         updatePanelVisibilities();
 
         apiBase.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            public void insertUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
-            public void removeUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
-            public void changedUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { onChange(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { onChange(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { onChange(); }
+
+            private void onChange() {
+                updateOllamaWarnings();
+                Object providerObj = llmProviderComboBox.getSelectedItem();
+                if (providerObj != null && "Azure".equalsIgnoreCase(providerObj.toString())) {
+                    String text = apiBase.getText();
+                    if (text != null) {
+                        lastAzureApiBase = text.trim();
+                    }
+                }
+            }
         });
+
         ollamaModel.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             public void insertUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
             public void removeUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
@@ -447,6 +463,13 @@ public class ProjectSettingsComponent {
         });
         String initProvider = (String) llmProviderComboBox.getSelectedItem();
         updateProviderSpecificPanels(initProvider);
+
+        if ("Ollama".equalsIgnoreCase(initProvider)) {
+            apiBase.setText(OLLAMA_DEFAULT_API_BASE);
+        } else if ("Azure".equalsIgnoreCase(initProvider) && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+            apiBase.setText(lastAzureApiBase);
+        }
+
         // Initialize provider and model dropdowns if empty
         if (llmProviderComboBox.getSelectedItem() == null) {
             llmProviderComboBox.setSelectedItem("OpenAI");
@@ -498,6 +521,18 @@ public class ProjectSettingsComponent {
                 }
                 // Toggle Azure-specific fields on provider change
                 updateProviderSpecificPanels(selectedProvider);
+
+                // Normalize API base according to provider
+                if ("Ollama".equalsIgnoreCase(selectedProvider)) {
+                    if (apiBase != null) {
+                        apiBase.setText(OLLAMA_DEFAULT_API_BASE);
+                    }
+                } else if ("Azure".equalsIgnoreCase(selectedProvider)) {
+                    if (apiBase != null && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+                        apiBase.setText(lastAzureApiBase);
+                    }
+                }
+
                 // Refresh layout to reflect visibility changes
                 azureApiVersion.revalidate();
                 azureApiVersion.repaint();
@@ -1018,6 +1053,7 @@ public class ProjectSettingsComponent {
     public void setComplexityRequired(boolean required) {
         complexityRequiredCheckBox.setSelected(required);
     }
+
     /**
      * Sets the name-model selection by index while suppressing change side-effects during load.
      */
@@ -1151,15 +1187,6 @@ public class ProjectSettingsComponent {
                     break;
             }
         }
-
-        if (mismatch) {
-            JOptionPane.showMessageDialog(
-                    mainPanel,
-                    "The API key prefix does not match the selected provider.\nPlease verify your key.",
-                    "API Key Provider Mismatch",
-                    JOptionPane.WARNING_MESSAGE
-            );
-        }
     }
 
     /**
@@ -1183,6 +1210,17 @@ public class ProjectSettingsComponent {
         }
         if (modelPanel != null) {
             modelPanel.setVisible(!isOllama);
+        }
+
+        // Auto-assign API base depending on provider
+        if (isOllama) {
+            if (apiBase != null) {
+                apiBase.setText(OLLAMA_DEFAULT_API_BASE);
+            }
+        } else if (isAzure) {
+            if (apiBase != null && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+                apiBase.setText(lastAzureApiBase);
+            }
         }
 
         // Refresh layouts so UI updates immediately
