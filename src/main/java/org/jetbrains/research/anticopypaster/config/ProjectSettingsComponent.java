@@ -111,7 +111,7 @@ public class ProjectSettingsComponent {
     private JLabel ollamaModelWarningLabel;
     // Remember the last user-entered Azure API Base and the fixed Ollama base
     private String lastAzureApiBase = "";
-    private static final String OLLAMA_DEFAULT_API_BASE = "http://127.0.0.1:11434/";
+    private static final String OLLAMA_DEFAULT_API_BASE = "http://127.0.0.1:11434";
 
     /**
      * Builds and wires the Project Settings UI for AntiCopyPaster, including provider/model pickers,
