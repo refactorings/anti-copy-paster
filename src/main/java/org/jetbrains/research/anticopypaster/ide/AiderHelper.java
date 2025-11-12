@@ -301,16 +301,24 @@ public class AiderHelper {
         if (provider.equals("Ollama")) {
             model = "ollama_chat/" + model;
         }
+        java.util.ArrayList<String> args = new java.util.ArrayList<>();
+        args.add(aiderPath);
+        args.add("--model");
+        args.add(model);
+        args.add("--yes");
+        args.add("--message");
+        args.add(prompt);
+        args.add(filePath);
+        if (model != null && model.toLowerCase().contains("gpt-5")) {
+            args.add("--temperature");
+            args.add("1");
+        }
         return runCommand(project, provider,
                 apikey,
                 apiBase,
                 apiVersion,
                 viewer,
-                aiderPath,
-                "--model", model,
-                "--yes",
-                "--message", prompt,
-                filePath
+                args.toArray(new String[0])
         );
     }
 
