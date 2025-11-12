@@ -267,45 +267,6 @@ public class AiderHelper {
     }
 
     /**
-     * Runs Aider once with the given prompt and file, returning its full (cleaned) stdout.
-     * This non‑streaming variant normalizes certain provider/model names (e.g., deepseek/azure).
-     *
-     * @param project    current project (used for working directory and notifications)
-     * @param aiderPath  path to {@code aider}
-     * @param filePath   path to a file to include in the Aider context
-     * @param prompt     message to send to the model
-     * @param provider   provider identifier (OpenAI/Gemini/Anthropic/DeepSeek/Azure/xAI)
-     * @param model      model name; may be prefixed for provider as needed
-     * @param apikey     API key exposed to the subprocess
-     * @param apiBase    optional API base (provider specific)
-     * @param apiVersion optional API version (provider specific)
-     * @return combined standard output of the Aider subprocess
-     * @throws IOException          if launching the process fails
-     * @throws InterruptedException if the process is interrupted while waiting
-     */
-    public static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt,
-                                            String provider, String model, String apikey,
-                                            String apiBase, String apiVersion)
-            throws IOException, InterruptedException {
-        if (model.startsWith("deepseek-")) {
-            model = "deepseek/" + model;
-        }
-        if (provider.equals("Azure")) {
-            model = "azure/" + model;
-        }
-        return runCommand(project, provider,
-                apikey,
-                apiBase,
-                apiVersion,
-                aiderPath,
-                "--model", model,
-                "--yes",
-                "--message", prompt,
-                filePath
-        );
-    }
-
-    /**
      * Runs Aider in streaming mode, forwarding cleaned stdout lines to the given viewer and returning the full output.
      * Also normalizes provider/model identifiers (e.g., deepseek/, azure/, xai/).
      *
@@ -398,12 +359,29 @@ public class AiderHelper {
             case "ANTHROPIC" -> pb.environment().put("ANTHROPIC_API_KEY", apikey);
             case "DEEPSEEK" -> pb.environment().put("DEEPSEEK_API_KEY", apikey);
             case "OLLAMA" -> {
+                if (apiBase == null || apiBase.isBlank()) {
+                    apiBase = "http://127.0.0.1:11434";
+                }
                 pb.environment().put("OLLAMA_API_BASE", apiBase);
+
+                pb.environment().remove("AZURE_API_KEY");
+                pb.environment().remove("AZURE_API_VERSION");
+                pb.environment().remove("AZURE_API_BASE");
+                pb.environment().remove("OPENAI_API_KEY");
             }
             case "AZURE" -> {
+                if (apiBase == null || apiBase.isBlank()) {
+                    throw new IllegalArgumentException("Azure provider selected but API base is empty");
+                }
+                if (apiBase.contains("11434")) {
+                    System.err.println("[AIDER] Warning: Azure API base points to 11434 (Ollama). This will 404.");
+                }
                 pb.environment().put("AZURE_API_KEY", apikey);
                 pb.environment().put("AZURE_API_VERSION", apiVersion);
                 pb.environment().put("AZURE_API_BASE", apiBase);
+
+                pb.environment().remove("OLLAMA_API_BASE");
+                pb.environment().remove("OPENAI_API_KEY");
             }
             default -> throw new IllegalArgumentException("Unknown provider: " + provider);
         }

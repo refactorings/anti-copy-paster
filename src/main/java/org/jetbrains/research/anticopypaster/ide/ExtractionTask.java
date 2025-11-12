@@ -35,7 +35,6 @@ import java.util.*;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import static org.jetbrains.research.anticopypaster.ide.AiderHelper.runAiderWithPrompt;
 import static org.jetbrains.research.anticopypaster.ide.AiderHelper.openStreamingViewer;
 import static org.jetbrains.research.anticopypaster.ide.AiderHelper.runAiderWithPromptStreaming;
 
