@@ -112,6 +112,7 @@ public class ProjectSettingsComponent {
     // Remember the last user-entered Azure API Base and the fixed Ollama base
     private String lastAzureApiBase = "";
     private static final String OLLAMA_DEFAULT_API_BASE = "http://127.0.0.1:11434";
+    private static final String AZURE_DEFAULT_API_BASE = "https://aider3.cognitiveservices.azure.com/";
 
     /**
      * Builds and wires the Project Settings UI for AntiCopyPaster, including provider/model pickers,
@@ -601,7 +602,7 @@ public class ProjectSettingsComponent {
         aiderSettingsPanel.setVisible(showAiderSettings);
         aiderSettingsPanel.revalidate();
         aiderSettingsPanel.repaint();
-        aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
+//        aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
         // Keep Aider help label visibility in sync with the Aider settings panel.
         if (aiderHelpLabel != null) {
             aiderHelpLabel.setVisible(showAiderSettings);
@@ -1218,8 +1219,12 @@ public class ProjectSettingsComponent {
                 apiBase.setText(OLLAMA_DEFAULT_API_BASE);
             }
         } else if (isAzure) {
-            if (apiBase != null && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
-                apiBase.setText(lastAzureApiBase);
+            if (apiBase != null) {
+                if (lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+                    apiBase.setText(lastAzureApiBase);
+                } else {
+                    apiBase.setText(AZURE_DEFAULT_API_BASE);
+                }
             }
         }
 
