@@ -527,6 +527,12 @@ public class ProjectSettingsComponent {
         String initProvider = (String) llmProviderComboBox.getSelectedItem();
         updateProviderSpecificPanels(initProvider);
 
+        if ("Ollama".equalsIgnoreCase(initProvider)) {
+            apiBase.setText(OLLAMA_DEFAULT_API_BASE);
+        } else if ("Azure".equalsIgnoreCase(initProvider) && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+            apiBase.setText(lastAzureApiBase);
+        }
+
         // Initialize provider and model dropdowns if empty
         if (llmProviderComboBox.getSelectedItem() == null) {
             llmProviderComboBox.setSelectedItem("OpenAI");
@@ -578,6 +584,17 @@ public class ProjectSettingsComponent {
                 }
                 // Toggle Azure/Ollama-specific fields and API base behavior on provider change
                 updateProviderSpecificPanels(selectedProvider);
+
+                // Normalize API base according to provider
+                if ("Ollama".equalsIgnoreCase(selectedProvider)) {
+                    if (apiBase != null) {
+                        apiBase.setText(OLLAMA_DEFAULT_API_BASE);
+                    }
+                } else if ("Azure".equalsIgnoreCase(selectedProvider)) {
+                    if (apiBase != null && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+                        apiBase.setText(lastAzureApiBase);
+                    }
+                }
 
                 // Refresh layout to reflect visibility changes
                 azureApiVersion.revalidate();
