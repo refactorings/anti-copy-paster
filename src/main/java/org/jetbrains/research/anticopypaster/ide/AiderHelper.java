@@ -310,8 +310,16 @@ public class AiderHelper {
         args.add(prompt);
         args.add(filePath);
         if (model != null && model.toLowerCase().contains("gpt-5")) {
-            args.add("--temperature");
-            args.add("1");
+            args.add("--no-stream");
+            args.add("--check-model-accepts-settings");
+            try {
+                java.nio.file.Path emptySettings = java.nio.file.Files.createTempFile("aider_model_settings_", ".json");
+                java.nio.file.Files.writeString(emptySettings, "{}", java.nio.charset.StandardCharsets.UTF_8);
+                args.add("--model-settings-file");
+                args.add(emptySettings.toString());
+            } catch (IOException ioe) {
+                System.err.println("[AIDER] Failed to create empty model settings file: " + ioe.getMessage());
+            }
         }
         return runCommand(project, provider,
                 apikey,
@@ -359,7 +367,26 @@ public class AiderHelper {
             pb.directory(new File(basePath));
         }
         switch (provider.toUpperCase()) {
-            case "OPENAI" -> pb.environment().put("OPENAI_API_KEY", apikey);
+            case "OPENAI" -> {
+                pb.environment().put("OPENAI_API_KEY", apikey);
+                // Ensure no conflicting providers leak into this run
+                pb.environment().remove("AZURE_API_KEY");
+                pb.environment().remove("AZURE_API_VERSION");
+                pb.environment().remove("AZURE_API_BASE");
+                pb.environment().remove("OLLAMA_API_BASE");
+                // Remove any temperature-related env vars that might inject unsupported sampling
+                pb.environment().remove("OPENAI_TEMPERATURE");
+                pb.environment().remove("AIDER_TEMPERATURE");
+                // Also remove common LiteLLM extra/default params envs if present
+                pb.environment().remove("LITELLM_PARAMS");
+                pb.environment().remove("LITELLM_DEFAULT_PARAMS");
+                // Drop any env var whose key contains "TEMPERATURE"
+                for (String k : new java.util.HashSet<>(pb.environment().keySet())) {
+                    if (k != null && k.toUpperCase().contains("TEMPERATURE")) {
+                        pb.environment().remove(k);
+                    }
+                }
+            }
             case "GEMINI" -> {
                 pb.environment().put("GEMINI_API_KEY", apikey);
                 pb.environment().put("AIDER_GEMINI_PROVIDER", "google-ai-studio");
@@ -392,6 +419,36 @@ public class AiderHelper {
                 pb.environment().remove("OPENAI_API_KEY");
             }
             default -> throw new IllegalArgumentException("Unknown provider: " + provider);
+        }
+        // Diagnostics: show whether per-user or per-project Aider config files exist and if they mention temperature
+        try {
+            java.util.List<java.io.File> cfgs = new java.util.ArrayList<>();
+            String home = System.getProperty("user.home");
+            String work = (pb.directory() != null ? pb.directory().getAbsolutePath() : null);
+            if (home != null) {
+                cfgs.add(new java.io.File(home, ".aider.conf"));
+                cfgs.add(new java.io.File(home, ".aider.conf.yml"));
+                cfgs.add(new java.io.File(home, ".aider.conf.yaml"));
+                cfgs.add(new java.io.File(home, ".aider.conf.json"));
+            }
+            if (work != null) {
+                cfgs.add(new java.io.File(work, ".aider.conf"));
+                cfgs.add(new java.io.File(work, ".aider.conf.yml"));
+                cfgs.add(new java.io.File(work, ".aider.conf.yaml"));
+                cfgs.add(new java.io.File(work, ".aider.conf.json"));
+            }
+            for (java.io.File f : cfgs) {
+                if (f != null && f.exists() && f.isFile()) {
+                    String p = f.getAbsolutePath();
+                    String content = java.nio.file.Files.readString(f.toPath());
+                    boolean mentionsTemp = content.toLowerCase().contains("temperature");
+                    String msg = "[AIDER] Detected Aider config: " + p + (mentionsTemp ? " (contains 'temperature')" : "");
+                    System.out.println(msg);
+                    if (viewer != null) viewer.accept(msg);
+                }
+            }
+        } catch (Throwable t) {
+            System.err.println("[AIDER] Config scan failed: " + t.getMessage());
         }
         // Hint many CLIs to avoid ANSI color output in non-TTY environments
         pb.environment().put("NO_COLOR", "1");
