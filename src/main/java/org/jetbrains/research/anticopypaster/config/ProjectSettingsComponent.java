@@ -558,7 +558,7 @@ public class ProjectSettingsComponent {
                 switch (selectedProvider) {
                     case "OpenAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
-                            "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
+                            "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "gpt-5.1", "gpt-5.1-2025-11-13", "gpt-5.1-chat-latest", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
                     }));
                     case "Gemini" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-pro-exp-03-25", "gemini-2.5-flash", "gemini-2.5-flash-lite-preview-06-17", "gemini-2.5-flash-lite-preview-09-2025", "gemini-2.5-flash-preview-09-2025", "gemini-3-pro-preview"
