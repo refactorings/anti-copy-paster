@@ -68,6 +68,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= !Objects.equals(settingsComponent.getFilesPath(), settings.getFilesPath());
         modified |= !Objects.equals(settingsComponent.getAllFilesCheckboxes(), settings.getAllFilesCheckboxes());
         modified |= !Objects.equals(settingsComponent.getSelectedAnalysisButton(), settings.getSelectedAnalysisButton());
+        modified |= !Objects.equals(settingsComponent.getOllamaModel(), settings.getOllamaModelName());
         return modified;
     }
 
@@ -85,6 +86,15 @@ public class ProjectSettingsConfigurable implements Configurable {
             }
             if (settingsComponent.getApiVersion() == null || settingsComponent.getApiVersion().trim().isEmpty()) {
                 throw new ConfigurationException("API Version must be provided when using Azure.");
+            }
+        }
+
+        if ("Ollama".equalsIgnoreCase(settingsComponent.getLlmProvider())) {
+            if (settingsComponent.getApiBase() == null || settingsComponent.getApiBase().trim().isEmpty()) {
+                throw new ConfigurationException("API Base must be provided when using Ollama.");
+            }
+            if (settingsComponent.getOllamaModel() == null || settingsComponent.getOllamaModel().trim().isEmpty()) {
+                throw new ConfigurationException("Ollama Model Name must be provided when using Ollama.");
             }
         }
 
@@ -118,6 +128,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.setFilesPath(settingsComponent.getFilesPath());
         settings.setAllFilesCheckboxes(settingsComponent.getAllFilesCheckboxes());
         settings.setSelectedAnalysisButton(settingsComponent.getSelectedAnalysisButton());
+        settings.setOllamaName(settingsComponent.getOllamaModel());
 
         // Apply model changes and close Aider windows if needed
         settingsComponent.applyModelChanges();
@@ -155,6 +166,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setApiVersion(settings.getApiVersion());
         settingsComponent.setAllFilesCheckboxes(settings.getAllFilesCheckboxes());
         settingsComponent.setSelectedAnalysisButton(settings.getSelectedAnalysisButton());
+        settingsComponent.setOllamaModel(settings.getOllamaModelName());
 
         // Cancel any pending model changes
         settingsComponent.cancelModelChanges();

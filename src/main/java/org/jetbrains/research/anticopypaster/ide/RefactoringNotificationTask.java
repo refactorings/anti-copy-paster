@@ -16,10 +16,7 @@ import com.intellij.refactoring.extractMethod.PrepareFailedException;
 import org.jetbrains.research.anticopypaster.AntiCopyPasterBundle;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
-import org.jetbrains.research.anticopypaster.models.AiderModel;
-import org.jetbrains.research.anticopypaster.models.PredictionModel;
-import org.jetbrains.research.anticopypaster.models.TensorflowModel;
-import org.jetbrains.research.anticopypaster.models.UserSettingsModel;
+import org.jetbrains.research.anticopypaster.models.*;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 import org.jetbrains.research.anticopypaster.utils.MetricsGatherer;
 import org.jetbrains.research.anticopypaster.metrics.MetricCalculator;
@@ -67,6 +64,7 @@ public class RefactoringNotificationTask extends TimerTask {
                 case TENSORFLOW -> new TensorflowModel();
                 case USER_SETTINGS -> new UserSettingsModel(new MetricsGatherer(project), project);
                 case AIDER -> new AiderModel(project, file);
+                case COPILOT -> new CopilotModel(project, file); // Placeholder for Copilot model
             };
         }
     }

@@ -88,6 +88,10 @@ public class ProjectSettingsComponent {
     private JTextField apiBase;
     private JLabel aiderHelpLabel;
     private JLabel apiBaseHelp;
+    private JPanel ollamaModelPanel;
+    private JTextField ollamaModel;
+    private JPanel fileSelectionPanel;
+    private JPanel aiderHelper;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     private final Project projectRef;
     private Integer pendingMainModelIndex = null;
@@ -98,12 +102,22 @@ public class ProjectSettingsComponent {
     private JPanel passwordWithEyePanel;
     private boolean apiKeyVisible = false;
     private char defaultApiKeyEchoChar;
+    private boolean azurePlaceholderActive = false;
+    private Color apiBaseNormalForeground;
+
+    private boolean apiVersionPlaceholderActive = false;
 
     // Suppress auto-close of Aider windows during initial render
     private boolean suppressAutoCloseOnInit = true;
     private boolean isLoadingSettings = false;
     private Object lastMainModel = null;
     private Object lastNameModel = null;
+    private JLabel apiBaseWarningLabel;
+    private JLabel ollamaModelWarningLabel;
+    // Remember the last user-entered Azure API Base and the fixed Ollama base
+    private String lastAzureApiBase = "";
+    private static final String OLLAMA_DEFAULT_API_BASE = "http://127.0.0.1:11434";
+    private static final String AZURE_DEFAULT_API_BASE = "https://aider3.cognitiveservices.azure.com/";
 
     /**
      * Builds and wires the Project Settings UI for AntiCopyPaster, including provider/model pickers,
@@ -111,6 +125,7 @@ public class ProjectSettingsComponent {
      *
      * @param project IntelliJ project used for dialogs and helper calls
      */
+    // Simple warning icons like API key for Ollama-required field
     public ProjectSettingsComponent(Project project) {
         this.projectRef = project;
         advancedSettingsButton.addActionListener(e -> {
@@ -139,6 +154,7 @@ public class ProjectSettingsComponent {
         JLabel apiKeyWarningLabel = new JLabel(warningIcon);
         apiKeyWarningLabel.setToolTipText("API key not found for selected provider");
         apiKeyWarningLabel.setVisible(false);
+
 
         // Set layout and add aiderApiKey and warning label with proper constraints
         apiKeyPanel.setLayout(new GridBagLayout());
@@ -200,6 +216,60 @@ public class ProjectSettingsComponent {
         apiKeyGbc.insets = new Insets(0, 0, 0, 0);
         apiKeyPanel.add(passwordWithEyePanel, apiKeyGbc);
         scrollApiKeyToStart();
+        if (apiBase != null) {
+            apiBaseNormalForeground = apiBase.getForeground();
+            apiBase.addFocusListener(new java.awt.event.FocusAdapter() {
+                @Override
+                public void focusGained(java.awt.event.FocusEvent e) {
+                    if (azurePlaceholderActive) {
+                        azurePlaceholderActive = false;
+                        apiBase.setText("");
+                        if (apiBaseNormalForeground != null) {
+                            apiBase.setForeground(apiBaseNormalForeground);
+                        }
+                    }
+                }
+
+                @Override
+                public void focusLost(java.awt.event.FocusEvent e) {
+                    Object providerObj = llmProviderComboBox.getSelectedItem();
+                    boolean isAzureProvider = providerObj != null
+                            && "Azure".equalsIgnoreCase(providerObj.toString());
+                    if (isAzureProvider) {
+                        String text = apiBase.getText();
+                        if (text == null || text.trim().isEmpty()) {
+                            showAzurePlaceholder();
+                        }
+                    }
+                }
+            });
+        }
+
+        if (apiVersion != null) {
+            apiVersion.addFocusListener(new java.awt.event.FocusAdapter() {
+                @Override
+                public void focusGained(java.awt.event.FocusEvent e) {
+                    if (apiVersionPlaceholderActive) {
+                        apiVersionPlaceholderActive = false;
+                        apiVersion.setText("");
+                        apiVersion.setForeground(apiBaseNormalForeground);
+                    }
+                }
+
+                @Override
+                public void focusLost(java.awt.event.FocusEvent e) {
+                    Object providerObj = llmProviderComboBox.getSelectedItem();
+                    boolean isAzureProvider = providerObj != null
+                            && "Azure".equalsIgnoreCase(providerObj.toString());
+                    if (isAzureProvider) {
+                        String text = apiVersion.getText();
+                        if (text == null || text.trim().isEmpty()) {
+                            showAzureVersionPlaceholder();
+                        }
+                    }
+                }
+            });
+        }
 
         // Add warning icon with constraints
         GridBagConstraints warningGbc = new GridBagConstraints();
@@ -208,6 +278,27 @@ public class ProjectSettingsComponent {
         warningGbc.anchor = GridBagConstraints.WEST;
         warningGbc.insets = new Insets(0, 5, 0, 0);
         apiKeyPanel.add(apiKeyWarningLabel, warningGbc);
+
+        // Warning labels for Ollama-required fields (simple and consistent with API key)
+        apiBaseWarningLabel = new JLabel(AllIcons.General.Error);
+        apiBaseWarningLabel.setToolTipText("API Base is required when provider is Ollama");
+        apiBaseWarningLabel.setVisible(false);
+
+        ollamaModelWarningLabel = new JLabel(AllIcons.General.Error);
+        ollamaModelWarningLabel.setToolTipText("Ollama Model Name is required when provider is Ollama");
+        ollamaModelWarningLabel.setVisible(false);
+
+        // Safely add warning icons without altering layout or reparenting existing fields
+        try {
+            if (apiBaseWarningLabel.getParent() == null) {
+                azureApiBase.add(apiBaseWarningLabel);
+            }
+        } catch (Exception ignored) {}
+        try {
+            if (ollamaModelWarningLabel.getParent() == null) {
+                ollamaModelPanel.add(ollamaModelWarningLabel);
+            }
+        } catch (Exception ignored) {}
 
         // Toggle API key visibility via the eye button
         toggleApiKeyVisibilityButton.addActionListener(e2 -> {
@@ -407,8 +498,41 @@ public class ProjectSettingsComponent {
         });
 
         updatePanelVisibilities();
+
+        apiBase.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { onChange(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { onChange(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { onChange(); }
+
+            private void onChange() {
+                updateOllamaWarnings();
+                if (azurePlaceholderActive) {
+                    return;
+                }
+                Object providerObj = llmProviderComboBox.getSelectedItem();
+                if (providerObj != null && "Azure".equalsIgnoreCase(providerObj.toString())) {
+                    String text = apiBase.getText();
+                    if (text != null) {
+                        lastAzureApiBase = text.trim();
+                    }
+                }
+            }
+        });
+
+        ollamaModel.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+        });
         String initProvider = (String) llmProviderComboBox.getSelectedItem();
         updateProviderSpecificPanels(initProvider);
+
+        if ("Ollama".equalsIgnoreCase(initProvider)) {
+            apiBase.setText(OLLAMA_DEFAULT_API_BASE);
+        } else if ("Azure".equalsIgnoreCase(initProvider) && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+            apiBase.setText(lastAzureApiBase);
+        }
+
         // Initialize provider and model dropdowns if empty
         if (llmProviderComboBox.getSelectedItem() == null) {
             llmProviderComboBox.setSelectedItem("OpenAI");
@@ -418,7 +542,14 @@ public class ProjectSettingsComponent {
         if (llmProviderComboBox.getActionListeners().length > 0) {
             llmProviderComboBox.getActionListeners()[0].actionPerformed(null);
         }
+        // Watch for changes in the Aider API key field
+//        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+//            public void insertUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
+//            public void removeUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
+//            public void changedUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
+//        });
 
+        // Watch for changes in the model selection combo box
         aidermodelComboBox.addActionListener(e -> notifySettingsChanged());
         // Update model list when provider changes. You can add different providers and their models here.
         llmProviderComboBox.addActionListener(e -> {
@@ -427,33 +558,44 @@ public class ProjectSettingsComponent {
                 switch (selectedProvider) {
                     case "OpenAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
-                            "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
+                            "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "gpt-5.1", "gpt-5.1-2025-11-13", "gpt-5.1-chat-latest", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
                     }));
                     case "Gemini" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gemini-2.5-pro"
+                            "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-pro-exp-03-25", "gemini-2.5-flash", "gemini-2.5-flash-lite-preview-06-17", "gemini-2.5-flash-lite-preview-09-2025", "gemini-2.5-flash-preview-09-2025", "gemini-3-pro-preview"
                     }));
                     case "Anthropic" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "claude-2", "claude-2.1", "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
+                           "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
                             "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-4-opus-20250514", "claude-4-sonnet-20250514",
-                            "claude-opus-4-1", "claude-opus-4-1-20250805",
-                            "claude-instant-1", "claude-instant-1.2"
+                            "claude-opus-4-1", "claude-opus-4-1-20250805", "claude-opus-4-5-20251101", "claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929",
                     }));
                     case "DeepSeek" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "deepseek-chat", "deepseek-coder", "deepseek-reasoner"
+                            "deepseek-chat", "deepseek-coder", "deepseek-reasoner", "deepseek-v3"
                     }));
                     case "Azure" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                             "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
                     }));
                     case "xAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                           "grok-2", "grok-2-latest", "grok-3", "grok-3-beta", "grok-3-fast-beta", "grok-3-latest", "grok-3-mini", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-4", "grok-4-0709", "grok-4-fast-non-reasoning", "grok-4-latest"
+                           "grok-2", "grok-2-latest", "grok-3", "grok-3-beta", "grok-3-fast-beta", "grok-3-latest", "grok-3-mini", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-4", "grok-4-0709", "grok-4-fast-non-reasoning", "grok-4-latest", "grok-beta", "grok-code-fast", "grok-code-fast-1", "grok-code-fast-1-0825"
                     }));
 
                     default -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gpt-4" // fallback
+                            "gpt-5" // fallback
                     }));
                 }
-                // Toggle Azure-specific fields on provider change
+                // Toggle Azure/Ollama-specific fields and API base behavior on provider change
                 updateProviderSpecificPanels(selectedProvider);
+
+                // Normalize API base according to provider
+                if ("Ollama".equalsIgnoreCase(selectedProvider)) {
+                    if (apiBase != null) {
+                        apiBase.setText(OLLAMA_DEFAULT_API_BASE);
+                    }
+                } else if ("Azure".equalsIgnoreCase(selectedProvider)) {
+                    if (apiBase != null && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+                        apiBase.setText(lastAzureApiBase);
+                    }
+                }
+
                 // Refresh layout to reflect visibility changes
                 azureApiVersion.revalidate();
                 azureApiVersion.repaint();
@@ -463,6 +605,9 @@ public class ProjectSettingsComponent {
                 mainPanel.repaint();
             }
         });
+
+        // Ensure warning icons are up-to-date at startup
+        updateOllamaWarnings();
 
         timeBufferSelector.setModel(new SpinnerNumberModel(10, 0, Integer.MAX_VALUE, 1));
         minimumMethodSelector.setModel(new SpinnerNumberModel(2, 2, Integer.MAX_VALUE, 1));
@@ -509,25 +654,47 @@ public class ProjectSettingsComponent {
     private void updatePanelVisibilities() {
         boolean isMainModelAider = (modelComboBox.getSelectedIndex() == 2);
         boolean isNameModelAider = (nameModel.getSelectedIndex() == 2);
+        boolean isMainModelCopilot = (modelComboBox.getSelectedIndex() == 3);
 
         manualHeuristicsPanel.setVisible(modelComboBox.getSelectedIndex() == 1);
         aiSettingsPanel.setVisible(modelComboBox.getSelectedIndex() == 0);
 
-        // Show Aider settings if either model selection is Aider
-        boolean showAiderSettings = isMainModelAider || isNameModelAider;
+        // Show Aider settings if either model selection is Aider, but hide if main model is Copilot
+        boolean showAiderSettings = (isMainModelAider || isNameModelAider) && !isMainModelCopilot;
         aiderSettingsPanel.setVisible(showAiderSettings);
         aiderSettingsPanel.revalidate();
         aiderSettingsPanel.repaint();
-        aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
+//        aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
+        // Keep Aider help label visibility in sync with the Aider settings panel.
+        if (aiderHelpLabel != null) {
+            aiderHelpLabel.setVisible(showAiderSettings);
+            aiderHelpLabel.revalidate();
+            aiderHelpLabel.repaint();
+        }
 
-        // Filter nameModel options based on whether main model is Aider, preserving selection if possible
+        // Show file-selection scope controls only for Aider or Copilot as main model
+        boolean showFileSelection = isMainModelAider || isMainModelCopilot;
+        if (fileSelectionPanel != null) {
+            fileSelectionPanel.setVisible(showFileSelection);
+            fileSelectionPanel.revalidate();
+            fileSelectionPanel.repaint();
+        }
+
+        // Filter nameModel options based on whether main model is Aider or Copilot, preserving selection if possible
         Object currentSelection = nameModel.getSelectedItem();
         if (isMainModelAider) {
             // When Aider is selected as the main model, only allow "Aider" in name model
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Aider"});
             nameModel.setModel(model);
             nameModel.setSelectedItem("Aider");
-        } else {
+        }
+        else if (isMainModelCopilot) {
+            // When Copilot is selected as the main model, only allow "Copilot" in name model
+            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Copilot"});
+            nameModel.setModel(model);
+            nameModel.setSelectedItem("Copilot");
+        }
+        else {
             // When other main models are selected, restore all options
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Aider"});
             nameModel.setModel(model);
@@ -600,6 +767,7 @@ public class ProjectSettingsComponent {
             case 0 -> ProjectSettingsState.JudgementModel.TENSORFLOW;
             case 1 -> ProjectSettingsState.JudgementModel.USER_SETTINGS;
             case 2 -> ProjectSettingsState.JudgementModel.AIDER;
+            case 3 -> ProjectSettingsState.JudgementModel.COPILOT;
             default -> throw new IllegalStateException("Unknown option selected.");
         };
     }
@@ -870,11 +1038,40 @@ public class ProjectSettingsComponent {
      * Returns the Azure/OpenAI API base URL text.
      */
     public String getApiBase() {return apiBase.getText(); }
+    public void setOllamaModel(String model) {
+        ollamaModel.setText(model);
+    }
+
+    public String getOllamaModel() {
+        return ollamaModel.getText();
+    }
 
     /**
      * Sets the Azure/OpenAI API base URL text.
+     * Ensures any placeholder styling is cleared so real values
+     * appear with the normal text color.
      */
-    public void setApiBase(String base) { apiBase.setText(base); }
+    public void setApiBase(String base) {
+        if (apiBase == null) return;
+
+        if (base == null || base.trim().isEmpty()) {
+            // Treat empty as "no saved value"; leave text empty for placeholder logic
+            azurePlaceholderActive = false;
+            apiBase.setText("");
+            if (apiBaseNormalForeground != null) {
+                apiBase.setForeground(apiBaseNormalForeground);
+            }
+        } else {
+            // Real user value: clear placeholder state and restore normal color
+            azurePlaceholderActive = false;
+            if (apiBaseNormalForeground != null) {
+                apiBase.setForeground(apiBaseNormalForeground);
+            }
+            apiBase.setText(base);
+            // Remember last Azure base so we don't show placeholder next time
+            lastAzureApiBase = base.trim();
+        }
+    }
 
     /**
      * Returns the Azure API version text.
@@ -883,8 +1080,26 @@ public class ProjectSettingsComponent {
 
     /**
      * Sets the Azure API version text.
+     * Clears placeholder state so saved values are rendered as normal text.
      */
-    public void setApiVersion(String version) { apiVersion.setText(version); }
+    public void setApiVersion(String version) {
+        if (apiVersion == null) return;
+
+        if (version == null || version.trim().isEmpty()) {
+            // No saved version; keep field logically empty so placeholder may be shown
+            apiVersionPlaceholderActive = false;
+            apiVersion.setText("");
+            if (apiBaseNormalForeground != null) {
+                apiVersion.setForeground(apiBaseNormalForeground);
+            }
+        } else {
+            apiVersionPlaceholderActive = false;
+            if (apiBaseNormalForeground != null) {
+                apiVersion.setForeground(apiBaseNormalForeground);
+            }
+            apiVersion.setText(version);
+        }
+    }
 
     /**
      * Returns the list backing the dynamically generated file checkboxes.
@@ -941,6 +1156,7 @@ public class ProjectSettingsComponent {
     public void setComplexityRequired(boolean required) {
         complexityRequiredCheckBox.setSelected(required);
     }
+
     /**
      * Sets the name-model selection by index while suppressing change side-effects during load.
      */
@@ -1048,7 +1264,6 @@ public class ProjectSettingsComponent {
     private void notifySettingsChanged() {
         // This method exists solely to trigger IntelliJ's internal modified state tracking
     }
-
     /**
      * Warns the user if the entered API key's prefix does not match the selected provider.
      */
@@ -1075,15 +1290,35 @@ public class ProjectSettingsComponent {
                     break;
             }
         }
+    }
 
-        if (mismatch) {
-            JOptionPane.showMessageDialog(
-                    mainPanel,
-                    "The API key prefix does not match the selected provider.\nPlease verify your key.",
-                    "API Key Provider Mismatch",
-                    JOptionPane.WARNING_MESSAGE
-            );
+    private void showAzureVersionPlaceholder() {
+        if (apiVersion == null) return;
+        apiVersionPlaceholderActive = true;
+        Color placeholderColor = UIManager.getColor("TextField.inactiveForeground");
+        if (placeholderColor == null && apiBaseNormalForeground != null) {
+            placeholderColor = apiBaseNormalForeground.brighter();
         }
+        if (placeholderColor != null) {
+            apiVersion.setForeground(placeholderColor);
+        }
+        apiVersion.setText("2025-01-01");
+    }
+
+    /**
+     * Shows or hides Azure-specific fields based on the selected provider.
+     */
+    private void showAzurePlaceholder() {
+        if (apiBase == null) return;
+        azurePlaceholderActive = true;
+        Color placeholderColor = UIManager.getColor("TextField.inactiveForeground");
+        if (placeholderColor == null && apiBaseNormalForeground != null) {
+            placeholderColor = apiBaseNormalForeground.brighter();
+        }
+        if (placeholderColor != null) {
+            apiBase.setForeground(placeholderColor);
+        }
+        apiBase.setText(AZURE_DEFAULT_API_BASE);
     }
 
     /**
@@ -1091,10 +1326,76 @@ public class ProjectSettingsComponent {
      */
     private void updateProviderSpecificPanels(String provider) {
         boolean isAzure = provider != null && "Azure".equalsIgnoreCase(provider);
+        boolean isOllama = provider != null && "Ollama".equalsIgnoreCase(provider);
+
+        // Hide API key column when using Ollama (no API key needed)
+        if (apiKeyPanel != null) {
+            apiKeyPanel.setVisible(!isOllama);
+        }
 
         // Azure-specific fields only for Azure
         azureApiVersion.setVisible(isAzure);
-        azureApiBase.setVisible(isAzure);
+        azureApiBase.setVisible(isAzure || isOllama);
+
+        if (ollamaModelPanel != null) {
+            ollamaModelPanel.setVisible(isOllama);
+        }
+        if (modelPanel != null) {
+            modelPanel.setVisible(!isOllama);
+        }
+
+        // Auto-assign or suggest API base depending on provider.
+        // For Ollama: always use the fixed base as actual text (required field).
+        // For Azure: show last user-entered base if present; otherwise, show a grey placeholder example
+        // that clears when the user focuses the field.
+        if (isOllama) {
+            if (apiBase != null) {
+                azurePlaceholderActive = false;
+                if (apiBaseNormalForeground != null) {
+                    apiBase.setForeground(apiBaseNormalForeground);
+                }
+                apiBase.setText(OLLAMA_DEFAULT_API_BASE);
+            }
+        } else if (isAzure) {
+            if (apiBase != null) {
+                if (lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+                    azurePlaceholderActive = false;
+                    if (apiBaseNormalForeground != null) {
+                        apiBase.setForeground(apiBaseNormalForeground);
+                    }
+                    apiBase.setText(lastAzureApiBase);
+                } else {
+                    showAzurePlaceholder();
+                }
+            }
+            // API Version placeholder (only when field is empty and no stored value)
+            String versionText = apiVersion.getText();
+            if (versionText == null || versionText.trim().isEmpty()) {
+                showAzureVersionPlaceholder();
+            } else {
+                apiVersionPlaceholderActive = false;
+                apiVersion.setForeground(apiBaseNormalForeground);
+            }
+        } else {
+            // Other providers: clear any Azure-style placeholder and text
+            if (apiBase != null) {
+                if (azurePlaceholderActive) {
+                    azurePlaceholderActive = false;
+                    if (apiBaseNormalForeground != null) {
+                        apiBase.setForeground(apiBaseNormalForeground);
+                    }
+                    if (AZURE_DEFAULT_API_BASE.equals(apiBase.getText())) {
+                        apiBase.setText("");
+                    }
+                }
+            }
+        }
+
+        // Refresh layouts so UI updates immediately
+        if (apiKeyPanel != null) { apiKeyPanel.revalidate(); apiKeyPanel.repaint(); }
+        if (mainPanel != null) { mainPanel.revalidate(); mainPanel.repaint(); }
+
+        updateOllamaWarnings();
     }
 
     /**
@@ -1109,5 +1410,22 @@ public class ProjectSettingsComponent {
                 // setScrollOffset may behave differently across LAFs; caret is enough
             }
         });
+    }
+
+    private void updateOllamaWarnings() {
+        boolean isOllama = (llmProviderComboBox.getSelectedItem() != null)
+                && "Ollama".equalsIgnoreCase((String) llmProviderComboBox.getSelectedItem());
+
+        if (apiBaseWarningLabel != null) {
+            boolean showApiBase = isOllama && (apiBase.getText() == null || apiBase.getText().trim().isEmpty());
+            apiBaseWarningLabel.setVisible(showApiBase);
+        }
+        if (ollamaModelWarningLabel != null) {
+            boolean showModel = isOllama && (ollamaModel.getText() == null || ollamaModel.getText().trim().isEmpty());
+            ollamaModelWarningLabel.setVisible(showModel);
+        }
+
+        if (azureApiBase != null) { azureApiBase.revalidate(); azureApiBase.repaint(); }
+        if (ollamaModelPanel != null) { ollamaModelPanel.revalidate(); ollamaModelPanel.repaint(); }
     }
 }

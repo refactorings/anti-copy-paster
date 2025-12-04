@@ -66,14 +66,14 @@ AntiCopyPaster integrates with [Aider](https://aider.chat) to provide clone dete
 
 ### Installation
 
-1. Make sure **Python 3.8 – 3.13** is installed on your system.  
-2. Install Aider by running the following commands in your terminal:  
+1. Make sure **Python 3.8 – 3.13** is installed on your system.
+2. Install Aider by running the following commands in your terminal:
    ```bash
    python -m pip install aider-install
    aider-install
    ```  
-   For more details, see the [official Aider installation guide](https://aider.chat/docs/install.html).  
-3. Confirm installation with:  
+   For more details, see the [official Aider installation guide](https://aider.chat/docs/install.html).
+3. Confirm installation with:
    ```bash
    aider --version
    ```  
@@ -85,47 +85,104 @@ AntiCopyPaster integrates with [Aider](https://aider.chat) to provide clone dete
 
 ### Configuration in AntiCopyPaster
 
-1. Open IntelliJ IDEA and go to **Settings → Tools → AntiCopyPaster**.  
-2. In the section *“Extraction judgements should be performed by”*, select **Aider**.  
-3. Open the **Aider Settings** panel and configure:  
-   - **Aider Path**: the path to the `aider` binary. On terminal, use command:  
+1. Open IntelliJ IDEA and go to **Settings → Tools → AntiCopyPaster**.
+2. In the section *“Extraction judgements should be performed by”*, select **Aider**.
+3. Open the **Aider Settings** panel and configure:
+   - **Aider Path**: the path to the `aider` binary. On terminal, use command:
      ```bash
      which aider
      ```  
-     might return `/Users/username/.local/bin/aider`.  
-   - **LLM Provider**: choose the provider you want to connect with (e.g., OpenAI, Gemini, DeepSeek, Anthropic).  
-   - **Model Selection**: specify the model you want to use (e.g., `gpt-4o`, `gemini-pro`).  
-   - **API Key**: enter your provider’s API key.  
-     - [OpenAI](https://platform.openai.com/api-keys)  
-     - [Gemini](https://ai.google.dev/gemini-api/docs/api-key)  
-     - [DeepSeek](https://api-docs.deepseek.com/)  
-     - [Anthropic](https://docs.anthropic.com/en/api/admin-api/apikeys/get-api-key)  
+     might return `/Users/username/.local/bin/aider`.
+   - **LLM Provider**: choose the provider you want to connect with (e.g., OpenAI, Gemini, DeepSeek, Anthropic).
+   - **Model Selection**: specify the model you want to use (e.g., `gpt-4o`, `gemini-pro`).
+   - **API Key**: enter your provider’s API key.
+      - [OpenAI](https://platform.openai.com/api-keys)
+      - [Gemini](https://ai.google.dev/gemini-api/docs/api-key)
+      - [DeepSeek](https://api-docs.deepseek.com/)
+      - [Anthropic](https://docs.anthropic.com/en/api/admin-api/apikeys/get-api-key)
+      - [xAI](https://x.ai/api)
 
 ---
 
+#### Special Instructions for Ollama
+
+If you choose **Ollama** as the provider:
+(Make sure you keep Ollama running in the background)
+1. Download and install Ollama from the [official website](https://ollama.com/).
+2. Search for available models at [Ollama Models](https://ollama.com/search).
+3. Pull the models you want to use, use command
+ ```bash
+   ollama pull model_name
+   ```  
+4. In the Aider settings, configure the following:
+    - **Aider Path**: the path to the `aider` binary (check with `which aider` in your terminal).
+    - **LLM Provider**: select **Ollama**.
+    - **API Base**: use the default value `http://127.0.0.1:11434`.
+    - **Model Name**: type in the exact model name you want to use, as listed on the [Ollama Models](https://ollama.com/search).
+
+If you get the [model warnings](https://aider.chat/docs/llms/warnings.html), just ignore it and continue proceeding.
+
+Click **Apply** and then **OK** to save.
+
+
+##### Choosing the Right Ollama Model for Your Device
+
+In our evaluation, we tested the following Ollama models to assess performance: `dolphin3:8b`, `phi4:14b`, `gemma2:9b`, `qwen2.5:7b`, `mistral:7b`, `qwen3:8b`, `llama3.1:8b`, `deepseek-r1:8b`, `llama3.2:3b`, `phi3:3.8b`, `qwen2.5-coder:7b`, `codellama:7b`, `olmo2:7b`, `deepseek-coder:6.7b`, `starcoder2:7b`, `falcon3:7b`, and `granite3.3:8b`.
+
+
+**Important:** Ollama model performance heavily depends on your device's available RAM and processing power. Choose an appropriate model size to ensure responsive refactoring. Ollama model performance depends heavily on your device’s **GPU VRAM** and overall processing power. Larger models require significantly more memory to load and run. Always choose a model size compatible with your hardware.
+
+Based on our evaluation, models with **7B–8B parameters** typically require **At least 6–8 GB of GPU VRAM**. If your GPU has **less VRAM** than the model requires (e.g., 4–6 GB), choose a smaller model such as **3B–4B** variants to ensure stability.
+
+
+**⚠️ Performance Warning:**
+
+Based on our testing, models larger than **14B parameters** may cause:
+- Extremely slow response times (several minutes per request)
+- High memory usage and system freezes
+- Aider timeouts or process crashes
+- Poor user experience in the IDE
+
+**Testing Your Model:**
+
+Before configuring AntiCopyPaster, test if your chosen model runs smoothly:
+
+```bash
+# Pull the model
+ollama pull llama3.1:8b
+
+# Test it (should respond within 10-20 seconds)
+ollama run llama3.1:8b "Write a hello world function in Java"
+```
+
+If the response takes longer than 30 seconds, consider using a smaller model or switching to a cloud-based API provider.
+
+---
+
+
 ### Using Aider for Refactoring
 
-1. Select a code fragment in a Java file.  
-2. Perform a **copy** and then **paste** operation.  
-3. AntiCopyPaster will trigger Aider’s clone detection.  
-   - If clones are detected, a confirmation window will appear.  
-   - Click **Yes** to proceed.  
-4. Aider will generate a refactored version of the code.  
-   - A **side-by-side comparison** of the original and refactored code will be displayed.  
-   - After a few seconds, you will be asked whether to apply the change.  
-   - Selecting **Yes** will update the original code with the refactored version.  
+1. Select a code fragment in a Java file.
+2. Perform a **copy** and then **paste** operation.
+3. AntiCopyPaster will trigger Aider’s clone detection.
+   - If clones are detected, a confirmation window will appear.
+   - Click **Yes** to proceed.
+4. Aider will generate a refactored version of the code.
+   - A **side-by-side comparison** of the original and refactored code will be displayed.
+   - After a few seconds, you will be asked whether to apply the change.
+   - Selecting **Yes** will update the original code with the refactored version.
 
 ---
 
 ### Using Aider for Naming Suggestions
 
-1. In **AntiCopyPaster Settings**, set **Aider** as the *Name recommendation model*.  
-   - (If Aider is already selected for extraction judgements, this is set automatically.)  
+1. In **AntiCopyPaster Settings**, set **Aider** as the *Name recommendation model*.
+   - (If Aider is already selected for extraction judgements, this is set automatically.)
 2. Configure how many naming suggestions Aider should generate.
-3. Perform a copy-paste refactoring as usual.  
-4. Aider will generate multiple method name suggestions.  
-   - These will appear in a drop-down menu.  
-   - Select your preferred name to apply it.  
+3. Perform a copy-paste refactoring as usual.
+4. Aider will generate multiple method name suggestions.
+   - These will appear in a drop-down menu.
+   - Select your preferred name to apply it.
 
 
 ---

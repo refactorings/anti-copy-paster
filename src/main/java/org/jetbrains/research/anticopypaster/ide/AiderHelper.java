@@ -267,45 +267,6 @@ public class AiderHelper {
     }
 
     /**
-     * Runs Aider once with the given prompt and file, returning its full (cleaned) stdout.
-     * This non‑streaming variant normalizes certain provider/model names (e.g., deepseek/azure).
-     *
-     * @param project    current project (used for working directory and notifications)
-     * @param aiderPath  path to {@code aider}
-     * @param filePath   path to a file to include in the Aider context
-     * @param prompt     message to send to the model
-     * @param provider   provider identifier (OpenAI/Gemini/Anthropic/DeepSeek/Azure/xAI)
-     * @param model      model name; may be prefixed for provider as needed
-     * @param apikey     API key exposed to the subprocess
-     * @param apiBase    optional API base (provider specific)
-     * @param apiVersion optional API version (provider specific)
-     * @return combined standard output of the Aider subprocess
-     * @throws IOException          if launching the process fails
-     * @throws InterruptedException if the process is interrupted while waiting
-     */
-    public static String runAiderWithPrompt(Project project, String aiderPath, String filePath, String prompt,
-                                            String provider, String model, String apikey,
-                                            String apiBase, String apiVersion)
-            throws IOException, InterruptedException {
-        if (model.startsWith("deepseek-")) {
-            model = "deepseek/" + model;
-        }
-        if (provider.equals("Azure")) {
-            model = "azure/" + model;
-        }
-        return runCommand(project, provider,
-                apikey,
-                apiBase,
-                apiVersion,
-                aiderPath,
-                "--model", model,
-                "--yes",
-                "--message", prompt,
-                filePath
-        );
-    }
-
-    /**
      * Runs Aider in streaming mode, forwarding cleaned stdout lines to the given viewer and returning the full output.
      * Also normalizes provider/model identifiers (e.g., deepseek/, azure/, xai/).
      *
@@ -327,7 +288,7 @@ public class AiderHelper {
                                                      String provider, String model, String apikey,
                                                      String apiBase, String apiVersion, Consumer<String> viewer)
             throws IOException, InterruptedException {
-        if (model.startsWith("deepseek-")) {
+        if (provider.equals("DeepSeek")) {
             model = "deepseek/" + model;
         }
         if (provider.equals("Azure")) {
@@ -336,16 +297,36 @@ public class AiderHelper {
         if (provider.equals("xAI")) {
             model = "xai/" + model;
         }
+
+        if (provider.equals("Ollama")) {
+            model = "ollama_chat/" + model;
+        }
+        java.util.ArrayList<String> args = new java.util.ArrayList<>();
+        args.add(aiderPath);
+        args.add("--model");
+        args.add(model);
+        args.add("--yes");
+        args.add("--message");
+        args.add(prompt);
+        args.add(filePath);
+        if (model != null && model.toLowerCase().contains("gpt-5")) {
+            args.add("--no-stream");
+            args.add("--check-model-accepts-settings");
+            try {
+                java.nio.file.Path emptySettings = java.nio.file.Files.createTempFile("aider_model_settings_", ".json");
+                java.nio.file.Files.writeString(emptySettings, "{}", java.nio.charset.StandardCharsets.UTF_8);
+                args.add("--model-settings-file");
+                args.add(emptySettings.toString());
+            } catch (IOException ioe) {
+                System.err.println("[AIDER] Failed to create empty model settings file: " + ioe.getMessage());
+            }
+        }
         return runCommand(project, provider,
                 apikey,
                 apiBase,
                 apiVersion,
                 viewer,
-                aiderPath,
-                "--model", model,
-                "--yes",
-                "--message", prompt,
-                filePath
+                args.toArray(new String[0])
         );
     }
 
@@ -386,19 +367,88 @@ public class AiderHelper {
             pb.directory(new File(basePath));
         }
         switch (provider.toUpperCase()) {
-            case "OPENAI" -> pb.environment().put("OPENAI_API_KEY", apikey);
+            case "OPENAI" -> {
+                pb.environment().put("OPENAI_API_KEY", apikey);
+                // Ensure no conflicting providers leak into this run
+                pb.environment().remove("AZURE_API_KEY");
+                pb.environment().remove("AZURE_API_VERSION");
+                pb.environment().remove("AZURE_API_BASE");
+                pb.environment().remove("OLLAMA_API_BASE");
+                // Remove any temperature-related env vars that might inject unsupported sampling
+                pb.environment().remove("OPENAI_TEMPERATURE");
+                pb.environment().remove("AIDER_TEMPERATURE");
+                // Also remove common LiteLLM extra/default params envs if present
+                pb.environment().remove("LITELLM_PARAMS");
+                pb.environment().remove("LITELLM_DEFAULT_PARAMS");
+                // Drop any env var whose key contains "TEMPERATURE"
+                for (String k : new java.util.HashSet<>(pb.environment().keySet())) {
+                    if (k != null && k.toUpperCase().contains("TEMPERATURE")) {
+                        pb.environment().remove(k);
+                    }
+                }
+            }
             case "GEMINI" -> {
                 pb.environment().put("GEMINI_API_KEY", apikey);
                 pb.environment().put("AIDER_GEMINI_PROVIDER", "google-ai-studio");
             }
             case "ANTHROPIC" -> pb.environment().put("ANTHROPIC_API_KEY", apikey);
             case "DEEPSEEK" -> pb.environment().put("DEEPSEEK_API_KEY", apikey);
+            case "OLLAMA" -> {
+                if (apiBase == null || apiBase.isBlank()) {
+                    apiBase = "http://127.0.0.1:11434";
+                }
+                pb.environment().put("OLLAMA_API_BASE", apiBase);
+
+                pb.environment().remove("AZURE_API_KEY");
+                pb.environment().remove("AZURE_API_VERSION");
+                pb.environment().remove("AZURE_API_BASE");
+                pb.environment().remove("OPENAI_API_KEY");
+            }
             case "AZURE" -> {
+                if (apiBase == null || apiBase.isBlank()) {
+                    throw new IllegalArgumentException("Azure provider selected but API base is empty");
+                }
+                if (apiBase.contains("11434")) {
+                    System.err.println("[AIDER] Warning: Azure API base points to 11434 (Ollama). This will 404.");
+                }
                 pb.environment().put("AZURE_API_KEY", apikey);
                 pb.environment().put("AZURE_API_VERSION", apiVersion);
                 pb.environment().put("AZURE_API_BASE", apiBase);
+
+                pb.environment().remove("OLLAMA_API_BASE");
+                pb.environment().remove("OPENAI_API_KEY");
             }
             default -> throw new IllegalArgumentException("Unknown provider: " + provider);
+        }
+        // Diagnostics: show whether per-user or per-project Aider config files exist and if they mention temperature
+        try {
+            java.util.List<java.io.File> cfgs = new java.util.ArrayList<>();
+            String home = System.getProperty("user.home");
+            String work = (pb.directory() != null ? pb.directory().getAbsolutePath() : null);
+            if (home != null) {
+                cfgs.add(new java.io.File(home, ".aider.conf"));
+                cfgs.add(new java.io.File(home, ".aider.conf.yml"));
+                cfgs.add(new java.io.File(home, ".aider.conf.yaml"));
+                cfgs.add(new java.io.File(home, ".aider.conf.json"));
+            }
+            if (work != null) {
+                cfgs.add(new java.io.File(work, ".aider.conf"));
+                cfgs.add(new java.io.File(work, ".aider.conf.yml"));
+                cfgs.add(new java.io.File(work, ".aider.conf.yaml"));
+                cfgs.add(new java.io.File(work, ".aider.conf.json"));
+            }
+            for (java.io.File f : cfgs) {
+                if (f != null && f.exists() && f.isFile()) {
+                    String p = f.getAbsolutePath();
+                    String content = java.nio.file.Files.readString(f.toPath());
+                    boolean mentionsTemp = content.toLowerCase().contains("temperature");
+                    String msg = "[AIDER] Detected Aider config: " + p + (mentionsTemp ? " (contains 'temperature')" : "");
+                    System.out.println(msg);
+                    if (viewer != null) viewer.accept(msg);
+                }
+            }
+        } catch (Throwable t) {
+            System.err.println("[AIDER] Config scan failed: " + t.getMessage());
         }
         // Hint many CLIs to avoid ANSI color output in non-TTY environments
         pb.environment().put("NO_COLOR", "1");

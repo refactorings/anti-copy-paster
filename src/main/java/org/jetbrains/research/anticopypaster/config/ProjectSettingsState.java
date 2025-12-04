@@ -75,6 +75,8 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public String llmProvider = "";
 
+    public String ollamaModelName = "";
+
     public String filesPath = "";
 
     public String apiBase = "";
@@ -152,6 +154,10 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public void setApiVersion(String version) { this.apiVersion = version; }
 
+    public void setOllamaName(String model) { this.ollamaModelName = model; }
+
+    public String getOllamaModelName() { return ollamaModelName; }
+
     public void setAllFilesCheckboxes(ArrayList<JCheckBox> filesCheckboxes) {
         (this.allFilesCheckboxes).clear();
         (this.allFilesCheckboxes).addAll(filesCheckboxes);
@@ -168,7 +174,8 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public enum JudgementModel {
         TENSORFLOW(0),
         USER_SETTINGS(1),
-        AIDER(2);
+        AIDER(2),
+        COPILOT(3);
         private int idx;
         JudgementModel(int idx) {
             this.idx = idx;

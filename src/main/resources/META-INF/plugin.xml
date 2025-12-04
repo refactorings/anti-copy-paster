@@ -12,8 +12,10 @@
     <depends>com.intellij.modules.java</depends>
     <depends>com.intellij.modules.lang</depends>
     <depends>org.jetbrains.plugins.terminal</depends>
+    <depends optional="true">com.github.copilot</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="AntiCopyPaster" displayType="BALLOON" isLogByDefault="false"/>
         <copyPastePreProcessor
                 implementation="org.jetbrains.research.anticopypaster.ide.AntiCopyPastePreProcessor"/>
         <notificationGroup
