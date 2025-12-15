@@ -53,9 +53,9 @@ public class AiderHelper {
             ToolWindowManager twm = ToolWindowManager.getInstance(project);
             ToolWindow toolWindow = twm.getToolWindow(ToolWindowId.RUN);
             if (toolWindow == null) {
-                toolWindow = twm.getToolWindow("Aider Output");
+                toolWindow = twm.getToolWindow("Clone Output");
                 if (toolWindow == null) {
-                    toolWindow = twm.registerToolWindow(RegisterToolWindowTask.notClosable("Aider Output"));
+                    toolWindow = twm.registerToolWindow(RegisterToolWindowTask.notClosable("Clone Output"));
                 }
             }
 
@@ -115,7 +115,7 @@ public class AiderHelper {
      */
     public static void checkAndSuggestRefactor(Project project, VirtualFile file, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion) {
         String fileName = file.getName();
-        notify(project, "Aider is running clone detection on " + fileName + "...");
+        notify(project, "Clone is running clone detection on " + fileName + "...");
         String filePath = file.getPath();
 
         try {
@@ -126,16 +126,16 @@ public class AiderHelper {
 
             ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
-                    Consumer<String> viewer = openStreamingViewer(project, "Aider Detection Output");
+                    Consumer<String> viewer = openStreamingViewer(project, "Clone Detection Output");
                     String output = runAiderWithPromptStreaming(project, aiderPath, tempFilePath,
                             "Please detect any clones in this file. Response with either 'clones found' or 'no clones found'", provider, model, apikey, apiBase, apiVersion, viewer);
 
                     if (output != null && containsDuplicateHint(output)) {
-                        System.out.println("===> Aider Output:\n" + output);
+                        System.out.println("===> Clone Output:\n" + output);
                         ApplicationManager.getApplication().invokeLater(() -> {
                             int choice = Messages.showYesNoDialog(
                                     project,
-                                    "Aider found clones in " + fileName + ". Do you want to refactor it?",
+                                    "Clone found clones in " + fileName + ". Do you want to refactor it?",
                                     "Code Refactoring",
                                     Messages.getQuestionIcon()
                             );
@@ -145,17 +145,17 @@ public class AiderHelper {
                         });
                     } else {
                         ApplicationManager.getApplication().invokeLater(() -> {
-                            notify(project, "Aider did not detect any clones in the file " + fileName + ".");
+                            notify(project, "Clone did not detect any clones in the file " + fileName + ".");
                         });
                     }
 
                 } catch (Exception e) {
-                    notify(project, "Aider Error: " + e.getMessage());
+                    notify(project, "Clone Error: " + e.getMessage());
                     e.printStackTrace();
                 }
             });
         } catch (IOException e) {
-            notify(project, "Aider Error: " + e.getMessage());
+            notify(project, "Clone Error: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -175,14 +175,14 @@ public class AiderHelper {
      * @param apiVersion optional API version (for Azure)
      */
     private static void runRefactorWithPreview(Project project, String fileName, String filePath, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion) {
-        notify(project, "Aider is running code refactoring on " + fileName + "...");
+        notify(project, "Clone is running code refactoring on " + fileName + "...");
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
                 File originalFile = new File(filePath);
                 File tempFile = File.createTempFile("aider_refactor_", ".java");
                 Files.copy(originalFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
-                Consumer<String> viewer = openStreamingViewer(project, "Aider Refactoring Output");
+                Consumer<String> viewer = openStreamingViewer(project, "Clone Refactoring Output");
                 String output = runAiderWithPromptStreaming(project, aiderPath, tempFile.getAbsolutePath(),
                         "Refactor this file by Extract Method to eliminate clones. Output the COMPLETE final Java file ONLY, inside a single ```java code block. Do NOT output patches, SEARCH/REPLACE markers, or explanations.",
                         provider, model, apikey, apiBase, apiVersion, viewer);
@@ -318,7 +318,7 @@ public class AiderHelper {
                 args.add("--model-settings-file");
                 args.add(emptySettings.toString());
             } catch (IOException ioe) {
-                System.err.println("[AIDER] Failed to create empty model settings file: " + ioe.getMessage());
+                System.err.println("[Clone] Failed to create empty model settings file: " + ioe.getMessage());
             }
         }
         return runCommand(project, provider,
@@ -442,13 +442,13 @@ public class AiderHelper {
                     String p = f.getAbsolutePath();
                     String content = java.nio.file.Files.readString(f.toPath());
                     boolean mentionsTemp = content.toLowerCase().contains("temperature");
-                    String msg = "[AIDER] Detected Aider config: " + p + (mentionsTemp ? " (contains 'temperature')" : "");
+                    String msg = "[Clone] Detected Aider config: " + p + (mentionsTemp ? " (contains 'temperature')" : "");
                     System.out.println(msg);
                     if (viewer != null) viewer.accept(msg);
                 }
             }
         } catch (Throwable t) {
-            System.err.println("[AIDER] Config scan failed: " + t.getMessage());
+            System.err.println("[Clone] Config scan failed: " + t.getMessage());
         }
         // Hint many CLIs to avoid ANSI color output in non-TTY environments
         pb.environment().put("NO_COLOR", "1");
@@ -497,7 +497,7 @@ public class AiderHelper {
     private static void notify(Project project, String content) {
         Notification notification = new Notification(
                 "AiderRefactor",
-                "Aider Refactoring",
+                "Clone Refactoring",
                 content,
                 NotificationType.INFORMATION
         );
@@ -517,7 +517,7 @@ public class AiderHelper {
                 ToolWindowManager twm = ToolWindowManager.getInstance(project);
                 ToolWindow toolWindow = twm.getToolWindow(ToolWindowId.RUN);
                 if (toolWindow == null) {
-                    toolWindow = twm.getToolWindow("Aider Output");
+                    toolWindow = twm.getToolWindow("Clone Output");
                 }
                 if (toolWindow == null) {
                     return; // Nothing to close
@@ -567,7 +567,7 @@ public class AiderHelper {
                 ToolWindowManager twm = ToolWindowManager.getInstance(project);
                 ToolWindow[] tws = new ToolWindow[] {
                         twm.getToolWindow(ToolWindowId.RUN),
-                        twm.getToolWindow("Aider Output")
+                        twm.getToolWindow("Clone Output")
                 };
                 for (ToolWindow tw : tws) {
                     if (tw == null) continue;
@@ -580,7 +580,7 @@ public class AiderHelper {
                     for (Content c : list) {
                         if (c != null) {
                             String title = c.getDisplayName();
-                            if (title != null && title.startsWith("Aider ")) {
+                            if (title != null && title.startsWith("Clone ")) {
                                 cm.removeContent(c, true);
                                 // Clean any console we may have tracked under this title
                                 ConsoleView console = CONSOLE_BY_TITLE.remove(title);
@@ -598,7 +598,7 @@ public class AiderHelper {
                     }
                 }
             } catch (Throwable t) {
-                System.err.println("Failed to close all Aider viewers: " + t.getMessage());
+                System.err.println("Failed to close all Clone viewers: " + t.getMessage());
             }
         });
     }
