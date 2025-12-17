@@ -239,7 +239,7 @@ public class AiderHelper {
                                     notify(project, "Failed to overwrite file " + fileName + ": " + e.getMessage());
                                 }
                             } else {
-                                notify(project, "Refactoring for file " + fileName + "was canceled.");
+                                notify(project, "Refactoring for file " + fileName + " was canceled.");
                             }
                         }, ModalityState.NON_MODAL);
                     });

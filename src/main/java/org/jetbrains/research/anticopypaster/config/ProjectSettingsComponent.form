@@ -131,7 +131,7 @@
                   <model>
                     <item value="the AI model"/>
                     <item value="my manual heuristics"/>
-                    <item value="Aider"/>
+                    <item value="Clone"/>
                     <item value="Copilot"/>
                   </model>
                 </properties>
@@ -203,7 +203,7 @@
                   <model>
                     <item value="code2vec"/>
                     <item value="built-in"/>
-                    <item value="Aider"/>
+                    <item value="Clone"/>
                   </model>
                 </properties>
               </component>
