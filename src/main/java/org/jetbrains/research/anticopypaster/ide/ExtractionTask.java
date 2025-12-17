@@ -417,8 +417,8 @@ public class ExtractionTask {
                         count
                 );
 
-                notify(project, "Aider is generating names...");
-                java.util.function.Consumer<String> viewer = openStreamingViewer(project, "Aider Name Suggestions");
+                notify(project, "Clone is generating names...");
+                java.util.function.Consumer<String> viewer = openStreamingViewer(project, "Clone Name Suggestions");
 
                 String filePath = tempFile.getAbsolutePath();
                 String output = runAiderWithPromptStreaming(project, aiderPath, filePath, prompt, provider, model, apikey, apiBase, apiVersion, viewer);
@@ -439,18 +439,18 @@ public class ExtractionTask {
                         if (!candidates.isEmpty()) {
                             selected = Messages.showEditableChooseDialog(
                                     "Choose a method name:",
-                                    "Aider Name Suggestions",
+                                    "Clone Name Suggestions",
                                     Messages.getQuestionIcon(),
                                     candidates.toArray(new String[0]),
                                     candidates.get(0),
                                     null
                             );
                         } else {
-                            notify(project, "Aider didn't return any usable name suggestions. Please enter a method name.");
+                            notify(project, "Clone didn't return any usable name suggestions. Please enter a method name.");
                             selected = Messages.showInputDialog(
                                     project,
                                     "Enter a method name:",
-                                    "Aider Name Suggestions",
+                                    "Clone Name Suggestions",
                                     Messages.getQuestionIcon(),
                                     "extractedMethod",
                                     null
@@ -652,7 +652,7 @@ public class ExtractionTask {
                                 predLocal.add(methodSuggestion);
                                 methodNameLocal = getNewMethodName(finalContainingClass, methodSuggestion);
                             } else {
-                                notify(finalProject, "Aider did not provide a name. Using default 'extractedMethod'.");
+                                notify(finalProject, "Clone did not provide a name. Using default 'extractedMethod'.");
                                 predLocal = new ArrayList<>();
                                 predLocal.add("extractedMethod");
                                 methodNameLocal = getNewMethodName(finalContainingClass, "extractedMethod");
@@ -742,7 +742,7 @@ public class ExtractionTask {
     private static void notify(Project project, String content) {
         Notification notification = new Notification(
                 "AiderRefactor",
-                "Aider Refactoring",
+                "Clone Refactoring",
                 content,
                 NotificationType.INFORMATION
         );

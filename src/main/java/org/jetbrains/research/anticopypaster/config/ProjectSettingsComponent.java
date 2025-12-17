@@ -684,9 +684,9 @@ public class ProjectSettingsComponent {
         Object currentSelection = nameModel.getSelectedItem();
         if (isMainModelAider) {
             // When Aider is selected as the main model, only allow "Aider" in name model
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Aider"});
+            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Clone"});
             nameModel.setModel(model);
-            nameModel.setSelectedItem("Aider");
+            nameModel.setSelectedItem("Clone");
         }
         else if (isMainModelCopilot) {
             // When Copilot is selected as the main model, only allow "Copilot" in name model
@@ -696,7 +696,7 @@ public class ProjectSettingsComponent {
         }
         else {
             // When other main models are selected, restore all options
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Aider"});
+            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Clone"});
             nameModel.setModel(model);
             if (currentSelection != null && model.getIndexOf(currentSelection) != -1) {
                 nameModel.setSelectedItem(currentSelection);
