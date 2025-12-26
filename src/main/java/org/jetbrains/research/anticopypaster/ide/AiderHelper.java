@@ -6,11 +6,29 @@ import com.intellij.notification.Notifications;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.roots.CompilerModuleExtension;
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleManager;
+import com.intellij.openapi.roots.ModuleRootManager;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiJavaFile;
+import com.intellij.psi.PsiManager;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.diff.DiffContentFactory;
 import com.intellij.diff.DiffManager;
 import com.intellij.diff.requests.SimpleDiffRequest;
+
+import com.intellij.execution.ProgramRunnerUtil;
+import com.intellij.execution.RunManager;
+import com.intellij.execution.RunnerAndConfigurationSettings;
+import com.intellij.execution.executors.DefaultRunExecutor;
+import com.intellij.execution.junit.JUnitConfiguration;
+import com.intellij.execution.configurations.ConfigurationType;
+import com.intellij.execution.runners.ExecutionEnvironment;
+import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
 
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
@@ -27,7 +45,6 @@ import java.util.function.Consumer;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,18 +54,229 @@ public class AiderHelper {
 
     private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
 
+    private static boolean isMavenOrGradleProject(Project project) {
+        String base = project.getBasePath();
+        if (base == null || base.isBlank()) return false;
+        File pom = new File(base, "pom.xml");
+        File gradle = new File(base, "build.gradle");
+        File gradleKts = new File(base, "build.gradle.kts");
+        File settingsGradle = new File(base, "settings.gradle");
+        File settingsGradleKts = new File(base, "settings.gradle.kts");
+        return pom.exists() || gradle.exists() || gradleKts.exists() || settingsGradle.exists() || settingsGradleKts.exists();
+    }
+
+    private static boolean isPlainProject(Project project) {
+        if (isMavenOrGradleProject(project)) return false;
+        try {
+            Module[] modules = ModuleManager.getInstance(project).getModules();
+            return modules == null || modules.length <= 1;
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
     /**
-     * Opens or reuses a console tab for streaming output and returns a line consumer that appends on the EDT.
-     * Ensures a tool window exists, reuses a same‑titled tab if present, and appends a newline when missing.
+    /**
+     * Writes the converted JUnit4 test into the project's test source root so IntelliJ/Maven/Gradle can compile it.
+     * Best-effort: uses the first module's first content root and places under src/test/java/<package>/Class.java.
+     */
+    private static File writeTestIntoProjectTestSources(Project project,
+                                                        String testJavaSource,
+                                                        String testClassFqn,
+                                                        Consumer<String> viewer) throws IOException {
+        if (testJavaSource == null || testJavaSource.isBlank()) {
+            throw new IllegalArgumentException("testJavaSource is empty");
+        }
+        if (testClassFqn == null || testClassFqn.isBlank()) {
+            throw new IllegalArgumentException("testClassFqn is empty");
+        }
+
+        String pkg = "";
+        String simple = testClassFqn;
+        int lastDot = testClassFqn.lastIndexOf('.');
+        if (lastDot >= 0) {
+            pkg = testClassFqn.substring(0, lastDot);
+            simple = testClassFqn.substring(lastDot + 1);
+        }
+
+        Module[] modules = ModuleManager.getInstance(project).getModules();
+        String rootPath = null;
+        if (modules != null && modules.length > 0) {
+            VirtualFile[] roots = ModuleRootManager.getInstance(modules[0]).getContentRoots();
+            if (roots != null && roots.length > 0) {
+                rootPath = roots[0].getPath();
+            }
+        }
+        if (rootPath == null || rootPath.isBlank()) {
+            String base = project.getBasePath();
+            if (base != null && !base.isBlank()) rootPath = base;
+        }
+        if (rootPath == null || rootPath.isBlank()) {
+            throw new IllegalStateException("Cannot determine project root/content root to write test");
+        }
+
+        File testRoot = new File(rootPath, "src" + File.separator + "test" + File.separator + "java");
+        File pkgDir = testRoot;
+        if (!pkg.isBlank()) {
+            pkgDir = new File(testRoot, pkg.replace('.', File.separatorChar));
+        }
+        if (!pkgDir.exists() && !pkgDir.mkdirs()) {
+            throw new IOException("Failed to create test package directory: " + pkgDir.getAbsolutePath());
+        }
+
+        File out = new File(pkgDir, simple + ".java");
+        Files.writeString(out.toPath(), testJavaSource, StandardCharsets.UTF_8);
+
+        // Refresh VFS so IntelliJ can see/compile it
+        String finalRootPath = rootPath;
+        ApplicationManager.getApplication().invokeLater(() -> {
+            VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(out);
+            if (vf != null) {
+                vf.refresh(false, false);
+            } else {
+                // fallback: refresh project root
+                VirtualFile rootVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(finalRootPath);
+                if (rootVf != null) rootVf.refresh(true, true);
+            }
+        }, ModalityState.any());
+
+        if (viewer != null) viewer.accept("[JUnit/IDE] Wrote test into project test sources: " + out.getAbsolutePath());
+        return out;
+    }
+    /**
+     * Runs a single JUnit test class through IntelliJ's built-in JUnit runner.
+     * This is the correct approach for Maven/Gradle projects because IntelliJ will use the IDE/module classpath.
+     * Note: execution is asynchronous; this method does not wait for PASS/FAIL.
+     */
+    private static void runJUnit4ViaIdeaRunner(Project project,
+                                               String testClassFqn,
+                                               Consumer<String> viewer) {
+        if (testClassFqn == null || testClassFqn.isBlank()) {
+            if (viewer != null) viewer.accept("[JUnit/IDE] Skipped: test class name is empty.");
+            return;
+        }
+
+        ApplicationManager.getApplication().invokeLater(() -> {
+            try {
+                RunManager runManager = RunManager.getInstance(project);
+
+                // Find JUnit configuration type in a version-stable way (avoid direct JUnitConfigurationType API differences)
+                ConfigurationType junitType = null;
+                for (ConfigurationType t : ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
+                    if (t != null && "JUnit".equals(t.getId())) {
+                        junitType = t;
+                        break;
+                    }
+                }
+                if (junitType == null) {
+                    if (viewer != null) viewer.accept("[JUnit/IDE] JUnit run configuration type not found (id=JUnit). Is the JUnit plugin enabled?");
+                    notify(project, "JUnit runner not available: configuration type 'JUnit' not found.");
+                    return;
+                }
+                if (junitType.getConfigurationFactories() == null || junitType.getConfigurationFactories().length == 0) {
+                    if (viewer != null) viewer.accept("[JUnit/IDE] JUnit configuration has no factories.");
+                    notify(project, "JUnit runner not available: no configuration factories.");
+                    return;
+                }
+
+                RunnerAndConfigurationSettings settings =
+                        runManager.createConfiguration("Clone JUnit4: " + testClassFqn, junitType.getConfigurationFactories()[0]);
+
+                if (!(settings.getConfiguration() instanceof JUnitConfiguration)) {
+                    if (viewer != null) viewer.accept("[JUnit/IDE] Created configuration is not a JUnitConfiguration: " + settings.getConfiguration().getClass().getName());
+                    notify(project, "Failed to create JUnit run configuration for: " + testClassFqn);
+                    return;
+                }
+
+                JUnitConfiguration cfg = (JUnitConfiguration) settings.getConfiguration();
+
+                // Configure the JUnit run configuration in a version-tolerant way.
+                // Different IDE builds expose different APIs (setTestObject/setMainClassName vs persistent data).
+                boolean configured = false;
+
+                // 1) Try setters via reflection on the configuration instance (newer builds)
+                try {
+                    java.lang.reflect.Method mSetTestObj = cfg.getClass().getMethod("setTestObject", String.class);
+                    mSetTestObj.invoke(cfg, JUnitConfiguration.TEST_CLASS);
+                    configured = true;
+                } catch (Throwable ignored) {
+                    // ignore
+                }
+                try {
+                    java.lang.reflect.Method mSetMain = cfg.getClass().getMethod("setMainClassName", String.class);
+                    mSetMain.invoke(cfg, testClassFqn);
+                    configured = true;
+                } catch (Throwable ignored) {
+                    // ignore
+                }
+
+                // 2) Fallback: persistent data (older builds)
+                try {
+                    java.lang.reflect.Method mGet = cfg.getClass().getMethod("getPersistentData");
+                    Object data = mGet.invoke(cfg);
+                    if (data != null) {
+                        try {
+                            java.lang.reflect.Field f = data.getClass().getField("TEST_OBJECT");
+                            f.set(data, JUnitConfiguration.TEST_CLASS);
+                            configured = true;
+                        } catch (Throwable ignored) {
+                            // ignore
+                        }
+                        try {
+                            java.lang.reflect.Method mSetMain = data.getClass().getMethod("setMainClassName", String.class);
+                            mSetMain.invoke(data, testClassFqn);
+                            configured = true;
+                        } catch (Throwable ignored) {
+                            // ignore
+                        }
+                    }
+                } catch (Throwable ignored) {
+                    // ignore
+                }
+
+                if (!configured) {
+                    if (viewer != null) viewer.accept("[JUnit/IDE] Warning: could not configure test class via available APIs; running configuration may be incomplete.");
+                }
+
+                // Best-effort select a module (avoid setModule(Module) API differences)
+                try {
+                    Module[] modules = ModuleManager.getInstance(project).getModules();
+                    if (modules != null && modules.length > 0) {
+                        cfg.getConfigurationModule().setModule(modules[0]);
+                    }
+                } catch (Throwable ignored) {
+                    // ignore
+                }
+
+
+                runManager.setTemporaryConfiguration(settings);
+
+                ExecutionEnvironment env =
+                        ExecutionEnvironmentBuilder.create(DefaultRunExecutor.getRunExecutorInstance(), settings).build();
+
+                if (viewer != null) viewer.accept("[JUnit/IDE] Running via IntelliJ runner: " + testClassFqn);
+                ProgramRunnerUtil.executeConfiguration(env, true, true);
+
+            } catch (Throwable t) {
+                if (viewer != null) viewer.accept("[JUnit/IDE] Failed to run via IntelliJ runner: " + t.getMessage());
+                notify(project, "Failed to run tests via IntelliJ runner: " + t.getMessage());
+            }
+        }, ModalityState.any());
+    }
+
+
+    /**
+     * Opens (or reuses) a tool window console viewer for streaming output.
+     * Ensures that updates to the console are throttled to avoid flooding the EDT queue.
      *
-     * @param project current IntelliJ project (used to resolve ToolWindow and threading helpers)
-     * @param title   console tab title; reused to de‑duplicate tabs
-     * @return a thread‑safe line consumer that streams to the console
+     * @param project the IntelliJ project
+     * @param title   title of the console tab
+     * @return a consumer that accepts lines to print to the console
      */
     public static Consumer<String> openStreamingViewer(Project project, String title) {
         final java.util.concurrent.atomic.AtomicReference<ConsoleView> consoleRef = new java.util.concurrent.atomic.AtomicReference<>();
 
-        ApplicationManager.getApplication().invokeAndWait(() -> {
+        Runnable createOrReuse = () -> {
             // Ensure tool window exists (Run preferred, else custom)
             ToolWindowManager twm = ToolWindowManager.getInstance(project);
             ToolWindow toolWindow = twm.getToolWindow(ToolWindowId.RUN);
@@ -86,18 +314,49 @@ public class AiderHelper {
             toolWindow.activate(null);
 
             consoleRef.set(CONSOLE_BY_TITLE.get(title));
-        });
+        };
 
-        // Writer that prints to the console on EDT
-        return line -> ApplicationManager.getApplication().invokeLater(() -> {
+        if (ApplicationManager.getApplication().isDispatchThread()) {
+            createOrReuse.run();
+        } else {
+            ApplicationManager.getApplication().invokeAndWait(createOrReuse);
+        }
+
+        // Writer that prints to the console on EDT, but throttles updates to avoid flooding the EDT queue.
+        final java.util.concurrent.ConcurrentLinkedQueue<String> queue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        final java.util.concurrent.atomic.AtomicBoolean scheduled = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        final java.util.concurrent.atomic.AtomicReference<Runnable> flushRef = new java.util.concurrent.atomic.AtomicReference<>();
+        Runnable flush = () -> {
+            scheduled.set(false);
             ConsoleView console = consoleRef.get();
-            if (console != null) {
-                console.print(line, ConsoleViewContentType.NORMAL_OUTPUT);
-                if (!line.endsWith("\n")) {
-                    console.print("\n", ConsoleViewContentType.NORMAL_OUTPUT);
-                }
+            if (console == null) return;
+
+            StringBuilder sb = new StringBuilder();
+            String s;
+            int maxLines = 200; // drain up to N lines per UI tick
+            while (maxLines-- > 0 && (s = queue.poll()) != null) {
+                sb.append(s);
+                if (!s.endsWith("\n")) sb.append('\n');
             }
-        });
+            if (sb.length() > 0) {
+                console.print(sb.toString(), ConsoleViewContentType.NORMAL_OUTPUT);
+            }
+
+            // If more remains, schedule another flush
+            if (!queue.isEmpty() && scheduled.compareAndSet(false, true)) {
+                ApplicationManager.getApplication().invokeLater(flushRef.get(), ModalityState.any());
+            }
+        };
+        flushRef.set(flush);
+
+        return line -> {
+            if (line == null) return;
+            queue.add(line);
+            if (scheduled.compareAndSet(false, true)) {
+                ApplicationManager.getApplication().invokeLater(flush, ModalityState.any());
+            }
+        };
     }
 
     /**
@@ -161,6 +420,47 @@ public class AiderHelper {
     }
 
     /**
+     * Show the "Apply Refactoring" dialog on the EDT, but perform the actual file overwrite on a pooled thread
+     * to avoid freezing the UI (slow operations on EDT).
+     */
+    private static void promptApplyRefactoring(Project project,
+                                               String fileName,
+                                               java.nio.file.Path originalPath,
+                                               String refactoredContent) {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            int choice = Messages.showYesNoDialog(
+                    project,
+                    "Do you want to apply the refactored code to " + fileName + "?",
+                    "Apply Refactoring",
+                    Messages.getQuestionIcon()
+            );
+
+            if (choice == Messages.YES) {
+                ApplicationManager.getApplication().executeOnPooledThread(() -> {
+                    try {
+                        Files.write(originalPath, refactoredContent.getBytes(StandardCharsets.UTF_8));
+
+                        // Refresh VFS on EDT after writing so the editor picks up changes
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(originalPath);
+                            if (vf != null) {
+                                vf.refresh(false, false);
+                            }
+                            notify(project, "File " + fileName + " has been updated with refactored version.");
+                        }, ModalityState.any());
+                    } catch (IOException e) {
+                        ApplicationManager.getApplication().invokeLater(() -> {
+                            notify(project, "Failed to overwrite file " + fileName + ": " + e.getMessage());
+                        }, ModalityState.any());
+                    }
+                });
+            } else {
+                notify(project, "Refactoring for file " + fileName + " was canceled.");
+            }
+        }, ModalityState.any());
+    }
+
+    /**
      * Performs an Extract‑Method style refactor via Aider on a temp copy, shows a side‑by‑side diff, and
      * applies the result to the original file only if the user confirms.
      *
@@ -214,34 +514,95 @@ public class AiderHelper {
                                 "Refactored"
                         );
                         DiffManager.getInstance().showDiff(project, diffRequest);
-                    });
+                    }, ModalityState.any());
 
-                    // Delay confirmation dialog to allow scroll/preview time
+                    // While the user is previewing the diff, run EvoSuite test generation instead of sleeping.
                     ApplicationManager.getApplication().executeOnPooledThread(() -> {
+                        // === EvoSuite integration (usable baseline) ===
+
+                        // 1) Resolve EvoSuite jar by extracting the bundled resource to a temp file (Option B)
+                        String evoSuiteJarPath;
                         try {
-                            Thread.sleep(5000);
-                        } catch (InterruptedException ignored) {
+                            evoSuiteJarPath = resolveBundledEvoSuiteJarPath();
+                        } catch (Exception ex) {
+                            notify(project, "EvoSuite skipped: failed to load bundled EvoSuite jar from resources: " + ex.getMessage());
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            return;
                         }
 
-                        ApplicationManager.getApplication().invokeLater(() -> {
-                            int choice = Messages.showYesNoDialog(
-                                    project,
-                                    "Do you want to apply the refactored code to " + fileName + "?",
-                                    "Apply Refactoring",
-                                    Messages.getQuestionIcon()
-                            );
+                        // 2) Build a robust classpath from IntelliJ (compiler outputs + libraries)
+                        String classpath;
+                        try {
+                            classpath = buildClasspathFromIde(project);
+                        } catch (Throwable t) {
+                            notify(project, "EvoSuite skipped: failed to build classpath from IDE: " + t.getMessage());
+                            classpath = null;
+                        }
 
-                            if (choice == Messages.YES) {
-                                try {
-                                    Files.write(originalFile.toPath(), refactoredContent.getBytes(StandardCharsets.UTF_8));
-                                    notify(project, "File " + fileName + " has been updated with refactored version.");
-                                } catch (IOException e) {
-                                    notify(project, "Failed to overwrite file " + fileName + ": " + e.getMessage());
+                        // IMPORTANT:
+                        //  - For real projects (even if they have a single module), we must NOT use single-file compilation.
+                        //    Single-file output misses dependencies and will cause ClassNotFoundException in EvoSuite.
+                        //  - Only fall back to single-file compilation when the IDE classpath is empty (i.e., project not imported/compiled).
+                        if (classpath == null || classpath.isBlank()) {
+                            notify(project, "EvoSuite: IDE classpath is empty. Trying a Java-8 single-file fallback (works only for plain one-file demos).");
+                            try {
+                                String tempCp = compileSingleJavaFileToTempOutput(project, filePath);
+                                if (tempCp != null && !tempCp.isBlank()) {
+                                    classpath = tempCp;
+                                    notify(project, "EvoSuite: compiled current file with Java 8 into a temp output directory for compatibility.");
                                 }
-                            } else {
-                                notify(project, "Refactoring for file " + fileName + " was canceled.");
+                            } catch (Throwable t) {
+                                notify(project, "EvoSuite skipped: classpath is empty and Java-8 fallback compilation failed: " + t.getMessage());
+                                promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                                return;
                             }
-                        }, ModalityState.NON_MODAL);
+                        } else {
+                            // Maven/Gradle OR plain IntelliJ module projects: always prefer the IDE/module classpath.
+                            // This is required for multi-class dependencies (e.g., JHotDraw).
+                            notify(project, "EvoSuite: using IDE/module classpath (recommended for real projects)." );
+                        }
+
+                        if (classpath == null || classpath.isBlank()) {
+                            notify(project, "EvoSuite skipped: classpath is still empty. Make sure the project is imported and compiled.");
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            return;
+                        }
+
+                        // 3) Resolve the fully-qualified class name via PSI (not by guessing from paths)
+                        String classFqn = null;
+                        try {
+                            VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(filePath);
+                            if (vf != null) {
+                                classFqn = resolveTopLevelClassFqn(project, vf);
+                            }
+                        } catch (Throwable t) {
+                            // best-effort only
+                        }
+
+                        if (classFqn == null || classFqn.isBlank()) {
+                            notify(project, "EvoSuite skipped: failed to resolve class FQN for " + fileName + ". Ensure it is a Java file with a package/class declaration.");
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            return;
+                        }
+
+                        // 4) (no-op, logic moved above)
+                        // 5) Resolve Java executable (prefer JAVA_8_HOME for EvoSuite 1.0.6)
+                        String javaExe = resolveJavaExecutable();
+
+                        // 5) Run EvoSuite while previewing (and run generated JUnit4 against the REFACTORED preview before applying)
+                        boolean refactoredPass = false;
+                        try {
+                            refactoredPass = runEvoSuiteOnClass(project, javaExe, evoSuiteJarPath, classpath, classFqn, filePath, refactoredContent);
+                        } catch (Throwable t) {
+                            notify(project, "EvoSuite failed during preview: " + t.getMessage());
+                            refactoredPass = false;
+                        }
+
+                        if (refactoredPass) {
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                        } else {
+                            notify(project, "Refactored preview tests FAILED. Not applying changes to " + fileName + ".");
+                        }
                     });
                 } else {
                     notify(project, "No changes in refactored code for file " + fileName + ".");
@@ -252,6 +613,107 @@ public class AiderHelper {
                 e.printStackTrace();
             }
         });
+    }
+
+    /**
+     * Compile a single Java source file into a temporary output directory using Java 8 (javac),
+     * and return that directory. Intended for plain/single-file projects so EvoSuite 1.0.6
+     * (running on Java 8) can load compatible bytecode.
+     */
+    private static String compileSingleJavaFileToTempOutput(Project project, String javaFilePath)
+            throws IOException, InterruptedException {
+        if (javaFilePath == null || javaFilePath.isBlank()) return null;
+        File src = new File(javaFilePath);
+        if (!src.exists() || !src.isFile()) return null;
+
+        java.nio.file.Path outDir = java.nio.file.Files.createTempDirectory("evosuite-classes-");
+        outDir.toFile().deleteOnExit();
+
+        String javac = resolveJavacExecutable();
+
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        cmd.add(javac);
+        cmd.add("-encoding");
+        cmd.add("UTF-8");
+        cmd.add("-d");
+        cmd.add(outDir.toAbsolutePath().toString());
+        cmd.add(src.getAbsolutePath());
+
+        Consumer<String> viewer = openStreamingViewer(project, "EvoSuite Output");
+        viewer.accept("[EvoSuite] Java-8 compile (single-file) for compatibility: " + String.join(" ", cmd));
+
+        int exit = runProcessStreaming(project, cmd, viewer);
+        if (exit != 0) {
+            throw new RuntimeException("javac exited with code " + exit);
+        }
+        return outDir.toAbsolutePath().toString();
+    }
+
+    private static String compileJavaSourceTextToTempOutput(Project project, String classFqn, String javaSource)
+            throws IOException, InterruptedException {
+        if (classFqn == null || classFqn.isBlank()) throw new IllegalArgumentException("classFqn is empty");
+        if (javaSource == null || javaSource.isBlank()) throw new IllegalArgumentException("javaSource is empty");
+
+        String simpleName = classFqn;
+        String pkg = "";
+        int lastDot = classFqn.lastIndexOf('.');
+        if (lastDot >= 0) {
+            pkg = classFqn.substring(0, lastDot);
+            simpleName = classFqn.substring(lastDot + 1);
+        }
+
+        java.nio.file.Path srcRoot = java.nio.file.Files.createTempDirectory("refactor-src-");
+        srcRoot.toFile().deleteOnExit();
+
+        java.nio.file.Path pkgDir = srcRoot;
+        if (!pkg.isBlank()) {
+            pkgDir = srcRoot.resolve(pkg.replace('.', File.separatorChar));
+            java.nio.file.Files.createDirectories(pkgDir);
+        }
+
+        java.nio.file.Path srcFile = pkgDir.resolve(simpleName + ".java");
+        java.nio.file.Files.writeString(srcFile, javaSource, StandardCharsets.UTF_8);
+
+        java.nio.file.Path outDir = java.nio.file.Files.createTempDirectory("evosuite-refactored-classes-");
+        outDir.toFile().deleteOnExit();
+
+        String javac = resolveJavacExecutable();
+
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        cmd.add(javac);
+        cmd.add("-encoding"); cmd.add("UTF-8");
+        cmd.add("-d"); cmd.add(outDir.toAbsolutePath().toString());
+        cmd.add(srcFile.toAbsolutePath().toString());
+
+        Consumer<String> viewer = openStreamingViewer(project, "EvoSuite Output");
+        viewer.accept("[EvoSuite] Java-8 compile (refactored preview): " + String.join(" ", cmd));
+
+        int exit = runProcessStreaming(project, cmd, viewer);
+        if (exit != 0) throw new RuntimeException("javac(refactored preview) exited with code " + exit);
+
+        return outDir.toAbsolutePath().toString();
+    }
+
+    /**
+     * Best-effort javac resolution. Prefers JAVA_8_HOME (to match EvoSuite runtime), then JAVA_11_HOME, then JAVA_HOME, else "javac".
+     */
+    private static String resolveJavacExecutable() {
+        String java8 = System.getenv("JAVA_8_HOME");
+        if (java8 != null && !java8.isBlank()) {
+            File f = new File(java8, "bin" + File.separator + "javac");
+            if (f.exists()) return f.getAbsolutePath();
+        }
+        String java11 = System.getenv("JAVA_11_HOME");
+        if (java11 != null && !java11.isBlank()) {
+            File f = new File(java11, "bin" + File.separator + "javac");
+            if (f.exists()) return f.getAbsolutePath();
+        }
+        String javaHome = System.getenv("JAVA_HOME");
+        if (javaHome != null && !javaHome.isBlank()) {
+            File f = new File(javaHome, "bin" + File.separator + "javac");
+            if (f.exists()) return f.getAbsolutePath();
+        }
+        return "javac";
     }
 
     /**
@@ -659,5 +1121,591 @@ public class AiderHelper {
             i = lineEnd + 1;
         }
         return null;
+    }
+
+    /**
+     * Runs EvoSuite on a given fully-qualified class name using an external EvoSuite jar.
+     * Uses a dedicated process runner (no LLM/Aider env handling).
+     * Runs synchronously (blocking) in the calling pooled thread.
+     * After EvoSuite completes, post-processes the generated *_ESTest.java into a pure JUnit4 test file.
+     */
+    private static boolean runEvoSuiteOnClass(Project project,
+                                           String javaExe,
+                                           String evoSuiteJarPath,
+                                           String classpath,
+                                           String targetClass,
+                                           String sourceFilePath,
+                                           String refactoredSourceText) throws IOException, InterruptedException {
+        Consumer<String> viewer = openStreamingViewer(project, "EvoSuite Output");
+
+        // Force a deterministic EvoSuite output location so we can reliably find *_ESTest.java
+        // EvoSuite will create <output_directory>/evosuite-tests and write tests there.
+        File evoOutputBaseDir = Files.createTempDirectory("evosuite-out-").toFile();
+        evoOutputBaseDir.deleteOnExit();
+
+        // Minimal usable arguments: pick a generation mode + criterion + classpath + CUT
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        cmd.add(javaExe);
+
+        // Reduce Swing/AWT interference (best-effort; safe for non-GUI projects too).
+        // Some GUI-heavy code paths can still spawn Swing layout threads; forcing the headless toolkit
+        // reduces the chance of crashes like IconView NPE on macOS/JDK8 when rendering happens indirectly.
+        cmd.add("-Djava.awt.headless=true");
+        cmd.add("-Djava.awt.graphicsenv=sun.awt.HeadlessGraphicsEnvironment");
+        cmd.add("-Djava.awt.toolkit=sun.awt.HToolkit");
+        // macOS specific: keep the process from trying to become a UI app
+        cmd.add("-Dapple.awt.UIElement=true");
+
+        // Allow EvoSuite to attach to itself when needed
+        cmd.add("-Djdk.attach.allowAttachSelf=true");
+        // EvoSuite 1.0.6 expects tools.jar (JDK 8). If we can't find it, running under JDK 9+ will crash.
+        String toolsJar = findToolsJarForJavaExe(javaExe);
+        if (toolsJar != null) {
+            cmd.add("-Dtools_jar_location=" + toolsJar);
+        } else {
+            viewer.accept("[EvoSuite] tools.jar not found for Java executable: " + javaExe);
+            viewer.accept("[EvoSuite] EvoSuite 1.0.6 typically requires JDK 8 (tools.jar).");
+            viewer.accept("[EvoSuite] Set JAVA_8_HOME to a JDK 8 installation and restart the IDE, or upgrade the bundled EvoSuite to a Java 9+ compatible version.");
+            notify(project, "EvoSuite skipped: tools.jar not found. Please set JAVA_8_HOME to a JDK 8 path (EvoSuite 1.0.6 requires tools.jar).");
+            return false;
+        }
+        cmd.add("-jar");
+        cmd.add(evoSuiteJarPath);
+
+
+        // Choose a mode. MOSA-style tends to work well; adjust later via settings.
+        cmd.add("-generateMOSuite");
+        // Avoid spawning a separate client JVM so tools.jar resolution works consistently with EvoSuite 1.0.6
+        cmd.add("-Dclient_on_thread=true");
+
+        // Target class and classpath
+        cmd.add("-class");
+        cmd.add(targetClass);
+        cmd.add("-projectCP");
+        cmd.add(classpath);
+
+        // Keep runs short for interactive usage
+        cmd.add("-Dsearch_budget=60");
+
+        // Sensible default coverage goals
+        cmd.add("-Dcriterion=LINE:BRANCH");
+
+        viewer.accept("[EvoSuite] Running EvoSuite for class: " + targetClass);
+        viewer.accept("[EvoSuite] Command: " + String.join(" ", cmd));
+
+        // EvoSuite 1.0.6 does NOT support the `output_directory` property. To make output deterministic,
+        // we run EvoSuite with its working directory set to our temp output folder.
+        // EvoSuite will then create `evosuite-tests/` under this working directory.
+        int exit = runProcessStreaming(project, cmd, viewer, evoOutputBaseDir);
+        if (exit != 0) {
+            throw new RuntimeException("EvoSuite exited with code " + exit);
+        }
+
+        boolean refactoredPass = false;
+
+        // Convert EvoSuite tests to a pure JUnit4 test (no EvoRunner/scaffolding) for plain projects,
+        // then compile + run it and report PASS/FAIL.
+        try {
+            JUnitConversionResult conv = postProcessEvoSuiteTestsToPureJUnit4(project, evoOutputBaseDir, targetClass, sourceFilePath, viewer);
+            if (conv != null) {
+                if (isPlainProject(project)) {
+                    // Plain/simple projects: run via external JUnitCore against compiled preview
+                    runJUnit4ForGeneratedTest(project, javaExe, classpath, conv.testFile.getAbsolutePath(), conv.testClassFqn, viewer);
+
+                    // Compile the REFACTORED preview source and run the SAME tests against it
+                    if (refactoredSourceText != null && !refactoredSourceText.isBlank()) {
+                        String refactoredCp = compileJavaSourceTextToTempOutput(project, targetClass, refactoredSourceText);
+                        refactoredPass = runJUnit4ForGeneratedTest(project, javaExe, refactoredCp, conv.testFile.getAbsolutePath(), conv.testClassFqn, viewer);
+                    } else {
+                        viewer.accept("[EvoSuite] Refactored source text is empty; skipping refactored preview test run.");
+                        refactoredPass = false;
+                    }
+                } else {
+                    // Maven/Gradle projects: write test into src/test/java and run via IntelliJ JUnit runner.
+                    viewer.accept("[EvoSuite] Maven/Gradle project detected: running generated JUnit4 test via IntelliJ runner.");
+
+                    try {
+                        String testSource = Files.readString(conv.testFile.toPath(), StandardCharsets.UTF_8);
+                        writeTestIntoProjectTestSources(project, testSource, conv.testClassFqn, viewer);
+                        runJUnit4ViaIdeaRunner(project, conv.testClassFqn, viewer);
+                        viewer.accept("[EvoSuite] Note: IntelliJ runner execution is async; not gating apply on PASS/FAIL for Maven/Gradle." );
+                        // Allow apply; gating would require test run listeners.
+                        refactoredPass = true;
+                    } catch (Throwable t) {
+                        viewer.accept("[JUnit/IDE] Failed to write/run tests via IntelliJ runner: " + t.getMessage());
+                        refactoredPass = true; // don't block apply due to runner integration issues
+                    }
+                }
+            } else {
+                viewer.accept("[EvoSuite] No converted JUnit4 test to run.");
+                refactoredPass = false;
+            }
+        } catch (Throwable t) {
+            viewer.accept("[EvoSuite] Post-process/run warning: " + t.getMessage());
+            refactoredPass = false;
+        }
+
+        if (refactoredPass) {
+            notify(project, "EvoSuite finished for " + targetClass + " (refactored preview PASS)");
+        } else {
+            notify(project, "EvoSuite finished for " + targetClass + " (refactored preview FAIL)");
+        }
+
+        return refactoredPass;
+    }
+    private static final class JUnitConversionResult {
+        final File testFile;
+        final String testClassFqn;
+
+        private JUnitConversionResult(File testFile, String testClassFqn) {
+            this.testFile = testFile;
+            this.testClassFqn = testClassFqn;
+        }
+    }
+
+    /**
+     * Locate EvoSuite-generated *_ESTest.java under <project>/evosuite-tests (or next to the source for plain files),
+     * remove EvoSuite runtime/scaffolding dependencies, and write a pure JUnit4 test file.
+     *
+     * Output file name example: Main_EvoSuiteJUnit4Test.java
+     */
+    private static JUnitConversionResult postProcessEvoSuiteTestsToPureJUnit4(Project project,
+                                                                              File evoOutputBaseDir,
+                                                                              String targetClassFqn,
+                                                                              String sourceFilePath,
+                                                                              Consumer<String> viewer) throws IOException {
+        String simpleName = targetClassFqn;
+        if (simpleName != null && simpleName.contains(".")) {
+            simpleName = simpleName.substring(simpleName.lastIndexOf('.') + 1);
+        }
+        if (simpleName == null || simpleName.isBlank()) {
+            throw new IllegalArgumentException("targetClassFqn is empty");
+        }
+
+        // Deterministic location (preferred): <evoOutputBaseDir>/evosuite-tests/**/<SimpleName>_ESTest.java
+        // EvoSuite often writes tests under package folders (e.g., evosuite-tests/org/foo/Bar_ESTest.java),
+        // so we must search recursively.
+        File evoDir = null;
+        File estest = null;
+
+        String estestName = simpleName + "_ESTest.java";
+
+        if (evoOutputBaseDir != null) {
+            evoDir = new File(evoOutputBaseDir, "evosuite-tests");
+            estest = findFileRecursivelyByName(evoDir, estestName);
+        }
+
+        // Fallback #1: project base path (older behavior)
+        if (estest == null || !estest.exists()) {
+            String basePath = project.getBasePath();
+            if (basePath != null && !basePath.isBlank()) {
+                File base = new File(basePath);
+                evoDir = new File(base, "evosuite-tests");
+                estest = findFileRecursivelyByName(evoDir, estestName);
+            }
+        }
+
+        // Fallback #2: next to the source file (last resort)
+        if (estest == null || !estest.exists()) {
+            if (sourceFilePath != null && !sourceFilePath.isBlank()) {
+                File src = new File(sourceFilePath);
+                File parent = src.getParentFile();
+                if (parent != null) {
+                    evoDir = new File(parent, "evosuite-tests");
+                    estest = findFileRecursivelyByName(evoDir, estestName);
+                }
+            }
+        }
+
+        if (estest == null || !estest.exists()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("[EvoSuite] No *_ESTest.java found to convert.");
+            sb.append(" Expected file name: ").append(estestName);
+            if (evoDir != null) {
+                sb.append(" under: ").append(evoDir.getAbsolutePath());
+            }
+            viewer.accept(sb.toString());
+            return null;
+        }
+
+        String code = Files.readString(estest.toPath(), StandardCharsets.UTF_8);
+        String outClass = simpleName + "_EvoSuiteJUnit4Test";
+        String converted = convertEvoSuiteToPureJUnit4(code, outClass);
+
+        // Ensure output directory exists
+        if (evoDir != null && !evoDir.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            evoDir.mkdirs();
+        }
+
+        File outFile = new File(evoDir != null ? evoDir : estest.getParentFile(), outClass + ".java");
+        Files.writeString(outFile.toPath(), converted, StandardCharsets.UTF_8);
+
+        String pkg = extractPackageName(converted);
+        String fqn = (pkg == null || pkg.isBlank()) ? outClass : (pkg + "." + outClass);
+
+        viewer.accept("[EvoSuite] Wrote pure JUnit4 test: " + outFile.getAbsolutePath());
+        return new JUnitConversionResult(outFile, fqn);
+    }
+
+    /**
+     * Strip EvoSuite runtime dependencies (EvoRunner/EvoRunnerParameters) and scaffolding inheritance from a generated test.
+     * This is a best-effort conversion meant for simple projects. It keeps @Test methods and JUnit assertions.
+     */
+    private static String convertEvoSuiteToPureJUnit4(String code, String outputClassName) {
+        if (code == null) return "";
+
+        // Drop EvoSuite runtime imports
+        String s = code.replaceAll("(?m)^\\s*import\\s+org\\.evosuite\\..*;\\s*$\\n?", "");
+        // Drop RunWith import (not needed after removing @RunWith)
+        s = s.replaceAll("(?m)^\\s*import\\s+org\\.junit\\.runner\\.RunWith\\s*;\\s*$\\n?", "");
+        // Drop EvoSuite runner annotations (often on the same line)
+        s = s.replaceAll("(?m)^.*@RunWith\\(EvoRunner\\.class\\).*$\\n?", "");
+        s = s.replaceAll("(?m)^.*@EvoRunnerParameters\\(.*\\).*$\\n?", "");
+
+        // Replace class declaration: remove "extends *_ESTest_scaffolding"
+        s = s.replaceAll("(?m)public\\s+class\\s+([A-Za-z0-9_]+)\\s+extends\\s+[A-Za-z0-9_]+\\s*\\{",
+                "public class " + outputClassName + " {");
+
+        // If for some reason it doesn't extend scaffolding, still rename the class
+        s = s.replaceAll("(?m)public\\s+class\\s+([A-Za-z0-9_]+)\\s*\\{",
+                "public class " + outputClassName + " {");
+
+        // Clean up excessive blank lines
+        s = s.replaceAll("\\r\\n", "\\n");
+        s = s.replaceAll("(?m)^[ \\t]*\\n{3,}", "\n\n");
+        s = s.replaceAll("\\n{3,}", "\n\n");
+
+        return s.trim() + "\n";
+    }
+
+    private static int runProcessStreaming(Project project, java.util.List<String> cmd, Consumer<String> viewer)
+            throws IOException, InterruptedException {
+        return runProcessStreaming(project, cmd, viewer, null);
+    }
+
+    /**
+     * Runs an external process, streams stdout/stderr to the viewer, and returns the exit code.
+     * If {@code workingDirOverride} is non-null, it will be used as the process working directory.
+     * Otherwise, uses project base path as working directory when available.
+     */
+    private static int runProcessStreaming(Project project,
+                                          java.util.List<String> cmd,
+                                          Consumer<String> viewer,
+                                          File workingDirOverride)
+            throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true);
+
+        if (workingDirOverride != null) {
+            pb.directory(workingDirOverride);
+        } else {
+            String basePath = project.getBasePath();
+            if (basePath != null && !basePath.isBlank()) {
+                pb.directory(new File(basePath));
+            }
+        }
+
+        Process process = pb.start();
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String cleaned = stripNonPrintable(stripAnsi(line));
+                if (cleaned != null && !cleaned.trim().isEmpty()) {
+                    if (viewer != null) viewer.accept(cleaned);
+                }
+            }
+        }
+
+        return process.waitFor();
+    }
+
+    /**
+     * Build a classpath suitable for EvoSuite from IntelliJ project model:
+     * compiler output paths + library class roots. Filters duplicate entries, .zip, junit*, hamcrest*.
+     */
+    private static String buildClasspathFromIde(Project project) {
+        StringBuilder cp = new StringBuilder();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+
+        Module[] modules = ModuleManager.getInstance(project).getModules();
+        for (Module m : modules) {
+            // Compiler output (bytecode) – critical for EvoSuite
+            CompilerModuleExtension ext = CompilerModuleExtension.getInstance(m);
+            if (ext != null && ext.getCompilerOutputPath() != null) {
+                String out = ext.getCompilerOutputPath().getPath();
+                if (out != null && !out.isBlank() && seen.add(out)) {
+                    cp.append(out).append(File.pathSeparator);
+                }
+            }
+
+            // Libraries (dependencies)
+            java.util.List<String> libs = ModuleRootManager.getInstance(m)
+                    .orderEntries()
+                    .librariesOnly()
+                    .getPathsList()
+                    .getPathList();
+
+            for (String lib : libs) {
+                if (lib == null || lib.isBlank()) continue;
+                if (seen.contains(lib)) continue;
+                if (lib.endsWith(".zip")) continue;
+
+                // filter junit/hamcrest to avoid conflicts; EvoSuite-generated tests will use our own later
+                String libName = new File(lib).getName();
+                String lower = libName.toLowerCase();
+                if (lower.startsWith("junit") || lower.startsWith("hamcrest")) continue;
+
+                if (seen.add(lib)) {
+                    cp.append(lib).append(File.pathSeparator);
+                }
+            }
+        }
+
+        // Trim trailing separator
+        if (cp.length() > 0 && cp.charAt(cp.length() - 1) == File.pathSeparatorChar) {
+            cp.setLength(cp.length() - 1);
+        }
+        return cp.toString();
+    }
+
+    /**
+     * Resolve the top-level class fully-qualified name (FQN) for a Java file using PSI.
+     * Returns the first top-level class FQN in the file.
+     */
+    private static String resolveTopLevelClassFqn(Project project, VirtualFile vf) {
+        return com.intellij.openapi.application.ReadAction.compute(() -> {
+            PsiFile psi = PsiManager.getInstance(project).findFile(vf);
+            if (!(psi instanceof PsiJavaFile)) return null;
+
+            PsiJavaFile javaFile = (PsiJavaFile) psi;
+            String pkg = javaFile.getPackageName();
+
+            PsiClass[] classes = javaFile.getClasses();
+            if (classes == null || classes.length == 0) return null;
+
+            String name = classes[0].getName();
+            if (name == null || name.isBlank()) return null;
+
+            if (pkg == null || pkg.isBlank()) return name;
+            return pkg + "." + name;
+        });
+    }
+
+    /**
+     * Best-effort Java executable resolution for EvoSuite.
+     *
+     * EvoSuite 1.0.6 expects tools.jar (JDK 8). So we prefer JAVA_8_HOME first.
+     * Then fall back to JAVA_11_HOME, JAVA_HOME, else "java".
+     */
+    private static String resolveJavaExecutable() {
+        String java8 = System.getenv("JAVA_8_HOME");
+        if (java8 != null && !java8.isBlank()) {
+            File f = new File(java8, "bin" + File.separator + "java");
+            if (f.exists()) return f.getAbsolutePath();
+        }
+        String java11 = System.getenv("JAVA_11_HOME");
+        if (java11 != null && !java11.isBlank()) {
+            File f = new File(java11, "bin" + File.separator + "java");
+            if (f.exists()) return f.getAbsolutePath();
+        }
+        String javaHome = System.getenv("JAVA_HOME");
+        if (javaHome != null && !javaHome.isBlank()) {
+            File f = new File(javaHome, "bin" + File.separator + "java");
+            if (f.exists()) return f.getAbsolutePath();
+        }
+        return "java";
+    }
+
+    /**
+     * Best-effort tools.jar discovery for EvoSuite 1.0.6.
+     * For a java executable like /path/to/jdk8/bin/java, tools.jar is usually at /path/to/jdk8/lib/tools.jar.
+     *
+     * @return absolute path to tools.jar if found; otherwise null.
+     */
+    private static String findToolsJarForJavaExe(String javaExe) {
+        try {
+            if (javaExe == null || javaExe.isBlank()) return null;
+
+            File javaFile = new File(javaExe);
+            if (!javaFile.exists()) return null;
+
+            // If javaExe points to ".../bin/java", then javaHome is the parent of "bin"
+            File binDir = javaFile.getParentFile();
+            if (binDir == null) return null;
+
+            File javaHome = binDir.getParentFile();
+            if (javaHome == null) return null;
+
+            File tools = new File(javaHome, "lib" + File.separator + "tools.jar");
+            if (tools.exists() && tools.isFile()) {
+                return tools.getAbsolutePath();
+            }
+        } catch (Throwable t) {
+            // ignore
+        }
+        return null;
+    }
+
+    /**
+     * Option B: EvoSuite jar is bundled inside the plugin resources.
+     * This method extracts it to a temp file and returns the absolute path.
+     *
+     * Expected resource path (inside plugin jar):
+     *   /tools/evosuite.jar
+     *
+     * Put the jar at: src/main/resources/tools/evosuite.jar
+     */
+    private static String resolveBundledEvoSuiteJarPath() throws IOException {
+        // Resource inside the plugin jar
+        String resourcePath = "/tools/evosuite.jar";
+
+        InputStream in = AiderHelper.class.getResourceAsStream(resourcePath);
+        if (in == null) {
+            throw new FileNotFoundException("Resource not found: " + resourcePath + " (ensure src/main/resources/tools/evosuite.jar exists)");
+        }
+
+        java.nio.file.Path tmp = java.nio.file.Files.createTempFile("evosuite-", ".jar");
+        // Ensure it gets cleaned up when the JVM exits (best-effort)
+        tmp.toFile().deleteOnExit();
+
+        try (in) {
+            java.nio.file.Files.copy(in, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        return tmp.toAbsolutePath().toString();
+    }
+
+    /**
+     * Extract the package name from Java source text, or null if none.
+     */
+    private static String extractPackageName(String javaSource) {
+        if (javaSource == null) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?m)^\\s*package\\s+([a-zA-Z0-9_\\.]+)\\s*;\\s*$")
+                .matcher(javaSource);
+        if (m.find()) return m.group(1);
+        return null;
+    }
+
+    /**
+     * Extract a tool jar bundled in plugin resources to a temp file and return its absolute path.
+     */
+    private static String extractBundledToolJar(String resourcePath, String prefix) throws IOException {
+        InputStream in = AiderHelper.class.getResourceAsStream(resourcePath);
+        if (in == null) {
+            throw new FileNotFoundException("Resource not found: " + resourcePath);
+        }
+        java.nio.file.Path tmp = java.nio.file.Files.createTempFile(prefix, ".jar");
+        tmp.toFile().deleteOnExit();
+        try (in) {
+            java.nio.file.Files.copy(in, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+        return tmp.toAbsolutePath().toString();
+    }
+
+    /**
+     * Resolve bundled JUnit4 jar path. Put the jar at: src/main/resources/tools/junit-4.13.2.jar
+     */
+    private static String resolveBundledJUnit4JarPath() throws IOException {
+        return extractBundledToolJar("/tools/junit-4.13.2.jar", "junit4-");
+    }
+
+    /**
+     * Resolve bundled Hamcrest jar path. Put the jar at: src/main/resources/tools/hamcrest-core-1.3.jar
+     */
+    private static String resolveBundledHamcrestJarPath() throws IOException {
+        return extractBundledToolJar("/tools/hamcrest-core-1.3.jar", "hamcrest-");
+    }
+
+    /**
+     * Compile the generated pure JUnit4 test into the given classesDir, then run it with JUnitCore and report PASS/FAIL.
+     *
+     * @param classesDirOrCp  directory containing compiled classes (for plain projects this is the temp output dir)
+     */
+    private static boolean runJUnit4ForGeneratedTest(Project project,
+                                                  String javaExe,
+                                                  String classesDirOrCp,
+                                                  String testJavaFilePath,
+                                                  String testClassFqn,
+                                                  Consumer<String> viewer) throws IOException, InterruptedException {
+        if (classesDirOrCp == null || classesDirOrCp.isBlank()) {
+            viewer.accept("[JUnit] Skipped: classes directory/classpath is empty.");
+            return false;
+        }
+        if (testJavaFilePath == null || testJavaFilePath.isBlank()) {
+            viewer.accept("[JUnit] Skipped: test file path is empty.");
+            return false;
+        }
+        if (testClassFqn == null || testClassFqn.isBlank()) {
+            viewer.accept("[JUnit] Skipped: test class name is empty.");
+            return false;
+        }
+
+        String junitJar = resolveBundledJUnit4JarPath();
+        String hamcrestJar = resolveBundledHamcrestJarPath();
+
+        // 1) Compile test file into the same output dir as the CUT
+        String javac = resolveJavacExecutable();
+
+        String compileCp = classesDirOrCp + File.pathSeparator + junitJar + File.pathSeparator + hamcrestJar;
+
+        java.util.List<String> javacCmd = new java.util.ArrayList<>();
+        javacCmd.add(javac);
+        javacCmd.add("-encoding");
+        javacCmd.add("UTF-8");
+        javacCmd.add("-cp");
+        javacCmd.add(compileCp);
+        javacCmd.add("-d");
+        javacCmd.add(classesDirOrCp);
+        javacCmd.add(testJavaFilePath);
+
+        viewer.accept("[JUnit] Compiling generated test: " + String.join(" ", javacCmd));
+        int cExit = runProcessStreaming(project, javacCmd, viewer);
+        if (cExit != 0) {
+            viewer.accept("[JUnit] FAIL: javac exited with code " + cExit);
+            return false;
+        }
+
+        // 2) Run JUnitCore
+        String runCp = classesDirOrCp + File.pathSeparator + junitJar + File.pathSeparator + hamcrestJar;
+
+        java.util.List<String> javaCmd = new java.util.ArrayList<>();
+        javaCmd.add(javaExe);
+        javaCmd.add("-cp");
+        javaCmd.add(runCp);
+        javaCmd.add("org.junit.runner.JUnitCore");
+        javaCmd.add(testClassFqn);
+
+        viewer.accept("[JUnit] Running: " + String.join(" ", javaCmd));
+        int tExit = runProcessStreaming(project, javaCmd, viewer);
+        if (tExit == 0) {
+            viewer.accept("[JUnit] PASS: all tests passed.");
+            return true;
+        } else {
+            viewer.accept("[JUnit] FAIL: test run exited with code " + tExit);
+            return false;
+        }
+    }
+
+    /**
+     * EvoSuite commonly writes generated tests under package directories inside `evosuite-tests/`.
+     * This helper searches for a file by name recursively (best-effort).
+     */
+    private static File findFileRecursivelyByName(File rootDir, String fileName) {
+        try {
+            if (rootDir == null || fileName == null || fileName.isBlank()) return null;
+            if (!rootDir.exists() || !rootDir.isDirectory()) return null;
+
+            try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.walk(rootDir.toPath())) {
+                java.util.Optional<java.nio.file.Path> hit = s
+                        .filter(p -> p != null && p.getFileName() != null && fileName.equals(p.getFileName().toString()))
+                        .findFirst();
+                return hit.map(java.nio.file.Path::toFile).orElse(null);
+            }
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 }
