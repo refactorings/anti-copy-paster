@@ -81,8 +81,14 @@ intellij {
     type.set(properties("platformType"))
     downloadSources.set(properties("platformDownloadSources").toBoolean())
     updateSinceUntilBuild.set(true)
-    plugins.set(properties("platformPlugins").split(',').map(String::trim).filter(String::isNotEmpty))
-    plugins.add("terminal")
+    val basePlugins = properties("platformPlugins")
+        .split(',')
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+
+    // Ensure required bundled plugins are present in the runIde sandbox.
+    // NOTE: For the Gradle IntelliJ Plugin 1.x, Java support is provided by the bundled plugin id "com.intellij.java".
+    plugins.set((basePlugins + listOf("terminal", "com.intellij.java", "JUnit")).distinct())
 }
 
 tasks {
@@ -115,4 +121,3 @@ tasks {
         token = config("publishToken")
     }
 }
-
