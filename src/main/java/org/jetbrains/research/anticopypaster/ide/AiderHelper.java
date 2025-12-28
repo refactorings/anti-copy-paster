@@ -46,7 +46,6 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
-import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
@@ -649,7 +648,7 @@ public class AiderHelper {
         return outDir.toAbsolutePath().toString();
     }
 
-    private static String compileJavaSourceTextToTempOutput(Project project, String classFqn, String javaSource)
+    private static String compileJavaSourceTextToTempOutput(Project project, String classFqn, String javaSource, String projectCp)
             throws IOException, InterruptedException {
         if (classFqn == null || classFqn.isBlank()) throw new IllegalArgumentException("classFqn is empty");
         if (javaSource == null || javaSource.isBlank()) throw new IllegalArgumentException("javaSource is empty");
@@ -682,6 +681,10 @@ public class AiderHelper {
         java.util.List<String> cmd = new java.util.ArrayList<>();
         cmd.add(javac);
         cmd.add("-encoding"); cmd.add("UTF-8");
+        if (projectCp != null && !projectCp.isBlank()) {
+            cmd.add("-cp");
+            cmd.add(projectCp);
+        }
         cmd.add("-d"); cmd.add(outDir.toAbsolutePath().toString());
         cmd.add(srcFile.toAbsolutePath().toString());
 
@@ -1151,8 +1154,8 @@ public class AiderHelper {
         // Some GUI-heavy code paths can still spawn Swing layout threads; forcing the headless toolkit
         // reduces the chance of crashes like IconView NPE on macOS/JDK8 when rendering happens indirectly.
         cmd.add("-Djava.awt.headless=true");
-        cmd.add("-Djava.awt.graphicsenv=sun.awt.HeadlessGraphicsEnvironment");
-        cmd.add("-Djava.awt.toolkit=sun.awt.HToolkit");
+//        cmd.add("-Djava.awt.graphicsenv=sun.awt.HeadlessGraphicsEnvironment");
+//        cmd.add("-Djava.awt.toolkit=sun.awt.HToolkit");
         // macOS specific: keep the process from trying to become a UI app
         cmd.add("-Dapple.awt.UIElement=true");
 
@@ -1210,12 +1213,21 @@ public class AiderHelper {
             if (conv != null) {
                 if (isPlainProject(project)) {
                     // Plain/simple projects: run via external JUnitCore against compiled preview
-                    runJUnit4ForGeneratedTest(project, javaExe, classpath, conv.testFile.getAbsolutePath(), conv.testClassFqn, viewer);
+                    runJUnit4ForGeneratedTest(project, javaExe, classpath, null, conv.testFile.getAbsolutePath(), conv.testClassFqn, viewer);
+
+                    // Also write the generated test into the project so the user can see it under src/test/java
+                    try {
+                        String testSource = Files.readString(conv.testFile.toPath(), StandardCharsets.UTF_8);
+                        writeTestIntoProjectTestSources(project, testSource, conv.testClassFqn, viewer);
+                    } catch (Throwable t) {
+                        if (viewer != null) viewer.accept("[JUnit/IDE] Warning: failed to write generated test into project: " + t.getMessage());
+                    }
 
                     // Compile the REFACTORED preview source and run the SAME tests against it
                     if (refactoredSourceText != null && !refactoredSourceText.isBlank()) {
-                        String refactoredCp = compileJavaSourceTextToTempOutput(project, targetClass, refactoredSourceText);
-                        refactoredPass = runJUnit4ForGeneratedTest(project, javaExe, refactoredCp, conv.testFile.getAbsolutePath(), conv.testClassFqn, viewer);
+                        String refactoredOut = compileJavaSourceTextToTempOutput(project, targetClass, refactoredSourceText, classpath);
+// Put refactored preview output FIRST so it overrides the project's original bytecode
+                        refactoredPass = runJUnit4ForGeneratedTest(project, javaExe, classpath, refactoredOut, conv.testFile.getAbsolutePath(), conv.testClassFqn, viewer);
                     } else {
                         viewer.accept("[EvoSuite] Refactored source text is empty; skipping refactored preview test run.");
                         refactoredPass = false;
@@ -1619,72 +1631,82 @@ public class AiderHelper {
         return extractBundledToolJar("/tools/hamcrest-core-1.3.jar", "hamcrest-");
     }
 
-    /**
-     * Compile the generated pure JUnit4 test into the given classesDir, then run it with JUnitCore and report PASS/FAIL.
-     *
-     * @param classesDirOrCp  directory containing compiled classes (for plain projects this is the temp output dir)
-     */
+
     private static boolean runJUnit4ForGeneratedTest(Project project,
-                                                  String javaExe,
-                                                  String classesDirOrCp,
-                                                  String testJavaFilePath,
-                                                  String testClassFqn,
-                                                  Consumer<String> viewer) throws IOException, InterruptedException {
-        if (classesDirOrCp == null || classesDirOrCp.isBlank()) {
-            viewer.accept("[JUnit] Skipped: classes directory/classpath is empty.");
+                                                     String javaExe,
+                                                     String projectCp,
+                                                     String overrideFirstCp,
+                                                     String testJavaFilePath,
+                                                     String testClassFqn,
+                                                     Consumer<String> viewer) throws IOException, InterruptedException {
+        if (projectCp == null || projectCp.isBlank()) {
+            if (viewer != null) viewer.accept("[JUnit] Skipped: project classpath is empty.");
             return false;
         }
         if (testJavaFilePath == null || testJavaFilePath.isBlank()) {
-            viewer.accept("[JUnit] Skipped: test file path is empty.");
+            if (viewer != null) viewer.accept("[JUnit] Skipped: test file path is empty.");
             return false;
         }
         if (testClassFqn == null || testClassFqn.isBlank()) {
-            viewer.accept("[JUnit] Skipped: test class name is empty.");
+            if (viewer != null) viewer.accept("[JUnit] Skipped: test class name is empty.");
             return false;
         }
 
         String junitJar = resolveBundledJUnit4JarPath();
         String hamcrestJar = resolveBundledHamcrestJarPath();
-
-        // 1) Compile test file into the same output dir as the CUT
         String javac = resolveJavacExecutable();
 
-        String compileCp = classesDirOrCp + File.pathSeparator + junitJar + File.pathSeparator + hamcrestJar;
+        java.nio.file.Path testOutDir = java.nio.file.Files.createTempDirectory("evosuite-junit-classes-");
+        testOutDir.toFile().deleteOnExit();
+
+        StringBuilder compileCp = new StringBuilder();
+        if (overrideFirstCp != null && !overrideFirstCp.isBlank()) {
+            compileCp.append(overrideFirstCp).append(File.pathSeparator);
+        }
+        compileCp.append(projectCp)
+                .append(File.pathSeparator).append(junitJar)
+                .append(File.pathSeparator).append(hamcrestJar);
 
         java.util.List<String> javacCmd = new java.util.ArrayList<>();
         javacCmd.add(javac);
         javacCmd.add("-encoding");
         javacCmd.add("UTF-8");
         javacCmd.add("-cp");
-        javacCmd.add(compileCp);
+        javacCmd.add(compileCp.toString());
         javacCmd.add("-d");
-        javacCmd.add(classesDirOrCp);
+        javacCmd.add(testOutDir.toAbsolutePath().toString());
         javacCmd.add(testJavaFilePath);
 
-        viewer.accept("[JUnit] Compiling generated test: " + String.join(" ", javacCmd));
+        if (viewer != null) viewer.accept("[JUnit] Compiling generated test: " + String.join(" ", javacCmd));
         int cExit = runProcessStreaming(project, javacCmd, viewer);
         if (cExit != 0) {
-            viewer.accept("[JUnit] FAIL: javac exited with code " + cExit);
+            if (viewer != null) viewer.accept("[JUnit] FAIL: javac exited with code " + cExit);
             return false;
         }
 
-        // 2) Run JUnitCore
-        String runCp = classesDirOrCp + File.pathSeparator + junitJar + File.pathSeparator + hamcrestJar;
+        StringBuilder runCp = new StringBuilder();
+        runCp.append(testOutDir.toAbsolutePath().toString()).append(File.pathSeparator);
+        if (overrideFirstCp != null && !overrideFirstCp.isBlank()) {
+            runCp.append(overrideFirstCp).append(File.pathSeparator);
+        }
+        runCp.append(projectCp)
+                .append(File.pathSeparator).append(junitJar)
+                .append(File.pathSeparator).append(hamcrestJar);
 
         java.util.List<String> javaCmd = new java.util.ArrayList<>();
         javaCmd.add(javaExe);
         javaCmd.add("-cp");
-        javaCmd.add(runCp);
+        javaCmd.add(runCp.toString());
         javaCmd.add("org.junit.runner.JUnitCore");
         javaCmd.add(testClassFqn);
 
-        viewer.accept("[JUnit] Running: " + String.join(" ", javaCmd));
+        if (viewer != null) viewer.accept("[JUnit] Running: " + String.join(" ", javaCmd));
         int tExit = runProcessStreaming(project, javaCmd, viewer);
         if (tExit == 0) {
-            viewer.accept("[JUnit] PASS: all tests passed.");
+            if (viewer != null) viewer.accept("[JUnit] PASS: all tests passed.");
             return true;
         } else {
-            viewer.accept("[JUnit] FAIL: test run exited with code " + tExit);
+            if (viewer != null) viewer.accept("[JUnit] FAIL: test run exited with code " + tExit);
             return false;
         }
     }
