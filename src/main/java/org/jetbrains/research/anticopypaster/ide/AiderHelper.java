@@ -280,9 +280,9 @@ public class AiderHelper {
             ToolWindowManager twm = ToolWindowManager.getInstance(project);
             ToolWindow toolWindow = twm.getToolWindow(ToolWindowId.RUN);
             if (toolWindow == null) {
-                toolWindow = twm.getToolWindow("Clone Output");
+                toolWindow = twm.getToolWindow("Output");
                 if (toolWindow == null) {
-                    toolWindow = twm.registerToolWindow(RegisterToolWindowTask.notClosable("Clone Output"));
+                    toolWindow = twm.registerToolWindow(RegisterToolWindowTask.notClosable("Output"));
                 }
             }
 
@@ -389,7 +389,7 @@ public class AiderHelper {
                             "Please detect any clones in this file. Response with either 'clones found' or 'no clones found'", provider, model, apikey, apiBase, apiVersion, viewer);
 
                     if (output != null && containsDuplicateHint(output)) {
-                        System.out.println("===> Clone Output:\n" + output);
+                        System.out.println("===> Output:\n" + output);
                         ApplicationManager.getApplication().invokeLater(() -> {
                             int choice = Messages.showYesNoDialog(
                                     project,
@@ -982,7 +982,7 @@ public class AiderHelper {
                 ToolWindowManager twm = ToolWindowManager.getInstance(project);
                 ToolWindow toolWindow = twm.getToolWindow(ToolWindowId.RUN);
                 if (toolWindow == null) {
-                    toolWindow = twm.getToolWindow("Clone Output");
+                    toolWindow = twm.getToolWindow("Output");
                 }
                 if (toolWindow == null) {
                     return; // Nothing to close
@@ -1032,7 +1032,7 @@ public class AiderHelper {
                 ToolWindowManager twm = ToolWindowManager.getInstance(project);
                 ToolWindow[] tws = new ToolWindow[] {
                         twm.getToolWindow(ToolWindowId.RUN),
-                        twm.getToolWindow("Clone Output")
+                        twm.getToolWindow("Output")
                 };
                 for (ToolWindow tw : tws) {
                     if (tw == null) continue;
