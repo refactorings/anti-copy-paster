@@ -189,6 +189,54 @@ If the response takes longer than 30 seconds, consider using a smaller model or 
 
 By integrating Aider, AntiCopyPaster makes it easier to manage code clones while improving code readability and maintainability.
 
+## EvoSuite Integration
+
+AntiCopyPaster integrates with **EvoSuite** to automatically generate unit tests after refactoring, ensuring that the extracted methods preserve program behavior.
+
+### Java Version Requirement (Important)
+
+EvoSuite **requires Java 8 (JDK 8)** to run correctly. This is a strict requirement due to EvoSuite's dependency on `tools.jar`, which is only available in JDK 8.
+
+- Your **IntelliJ IDEA project can use Java 11 or Java 17**.
+- **Only EvoSuite execution** depends on Java 8.
+- AntiCopyPaster will automatically use Java 8 if the environment variable `JAVA_8_HOME` is set.
+
+### Installing Java 8
+
+1. Download and install **JDK 8** from one of the following sources:
+   - Eclipse Temurin (Adoptium): https://adoptium.net/temurin/releases/?version=8
+   - Oracle JDK 8 (requires Oracle account)
+
+2. Set the environment variable `JAVA_8_HOME` to the JDK 8 installation path.
+
+**macOS / Linux (bash/zsh):**
+```bash
+export JAVA_8_HOME=/path/to/jdk8
+```
+
+**Windows (PowerShell):**
+```powershell
+setx JAVA_8_HOME "C:\Path\To\JDK8"
+```
+
+Restart IntelliJ IDEA after setting the variable.
+
+### How EvoSuite Is Used
+
+When a refactoring is generated:
+1. AntiCopyPaster invokes EvoSuite as an **external process** using Java 8.
+2. EvoSuite generates JUnit 4 test cases for the refactored class.
+3. Generated tests are post-processed.
+4. Tests can be inspected, executed, or modified directly inside IntelliJ IDEA.
+
+If Java 8 is not configured correctly, EvoSuite execution will fail.
+
+### Notes and Limitations
+
+- EvoSuite version used: **1.0.6**
+- Generated tests may require minor manual cleanup in rare cases.
+- **Hanging issue**: In some projects, EvoSuite may hang or take a very long time during test generation (e.g., due to complex static initializers, GUI-related code, or heavy reflection usage).  
+  To mitigate this, AntiCopyPaster enforces strict time limits on EvoSuite execution. If a timeout occurs, the EvoSuite process is automatically terminated and **restarted in an iterative manner**, for up to **5 retry rounds**.
 
 ### How to cite?
 Please, use the following bibtex entry:
