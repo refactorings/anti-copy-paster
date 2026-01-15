@@ -20,6 +20,13 @@ AntiCopyPaster requires IntelliJ IDEA version 2024.1.7 to work. To install the p
 
 ## Technical Information
 
+### Expected Project Structure (Example)
+
+The following figure shows the expected **high-level project structure** when using JHotDraw.
+For correct analysis, the project should follow this general layout.
+
+![Example JHotDraw project structure](images/jhotdraw-project-structure.png)
+
 ### How It Works
 
 The plugin monitors the copying and pasting that takes place inside the IDE. As soon as a code fragment is pasted,
@@ -224,7 +231,7 @@ Restart IntelliJ IDEA after setting the variable.
 ### How EvoSuite Is Used
 
 When a refactoring is generated:
-1. AntiCopyPaster invokes EvoSuite as an **external process** using Java 8.
+1. The tool invokes EvoSuite as an **external process** using Java 8.
 2. EvoSuite generates JUnit 4 test cases for the refactored class.
 3. Generated tests are post-processed.
 4. Tests can be inspected, executed, or modified directly inside IntelliJ IDEA.
@@ -236,7 +243,8 @@ If Java 8 is not configured correctly, EvoSuite execution will fail.
 - EvoSuite version used: **1.0.6**
 - Generated tests may require minor manual cleanup in rare cases.
 - **Hanging issue**: In some projects, EvoSuite may hang or take a very long time during test generation (e.g., due to complex static initializers, GUI-related code, or heavy reflection usage).  
-  To mitigate this, AntiCopyPaster enforces strict time limits on EvoSuite execution. If a timeout occurs, the EvoSuite process is automatically terminated and **restarted in an iterative manner**, for up to **5 retry rounds**.
+  To mitigate this, the tool enforces strict time limits on EvoSuite execution. If a timeout occurs, the EvoSuite process is automatically terminated and **restarted in an iterative manner**, for up to **5 retry rounds**.
+-
 
 ### How to cite?
 Please, use the following bibtex entry:
