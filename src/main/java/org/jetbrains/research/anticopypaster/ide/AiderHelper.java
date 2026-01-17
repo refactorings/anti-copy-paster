@@ -45,6 +45,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Locale;
 
 public class AiderHelper {
 
@@ -424,16 +425,21 @@ public class AiderHelper {
         if (provider.equals("Ollama")) {
             model = "ollama_chat/" + model;
         }
+
+        // Build args list to allow insertion of --no-browser after aiderPath
+        java.util.ArrayList<String> args = new java.util.ArrayList<>();
+        args.add(aiderPath);
+        args.add("--no-browser");
+        args.add("--model"); args.add(model);
+        args.add("--yes");
+        args.add("--message"); args.add(prompt);
+        args.add(filePath);
         return runCommand(project, provider,
                 apikey,
                 apiBase,
                 apiVersion,
                 viewer,
-                aiderPath,
-                "--model", model,
-                "--yes",
-                "--message", prompt,
-                filePath
+                args.toArray(new String[0])
         );
     }
 
@@ -1613,11 +1619,17 @@ public class AiderHelper {
                     // Write candidate to temp file for compile/test steps
                     Files.writeString(tempFile.toPath(), rr.newSource, StandardCharsets.UTF_8);
 
-                    // 3) Compile (tool)
-                    String projectDir = project.getBasePath() != null ? project.getBasePath() : ".";
-                    String compileLog = runMavenCapture(projectDir, viewer,
-                            "mvn", "-q", "-DskipTests", "compile");
+                    // 3) Compile (tool) — detect build root + tool (Maven/Gradle/Ant)
+                    File buildRoot = findBuildRoot(project);
+                    BuildTool tool = detectBuildTool(buildRoot);
+                    viewer.accept("[BUILD] root=" + (buildRoot == null ? "(null)" : buildRoot.getAbsolutePath()) + ", tool=" + tool);
+
+                    String compileLog = runBuildCapture(buildRoot, tool, viewer, BuildPhase.COMPILE);
                     compile.CompileResult cr = compAgent.analyze(fileName, compileLog);
+
+                    if (cr != null) {
+                        cr.buildTool = tool.toString().toLowerCase(Locale.ROOT);
+                    }
 
                     if (cr == null || !"compile_ok".equals(cr.status)) {
                         viewer.accept("[COMPILE] status=" + (cr == null ? "null" : cr.status));
@@ -1630,9 +1642,10 @@ public class AiderHelper {
                     viewer.accept("[COMPILE] OK");
 
                     // 4) Test (tool)
+                    String projectDir = (buildRoot != null ? buildRoot.getAbsolutePath() : (project.getBasePath() != null ? project.getBasePath() : "."));
+
                     testing.TestRunRequest treq = new testing.TestRunRequest(projectDir, "all", null, false);
-                    Function<testing.TestRunRequest, String> testRunner = (req) ->
-                            runMavenCapture(projectDir, viewer, "mvn", "-q", "test");
+                    Function<testing.TestRunRequest, String> testRunner = (req) -> runBuildCapture(buildRoot, tool, viewer, BuildPhase.TEST);
 
                     testing.TestResult tr = testAgent.runAndSummarize(treq, testRunner, llmCaller, originalContent, rr.newSource);
 
@@ -1726,15 +1739,15 @@ public class AiderHelper {
     }
 
     /**
-     * Runs a Maven command in `projectDir`, captures stdout+stderr as a single string, and optionally streams to viewer.
+     * Runs a process in `workingDir`, captures stdout+stderr as a single string, and optionally streams to viewer.
      */
-    private static String runMavenCapture(String projectDir, Consumer<String> viewer, String... command) {
+    private static String runProcessCapture(File workingDir, Consumer<String> viewer, String... command) {
         StringBuilder out = new StringBuilder();
         try {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(true);
-            if (projectDir != null && !projectDir.isBlank()) {
-                pb.directory(new File(projectDir));
+            if (workingDir != null && workingDir.isDirectory()) {
+                pb.directory(workingDir);
             }
             // Avoid ANSI noise in logs
             pb.environment().put("NO_COLOR", "1");
@@ -1753,10 +1766,120 @@ public class AiderHelper {
             }
             p.waitFor();
         } catch (Exception e) {
-            out.append("[MAVEN_EXCEPTION] ").append(e.getClass().getSimpleName()).append(": ")
+            out.append("[PROCESS_EXCEPTION] ").append(e.getClass().getSimpleName()).append(": ")
                     .append(e.getMessage() == null ? "" : e.getMessage()).append("\n");
         }
         return out.toString();
+    }
+
+    private enum BuildTool { MAVEN, GRADLE, ANT, UNKNOWN }
+    private enum BuildPhase { COMPILE, TEST }
+
+    /**
+     * Best-effort build root discovery.
+     * Tries: project base path, then walks up to find pom.xml / build.gradle(.kts) / build.xml.
+     */
+    private static File findBuildRoot(Project project) {
+        String base = project != null ? project.getBasePath() : null;
+        File start = (base == null || base.isBlank()) ? null : new File(base);
+        if (start == null) return null;
+
+        // If user opened a subdir, walk up a few levels to find a build file.
+        File cur = start;
+        for (int i = 0; i < 8 && cur != null; i++) {
+            if (new File(cur, "pom.xml").isFile()
+                    || new File(cur, "build.gradle").isFile()
+                    || new File(cur, "build.gradle.kts").isFile()
+                    || new File(cur, "build.xml").isFile()) {
+                return cur;
+            }
+            cur = cur.getParentFile();
+        }
+        // Fall back to the project base
+        return start;
+    }
+
+    private static BuildTool detectBuildTool(File buildRoot) {
+        if (buildRoot == null) return BuildTool.UNKNOWN;
+        if (new File(buildRoot, "pom.xml").isFile()) return BuildTool.MAVEN;
+        if (new File(buildRoot, "build.gradle").isFile() || new File(buildRoot, "build.gradle.kts").isFile()) return BuildTool.GRADLE;
+        if (new File(buildRoot, "build.xml").isFile()) return BuildTool.ANT;
+        return BuildTool.UNKNOWN;
+    }
+
+    /**
+     * Runs the appropriate build command for the given tool/phase and returns the captured log.
+     * Uses wrappers when present (mvnw/gradlew).
+     */
+    private static String runBuildCapture(File buildRoot, BuildTool tool, Consumer<String> viewer, BuildPhase phase) {
+        File wd = (buildRoot != null ? buildRoot : new File("."));
+
+        // UNKNOWN: do not try to run anything, return a helpful message.
+        if (tool == null || tool == BuildTool.UNKNOWN) {
+            String msg = "[BUILD] Unknown build system (no pom.xml / build.gradle / build.xml found at root). Skipping compile/test.";
+            if (viewer != null) viewer.accept(msg);
+            return msg;
+        }
+
+        try {
+            switch (tool) {
+                case MAVEN -> {
+                    // Prefer Maven Wrapper
+                    boolean hasMvnw = new File(wd, "mvnw").isFile() || new File(wd, "mvnw.cmd").isFile();
+                    String mvnCmd;
+                    if (hasMvnw) {
+                        mvnCmd = isWindows() ? "mvnw.cmd" : "./mvnw";
+                    } else {
+                        mvnCmd = "mvn";
+                    }
+                    if (phase == BuildPhase.COMPILE) {
+                        return runProcessCapture(wd, viewer, mvnCmd, "-q", "-DskipTests", "compile");
+                    } else {
+                        return runProcessCapture(wd, viewer, mvnCmd, "-q", "test");
+                    }
+                }
+                case GRADLE -> {
+                    // Prefer Gradle Wrapper
+                    boolean hasGradlew = new File(wd, "gradlew").isFile() || new File(wd, "gradlew.bat").isFile();
+                    String gradleCmd;
+                    if (hasGradlew) {
+                        gradleCmd = isWindows() ? "gradlew.bat" : "./gradlew";
+                    } else {
+                        gradleCmd = "gradle";
+                    }
+                    // For compile-like phase, `classes` is a good default; for tests, `test`.
+                    if (phase == BuildPhase.COMPILE) {
+                        return runProcessCapture(wd, viewer, gradleCmd, "--no-daemon", "-q", "classes");
+                    } else {
+                        return runProcessCapture(wd, viewer, gradleCmd, "--no-daemon", "-q", "test");
+                    }
+                }
+                case ANT -> {
+                    // Ant: common targets are `compile` and `test` but not guaranteed.
+                    // We still try best-effort; if the target is missing, Ant prints a clear log.
+                    String antCmd = "ant";
+                    if (phase == BuildPhase.COMPILE) {
+                        return runProcessCapture(wd, viewer, antCmd, "-q", "compile");
+                    } else {
+                        return runProcessCapture(wd, viewer, antCmd, "-q", "test");
+                    }
+                }
+                default -> {
+                    String msg = "[BUILD] Unsupported tool=" + tool + ".";
+                    if (viewer != null) viewer.accept(msg);
+                    return msg;
+                }
+            }
+        } catch (Throwable t) {
+            String msg = "[BUILD_EXCEPTION] " + t.getClass().getSimpleName() + ": " + (t.getMessage() == null ? "" : t.getMessage());
+            if (viewer != null) viewer.accept(msg);
+            return msg;
+        }
+    }
+
+    private static boolean isWindows() {
+        String os = System.getProperty("os.name");
+        return os != null && os.toLowerCase(Locale.ROOT).contains("win");
     }
 
     /**
