@@ -35,9 +35,6 @@ import java.util.*;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import static org.jetbrains.research.anticopypaster.ide.AiderHelper.runAiderWithPrompt;
-import static org.jetbrains.research.anticopypaster.ide.AiderHelper.openStreamingViewer;
-import static org.jetbrains.research.anticopypaster.ide.AiderHelper.runAiderWithPromptStreaming;
 
 public class ExtractionTask {
     public Project project;
@@ -381,110 +378,6 @@ public class ExtractionTask {
         return extractedText;
     }
 
-    /**
-     * Asynchronously generates Java method-name suggestions for a given code snippet using Aider,
-     * shows a chooser dialog to the user, and returns the selected name via the callback.
-     * Runs work on a pooled thread, streams output to a console tab, and switches to the EDT for UI.
-     *
-     * Behavior: creates a temporary file from the snippet, prompts Aider to list N names (one per line),
-     * cleans and ranks the suggestions, lets the user pick (or enter a fallback), then deletes the temp file.
-     * On errors or empty results, notifies the user and invokes the callback with a default or null.
-     *
-     * @param project     current IntelliJ project
-     * @param codeSnippet Java code for which to propose an extracted method name
-     * @param provider    LLM provider identifier (e.g., OpenAI, Gemini, Anthropic, Azure, Deepseek, xAI)
-     * @param model       model name for Aider
-     * @param apikey      API key to set in the subprocess environment
-     * @param aiderPath   path to the {@code aider} executable
-     * @param apiBase     optional API base (used by Azure or custom deployments)
-     * @param apiVersion  optional API version (used by Azure)
-     * @param count       number of name suggestions to request and consider
-     * @param callback    consumer that receives the chosen name (or {@code null} if none)
-     */
-    public static void suggestMethodNameAsync(Project project, String codeSnippet, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion, int count, java.util.function.Consumer<String> callback) {
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            File tempFile = null;
-            try {
-                File tempDir = new File(System.getProperty("java.io.tmpdir"));
-                tempFile = File.createTempFile("aider_namegen_", ".java", tempDir);
-
-                Files.writeString(tempFile.toPath(), codeSnippet, StandardCharsets.UTF_8);
-
-                String prompt = String.format(
-                        "Suggest %d concise and meaningful Java method names for the extracted method in this file. " +
-                                "List ONLY the method names, one per line, ranked from most to least confident. " +
-                                "Format: 1 methodName1\\n2 methodName2\\n etc. " +
-                                "Use valid Java identifiers (camelCase). Do not include method bodies or explanations.",
-                        count
-                );
-
-                notify(project, "Aider is generating names...");
-                java.util.function.Consumer<String> viewer = openStreamingViewer(project, "Aider Name Suggestions");
-
-                String filePath = tempFile.getAbsolutePath();
-                String output = runAiderWithPromptStreaming(project, aiderPath, filePath, prompt, provider, model, apikey, apiBase, apiVersion, viewer);
-
-                final File finalTempFile = tempFile;
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    String selected = null;
-                    if (output != null) {
-                        List<String> candidates = output.lines()
-                                .map(String::trim)
-                                .filter(line -> !line.isEmpty())
-                                .map(line -> line.replaceFirst("^[\\d]+[\\s\\).:]+", ""))
-                                .filter(name -> name.matches("[a-zA-Z_$][a-zA-Z\\d_$]*"))
-                                .distinct()
-                                .limit(count)
-                                .toList();
-
-                        if (!candidates.isEmpty()) {
-                            selected = Messages.showEditableChooseDialog(
-                                    "Choose a method name:",
-                                    "Aider Name Suggestions",
-                                    Messages.getQuestionIcon(),
-                                    candidates.toArray(new String[0]),
-                                    candidates.get(0),
-                                    null
-                            );
-                        } else {
-                            notify(project, "Aider didn't return any usable name suggestions. Please enter a method name.");
-                            selected = Messages.showInputDialog(
-                                    project,
-                                    "Enter a method name:",
-                                    "Aider Name Suggestions",
-                                    Messages.getQuestionIcon(),
-                                    "extractedMethod",
-                                    null
-                            );
-                        }
-                    }
-                    callback.accept(selected);
-
-                    if (finalTempFile != null && finalTempFile.exists()) {
-                        try {
-                            finalTempFile.delete();
-                        } catch (Exception e) {
-
-                        }
-                    }
-                });
-            } catch (Exception e) {
-                notify(project, "Failed to generate method names: " + e.getMessage());
-                e.printStackTrace();
-
-                final File finalTempFile = tempFile;
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    callback.accept(null);
-                    if (finalTempFile != null && finalTempFile.exists()) {
-                        try {
-                            finalTempFile.delete();
-                        } catch (Exception ex) {
-                        }
-                    }
-                });
-            }
-        });
-    }
 
     public void passPreds(List<String> preds){
         String predstr = String.join("-", preds);
@@ -626,7 +519,7 @@ public class ExtractionTask {
                         finalizeExtraction(project, containingClass, factory, results, finalTemplate2, finalReturnType2, normalizedLambdaArgs, methodName, extractToStatic)
                 );
             } else {
-                // Use the new async method name suggestion
+                // No Aider: ask the user for a method name (fallback to default).
                 final Project finalProject = project;
                 final PsiClass finalContainingClass = containingClass;
                 final PsiElementFactory finalFactory = factory;
@@ -635,35 +528,29 @@ public class ExtractionTask {
                 final String finalReturnType = returnType;
                 final List<List<Integer>> finalLambdaArgs = normalizedLambdaArgs;
                 final boolean finalExtractToStatic = extractToStatic;
-                suggestMethodNameAsync(
-                        finalProject,
-                        buildMethodText(finalTemplate, finalReturnType, finalLambdaArgs, "tempName", finalExtractToStatic),
-                        ProjectSettingsState.getInstance(finalProject).getLlmprovider(),
-                        ProjectSettingsState.getInstance(finalProject).getAiderModel(),
-                        ProjectSettingsState.getInstance(finalProject).getAiderApiKey(),
-                        ProjectSettingsState.getInstance(finalProject).getAiderPath(),
-                        ProjectSettingsState.getInstance(finalProject).getApiBase(),
-                        ProjectSettingsState.getInstance(finalProject).getApiVersion(),
-                        ProjectSettingsState.getInstance(finalProject).numOfPreds,
-                        (String methodSuggestion) -> {
-                            List<String> predLocal;
-                            String methodNameLocal;
-                            if (methodSuggestion != null && !methodSuggestion.isEmpty()) {
-                                predLocal = new ArrayList<>();
-                                predLocal.add(methodSuggestion);
-                                methodNameLocal = getNewMethodName(finalContainingClass, methodSuggestion);
-                            } else {
-                                notify(finalProject, "Aider did not provide a name. Using default 'extractedMethod'.");
-                                predLocal = new ArrayList<>();
-                                predLocal.add("extractedMethod");
-                                methodNameLocal = getNewMethodName(finalContainingClass, "extractedMethod");
-                            }
-                            passPreds(predLocal);
-                            ApplicationManager.getApplication().invokeLater(() ->
-                                    finalizeExtraction(finalProject, finalContainingClass, finalFactory, finalResults, finalTemplate, finalReturnType, finalLambdaArgs, methodNameLocal, finalExtractToStatic, false)
-                            );
-                        }
-                );
+
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    String suggested = "extractedMethod";
+                    String input = Messages.showInputDialog(
+                            finalProject,
+                            "Enter a method name for the extracted method:",
+                            "Method Name",
+                            Messages.getQuestionIcon(),
+                            suggested,
+                            null
+                    );
+
+                    String chosenBase = (input != null && !input.isBlank()) ? input.trim() : suggested;
+
+                    List<String> predLocal = new ArrayList<>();
+                    predLocal.add(chosenBase);
+
+                    String methodNameLocal = getNewMethodName(finalContainingClass, chosenBase);
+                    passPreds(predLocal);
+
+                    finalizeExtraction(finalProject, finalContainingClass, finalFactory, finalResults,
+                            finalTemplate, finalReturnType, finalLambdaArgs, methodNameLocal, finalExtractToStatic, true);
+                });
                 return;
             }
         });

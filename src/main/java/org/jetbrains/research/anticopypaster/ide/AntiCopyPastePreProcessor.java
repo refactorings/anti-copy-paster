@@ -111,55 +111,52 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         }
 
         if (currentModelType == ProjectSettingsState.JudgementModel.AIDER) {
-            String model = state.getAiderModel();
-            String apiKey = state.getAiderApiKey();
-            String provider = state.getLlmprovider();
-            String aiderPath = state.getAiderPath();
-            String apiBase = "";
-            String apiVersion = "";
-            if (provider.equals("Azure")) {
-                apiBase = state.getApiBase();
-                apiVersion = state.getApiVersion();
-            }
-            if (provider.equals("Ollama")) {
-                apiBase = state.getApiBase();
-                model = state.getOllamaModelName();
-            }
+            // NOTE: AIDER option is now repurposed to run the internal LLM-based workflow
+            // without invoking the external aider tool.
 
             // Reuse unified target selection across three scopes
-            List<VirtualFile> targets = collectTargetFiles(project, file, selectedAnalysisButton, filesPath, filesCheckboxes);
+            List<VirtualFile> targets =
+                    collectTargetFiles(project, file, selectedAnalysisButton, filesPath, filesCheckboxes);
 
             if ("Multiple Files".equals(selectedAnalysisButton)) {
                 if (filesPath == null || filesPath.isEmpty()) {
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file for Aider to run on.");
-                    });
+                    ApplicationManager.getApplication().invokeLater(() ->
+                            notify(project, "Invalid directory path provided. Please configure a valid directory."));
                     return text;
                 }
                 File filesDir = new File(filesPath);
                 if (!filesDir.isDirectory()) {
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file for Aider to run on.");
-                    });
+                    ApplicationManager.getApplication().invokeLater(() ->
+                            notify(project, "Invalid directory path provided. Please configure a valid directory."));
                     return text;
                 }
                 if (targets == null || targets.isEmpty()) {
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        notify(project, "No files have been selected in the plugin menu. Please select at least one file to run Aider on.");
-                    });
+                    ApplicationManager.getApplication().invokeLater(() ->
+                            notify(project, "No files selected. Please select at least one file."));
                     return text;
                 }
             }
 
-            // Execute Aider for each selected target file
-            if (targets != null && !targets.isEmpty()) {
-                for (VirtualFile vf : targets) {
-                    AiderHelper.checkAndSuggestRefactor(project, vf, provider, model, apiKey, aiderPath, apiBase, apiVersion);
-                }
-            } else if (file != null && file.getVirtualFile() != null) {
-                // Fallback to current file only
-                AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath, apiBase, apiVersion);
+            // Fallback to current file if nothing was selected
+            if ((targets == null || targets.isEmpty()) && file != null && file.getVirtualFile() != null) {
+                targets = List.of(file.getVirtualFile());
             }
+
+            // Run internal clone-detection + refactoring workflow
+            List<VirtualFile> finalTargets = targets;
+            ApplicationManager.getApplication().executeOnPooledThread(() -> {
+                try {
+                    for (VirtualFile vf : finalTargets) {
+                        org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.run(
+                                project,
+                                List.of(vf)
+                        );
+                    }
+                } catch (Throwable t) {
+                    ApplicationManager.getApplication().invokeLater(() ->
+                            notify(project, "Refactoring workflow failed: " + t.getMessage()));
+                }
+            });
 
             return text;
         }

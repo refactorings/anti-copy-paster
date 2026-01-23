@@ -21,7 +21,6 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Enumeration;
 
-import org.jetbrains.research.anticopypaster.ide.AiderHelper;
 
 public class ProjectSettingsComponent {
 
@@ -525,14 +524,13 @@ public class ProjectSettingsComponent {
     }
 
     /**
-     * Applies pending model combo-box changes and closes any open Aider viewer tabs if models changed.
+     * Applies pending model combo-box changes.
      */
     public void applyModelChanges() {
         boolean mainModelChanged = (pendingMainModelIndex != null);
         boolean nameModelChanged = (pendingNameModelIndex != null);
 
         if (mainModelChanged || nameModelChanged) {
-            AiderHelper.closeAllViewers(projectRef);
             lastMainModel = modelComboBox.getSelectedItem();
             lastNameModel = nameModel.getSelectedItem();
             pendingMainModelIndex = null;
