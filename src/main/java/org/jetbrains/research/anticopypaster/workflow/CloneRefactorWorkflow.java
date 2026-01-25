@@ -61,6 +61,9 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.ui.DialogWrapper;
 import javax.swing.*;
+import org.jetbrains.research.anticopypaster.llm.LlmClient;
+import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
+import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
 
 /**
  * Central workflow entry for multi-agent clone refactoring.
@@ -82,6 +85,9 @@ public final class CloneRefactorWorkflow {
     // This directory should be prepended to the runtime classpath so EvoSuite/JUnit see the refactored class
     // without modifying the original project output.
     private static volatile String _LAST_PATCHED_CLASSES_DIR = null;
+
+    // LLM client resolved from plugin settings (provider/model/key/etc.)
+    private static volatile LlmClient LLM = new NoopLlmClient();
 
     /* ============================================================
      * Viewer (ToolWindow Console)
@@ -203,13 +209,15 @@ public final class CloneRefactorWorkflow {
                 _LAST_TEST_VIEWER = viewer;
                 viewer.accept("[START] " + fileName);
 
+                // Resolve LLM from settings (provider/model/api key/base/version)
+                LLM = LlmClientFactory.fromProjectSettings(project, viewer);
+
                 logStage(viewer, "START", fileName);
                 notify(project, "[Clone] Workflow started for: " + fileName, NotificationType.INFORMATION);
 
-                if (LLM instanceof NoopLLMClient) {
+                if (LLM instanceof NoopLlmClient) {
                     notify(project,
-                            "[Clone] OPENAI_API_KEY not found. LLM calls will return empty and detection will always be 'no clones'. " +
-                            "Set OPENAI_API_KEY in your IDE run configuration (or inject via setLlmClient).",
+                            "[Clone] LLM is not configured (missing/invalid provider settings or API key). LLM calls will return empty and detection will always be 'no clones'. Configure provider/model/API key in Settings.",
                             NotificationType.ERROR);
                 }
 
@@ -421,185 +429,8 @@ public final class CloneRefactorWorkflow {
     }
 
     /* ============================================================
-     * LLM
+     * Compile
      * ============================================================ */
-
-    /** Minimal interface for an LLM client (pluggable). */
-    public interface LLMClient {
-        /**
-         * Execute an LLM call given a prompt and return the raw text response.
-         * The agents will decide how to parse the response (JSON, code blocks, etc.).
-         */
-        String complete(String prompt) throws Exception;
-    }
-
-    /** Default no-op client to keep workflow runnable without configuring an API key. */
-    public static final class NoopLLMClient implements LLMClient {
-        @Override
-        public String complete(String prompt) {
-            return "";
-        }
-    }
-
-    /**
-     * Resolve the primary class FQN using IntelliJ PSI (most reliable).
-     * Prefers a public top-level class, then a class matching the file name, then the first top-level class.
-     */
-    private static String resolvePrimaryClassFqnFromPsi(Project project, VirtualFile vf) {
-        if (project == null || project.isDisposed() || vf == null) return "";
-
-        try {
-            return ApplicationManager.getApplication().runReadAction((com.intellij.openapi.util.Computable<String>) () -> {
-                try {
-                    PsiFile psi = PsiManager.getInstance(project).findFile(vf);
-                    if (!(psi instanceof PsiJavaFile)) return "";
-
-                    PsiJavaFile javaFile = (PsiJavaFile) psi;
-                    PsiClass[] classes = javaFile.getClasses();
-                    if (classes == null || classes.length == 0) return "";
-
-                    // Use PSI file package name + class name as a stable fallback.
-                    String pn = "";
-                    try {
-                        String tmp = javaFile.getPackageName();
-                        pn = (tmp == null ? "" : tmp);
-                    } catch (Throwable ignored) {
-                        // ignore
-                    }
-                    final String pkgName = pn;
-
-                    // Helper to build a FQN even when getQualifiedName() is null.
-                    final java.util.function.Function<PsiClass, String> fqnOf = c -> {
-                        if (c == null) return "";
-                        try {
-                            String qn = c.getQualifiedName();
-                            if (qn != null && !qn.isBlank()) return qn;
-                        } catch (Throwable ignored) {
-                            // ignore
-                        }
-                        String name;
-                        try {
-                            name = c.getName();
-                        } catch (Throwable ignored) {
-                            name = null;
-                        }
-                        if (name == null || name.isBlank()) return "";
-                        if (pkgName.isBlank()) return name;
-                        return pkgName + "." + name;
-                    };
-
-                    // 1) Prefer public top-level class
-                    for (PsiClass c : classes) {
-                        try {
-                            if (c != null && c.hasModifierProperty("public")) {
-                                String qn = fqnOf.apply(c);
-                                if (qn != null && !qn.isBlank()) return qn;
-                            }
-                        } catch (Throwable ignored) {
-                            // ignore
-                        }
-                    }
-
-                    // 2) Prefer class matching file name
-                    String fn = vf.getName();
-                    String base = fn != null && fn.endsWith(".java") ? fn.substring(0, fn.length() - 5) : fn;
-                    if (base != null && !base.isBlank()) {
-                        for (PsiClass c : classes) {
-                            try {
-                                if (c != null && base.equals(c.getName())) {
-                                    String qn = fqnOf.apply(c);
-                                    if (qn != null && !qn.isBlank()) return qn;
-                                }
-                            } catch (Throwable ignored) {
-                                // ignore
-                            }
-                        }
-                    }
-
-                    // 3) Fallback: first class
-                    for (PsiClass c : classes) {
-                        String qn = fqnOf.apply(c);
-                        if (qn != null && !qn.isBlank()) return qn;
-                    }
-
-                    return "";
-                } catch (Throwable t) {
-                    return "";
-                }
-            });
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
-    /**
-     * OpenAI Chat Completions based LLM client.
-     * Uses OPENAI_API_KEY from environment variables.
-     */
-    public static final class OpenAIChatClient implements LLMClient {
-
-        private final String apiKey;
-        private final String model;
-        private final HttpClient httpClient = HttpClient.newHttpClient();
-
-        public OpenAIChatClient(String apiKey, String model) {
-            this.apiKey = apiKey;
-            this.model = model;
-        }
-
-        @Override
-        public String complete(String prompt) throws Exception {
-            JsonObject body = new JsonObject();
-            body.addProperty("model", model);
-
-            JsonArray messages = new JsonArray();
-            JsonObject userMsg = new JsonObject();
-            userMsg.addProperty("role", "user");
-            userMsg.addProperty("content", prompt);
-            messages.add(userMsg);
-
-            body.add("messages", messages);
-            body.addProperty("temperature", 0.2);
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://api.openai.com/v1/chat/completions"))
-                    .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + apiKey)
-                    .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-                    .build();
-
-            HttpResponse<String> response =
-                    httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) {
-                throw new RuntimeException(
-                        "OpenAI API error " + response.statusCode() + ": " + response.body());
-            }
-
-            JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
-            return json.getAsJsonArray("choices")
-                       .get(0).getAsJsonObject()
-                       .getAsJsonObject("message")
-                       .get("content").getAsString();
-        }
-    }
-
-    // Set the active LLM client (replace via setLlmClient during plugin init or tests).
-    private static volatile LLMClient LLM = initDefaultClient();
-
-    private static LLMClient initDefaultClient() {
-        String key = System.getenv("OPENAI_API_KEY");
-        if (key == null || key.isBlank()) {
-            key = "";
-        }
-        // NOTE: This reads from the IDE process environment.
-        // If you run IntelliJ from Finder/Launcher, env vars may be missing.
-        // In that case, inject a client via setLlmClient(...) using your plugin settings/UI.
-        if (key != null && !key.isBlank()) {
-            return new OpenAIChatClient(key, "gpt-4o-mini");
-        }
-        return new NoopLLMClient();
-    }
 
     /* ============================================================
      * Compile

@@ -63,8 +63,6 @@ public class ProjectSettingsComponent {
     private JPanel providerPanel;
     private JPanel apiKeyPanel;
     private JPanel modelPanel;
-    private JTextField aiderPath;
-    private JPanel pathPanel;
     private JButton reset;
     private JPanel filesPanel;
     private ButtonGroup analysisSelectionButtonGroup;
@@ -127,12 +125,8 @@ public class ProjectSettingsComponent {
             boolean displayAndResolveCredentials = credentialsDialog.showAndGet();
             credentialsDialog.saveSettings(displayAndResolveCredentials);
         });
-        reset.addActionListener(e -> {
-            aiderPath.setText("aider");
-            notifySettingsChanged();
-        });
+
         // Add tooltips for Aider-related fields
-        aiderPath.setToolTipText("Specify the path to the aider executable (The path to where you installed Aider). Default is 'aider'.");
         llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, DeepSeek or Azure.");
         aidermodelComboBox.setToolTipText("Select the specific model you want to use from the provider.");
         aiderApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
@@ -1044,20 +1038,6 @@ public class ProjectSettingsComponent {
      */
     public void setNumOfPreds(int preds) {
         numOfPred.setValue(preds);
-    }
-
-    /**
-     * Returns the configured path to the Aider executable.
-     */
-    public String getAiderPath() {
-        return aiderPath.getText();
-    }
-
-    /**
-     * Sets the path to the Aider executable.
-     */
-    public void setAiderPath(String path) {
-        aiderPath.setText(path);
     }
 
     /**

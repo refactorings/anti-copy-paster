@@ -62,7 +62,6 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= !Objects.equals(settingsComponent.getAiderApiKey(), settings.getAiderApiKey());
         modified |= !Objects.equals(settingsComponent.getSelectedAiderModel(), settings.getAiderModel());
         modified |= !Objects.equals(settingsComponent.getLlmProvider(), settings.getLlmprovider());
-        modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
         modified |= !Objects.equals(settingsComponent.getApiBase(), settings.getApiBase());
         modified |= !Objects.equals(settingsComponent.getApiVersion(), settings.getApiVersion());
         modified |= !Objects.equals(settingsComponent.getFilesPath(), settings.getFilesPath());
@@ -119,7 +118,6 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.extractionType = settingsComponent.getExtractionType();
         settings.modelSensitivity = settingsComponent.getModelSensitivity();
         settings.maxParams = settingsComponent.getMaxParams();
-        settings.setAiderPath(settingsComponent.getAiderPath());
         settings.setLlmprovider(settingsComponent.getLlmProvider());
         settings.setAiderModel(settingsComponent.getSelectedAiderModel());
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
@@ -157,7 +155,6 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setExtractionType(settings.extractionType);
         settingsComponent.setModelSensitivity(settings.modelSensitivity);
         settingsComponent.setMaxParams(settings.maxParams);
-        settingsComponent.setAiderPath(settings.getAiderPath());
         settingsComponent.setLlmProvider(settings.getLlmprovider());
         settingsComponent.setSelectedAiderModel(settings.getAiderModel());
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());
