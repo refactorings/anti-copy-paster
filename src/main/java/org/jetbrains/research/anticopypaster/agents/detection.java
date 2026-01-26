@@ -13,7 +13,7 @@ public class detection {
 
     // ---- RAG / few-shot settings for clone detection ----
     // Path is resolved relative to project root by RagService (it also supports classpath resources).
-    private static final String CLONE_DB_PATH = "resources/combined_clone_database_cleaned.csv";
+    private static final String CLONE_DB_PATH = "combined_clone_database_cleaned.csv";
     private static final int DETECTION_FEWSHOT_K = 8;
     private static final int DETECTION_MAX_CHARS = 400;
 
@@ -51,6 +51,10 @@ public class detection {
      */
     public DetectionResult detect(Project project, String fileName, String fileSource, String selectedSnippet, Function<String, String> llmCaller) {
         String prompt = buildDetectionPrompt(project, fileSource, selectedSnippet, fileName);
+        // DEBUG: print detection prompt for inspection
+        System.out.println("[DETECTION_PROMPT_START]");
+        System.out.println(prompt);
+        System.out.println("[DETECTION_PROMPT_END]");
         String rawOutput = llmCaller.apply(prompt);
         DetectionResult result = parseDetectionResult(rawOutput, fileName);
         if (result == null || result.clones == null || result.clones.isEmpty()) {

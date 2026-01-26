@@ -9,7 +9,7 @@ import org.jetbrains.research.anticopypaster.rag.RagService;
 public class refactor {
 
     // RAG defaults (can be overridden by passing a pre-built ragExamples string)
-    private static final String DEFAULT_REFACTOR_DB_PATH = "resources/refactor_database.csv";
+    private static final String DEFAULT_REFACTOR_DB_PATH = "refactor_database.csv";
     private static final int DEFAULT_RAG_TOP_K = 2;
     private static final int DEFAULT_RAG_MAX_CHARS = 700;
 
@@ -95,6 +95,9 @@ public class refactor {
 
         String prompt = buildRefactorPrompt(fileName, fileSource, clone, rag);
         String rawOutput;
+        System.out.println("[REFACTORING_PROMPT_START]");
+        System.out.println(prompt);
+        System.out.println("[REFACTORING_PROMPT_END]");
         try {
             rawOutput = llmCaller.apply(prompt);
         } catch (Exception e) {
