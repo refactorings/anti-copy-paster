@@ -64,6 +64,7 @@ import javax.swing.*;
 import org.jetbrains.research.anticopypaster.llm.LlmClient;
 import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
 import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
+import org.jetbrains.research.anticopypaster.rag.RagService;
 
 /**
  * Central workflow entry for multi-agent clone refactoring.
@@ -73,6 +74,14 @@ import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
 public final class CloneRefactorWorkflow {
 
     private static final int MAX_ATTEMPTS = 3;
+
+    // RAG few-shot databases (place these CSVs under src/main/resources/rag/ in the plugin)
+    // so they can be loaded as classpath resources.
+    private static final String REFACTOR_RAG_DB_RESOURCE = "rag/refactor_database.csv";
+
+    // RAG retrieval tuning
+    private static final int REFACTOR_RAG_TOP_K = 5;
+    private static final int REFACTOR_RAG_MAX_CHARS = 8000;
 
     // Captured for buildProjectClasspathFromIde + streaming viewers in test runner
     private static volatile Project _LAST_PROJECT_FOR_TESTS = null;
@@ -244,6 +253,7 @@ public final class CloneRefactorWorkflow {
                 /* ---------- Detection ---------- */
                 detection.DetectionResult det =
                         detectionAgent.detect(
+                                project,
                                 fileName,
                                 originalSource,
                                 null,
@@ -261,6 +271,32 @@ public final class CloneRefactorWorkflow {
                 logStage(viewer, "DETECTION", "clone found: " + clone.id);
                 notify(project, "[Clone] Clones detected in: " + fileName + " (id=" + clone.id + ")", NotificationType.INFORMATION);
 
+                // Build the RAG query text for refactoring few-shot retrieval.
+                // Prefer clone code if the detection agent already includes it; otherwise fall back to best-effort extraction.
+                String refactorRagQuery = buildRefactorRagQueryText(originalSource, clone);
+
+                // Precompute RAG guidance once per file (it will be prepended to refactor feedback each attempt).
+                String refactorRagGuidance = "";
+                try {
+                    refactorRagGuidance = RagService.buildRefactorRagGuidance(
+                            project,
+                            REFACTOR_RAG_DB_RESOURCE,
+                            refactorRagQuery,
+                            REFACTOR_RAG_TOP_K,
+                            REFACTOR_RAG_MAX_CHARS
+                    );
+                } catch (Throwable t) {
+                    refactorRagGuidance = "";
+                    logStage(viewer, "RAG", "refactor RAG guidance failed: " + t.getMessage());
+                }
+
+                if (viewer != null) {
+                    String q = refactorRagQuery == null ? "" : refactorRagQuery;
+                    if (q.length() > 600) q = q.substring(0, 600) + "...";
+                    logStage(viewer, "RAG", "refactor query preview: " + q.replace("\n", "\\n"));
+                    logStage(viewer, "RAG", "refactor guidance chars: " + (refactorRagGuidance == null ? 0 : refactorRagGuidance.length()));
+                }
+
                 String currentSource = originalSource;
                 String feedback = null;
 
@@ -270,12 +306,23 @@ public final class CloneRefactorWorkflow {
                     logStage(viewer, "ATTEMPT", attempt + "/" + MAX_ATTEMPTS);
 
                     /* ===== Refactor ===== */
+                    // Prepend refactor few-shot examples (RAG) to the feedback for the refactor agent.
+                    // This keeps the agent signature unchanged while still injecting few-shot context.
+                    String combinedFeedback = "";
+                    if (refactorRagGuidance != null && !refactorRagGuidance.isBlank()) {
+                        combinedFeedback += refactorRagGuidance.strip() + "\n\n";
+                    }
+                    if (feedback != null && !feedback.isBlank()) {
+                        combinedFeedback += "[PREVIOUS_FEEDBACK]\n" + feedback.strip() + "\n";
+                    }
+                    String feedbackForRefactor = combinedFeedback.isBlank() ? null : combinedFeedback;
+
                     refactor.RefactorResult rr =
                             refactorAgent.refactorFile(
                                     fileName,
                                     currentSource,
                                     convertClone(clone),
-                                    feedback,
+                                    feedbackForRefactor,
                                     llmCaller
                             );
 
@@ -1241,6 +1288,7 @@ public final class CloneRefactorWorkflow {
         return null;
     }
 
+    // NOTE: RAG retrieval uses clone code (via buildRefactorRagQueryText) when available; ranges here are only for agent context.
     private static refactor.DetectedClone convertClone(detection.DetectedClone c) {
         return new refactor.DetectedClone(
                 c.id,
@@ -1250,6 +1298,79 @@ public final class CloneRefactorWorkflow {
                 c.refactorType,
                 c.reason
         );
+    }
+
+
+    /**
+     * Build a query string for refactor RAG retrieval.
+     *
+     * Priority:
+     *  1) If detection embeds clone code into `clone.reason` using tags, extract it.
+     *  2) Otherwise, best-effort extract by the first reported range (fallback only).
+     *
+     * NOTE: You said ranges may be inaccurate; this method only uses ranges as a fallback.
+     */
+    private static String buildRefactorRagQueryText(String fullSource, detection.DetectedClone clone) {
+        if (clone == null) return "";
+
+        // 1) Try to extract clone code embedded in the reason field (recommended).
+        // Expected formats (either is fine):
+        //   [CLONE_CODE] ... [/CLONE_CODE]
+        //   [CLONE_CODE_A] ... [/CLONE_CODE_A] and [CLONE_CODE_B] ... [/CLONE_CODE_B]
+        try {
+            String reason = clone.reason;
+            if (reason != null && !reason.isBlank()) {
+                java.util.regex.Matcher m1 = java.util.regex.Pattern
+                        .compile("(?s)\\[CLONE_CODE\\](.*?)\\[/CLONE_CODE\\]")
+                        .matcher(reason);
+                if (m1.find()) {
+                    String code = m1.group(1);
+                    if (code != null && !code.isBlank()) return code.strip();
+                }
+
+                java.util.regex.Matcher ma = java.util.regex.Pattern
+                        .compile("(?s)\\[CLONE_CODE_A\\](.*?)\\[/CLONE_CODE_A\\]")
+                        .matcher(reason);
+                java.util.regex.Matcher mb = java.util.regex.Pattern
+                        .compile("(?s)\\[CLONE_CODE_B\\](.*?)\\[/CLONE_CODE_B\\]")
+                        .matcher(reason);
+
+                String a = ma.find() ? ma.group(1) : null;
+                String b = mb.find() ? mb.group(1) : null;
+
+                if (a != null && !a.isBlank() && b != null && !b.isBlank()) {
+                    return (a.strip() + "\n\n" + b.strip()).strip();
+                }
+                if (a != null && !a.isBlank()) return a.strip();
+                if (b != null && !b.isBlank()) return b.strip();
+            }
+        } catch (Throwable ignored) {
+            // ignore
+        }
+
+        // 2) Fallback: use the first range to slice the in-memory source.
+        // This is ONLY a fallback because you said ranges may be inaccurate.
+        try {
+            if (fullSource == null || fullSource.isBlank()) return "";
+            if (clone.ranges == null || clone.ranges.isEmpty()) return "";
+
+            detection.CloneRange r = clone.ranges.get(0);
+            int start = Math.max(1, r.startLine);
+            int end = Math.max(start, r.endLine);
+
+            String[] lines = fullSource.replace("\r\n", "\n").replace("\r", "\n").split("\n", -1);
+            int sIdx = Math.min(lines.length, Math.max(1, start)) - 1;
+            int eIdx = Math.min(lines.length, Math.max(1, end)) - 1;
+            if (sIdx > eIdx) return "";
+
+            StringBuilder sb = new StringBuilder();
+            for (int i = sIdx; i <= eIdx; i++) {
+                sb.append(lines[i]).append("\n");
+            }
+            return sb.toString().strip();
+        } catch (Throwable ignored) {
+            return "";
+        }
     }
 
     private static void logStage(String stage, String msg) {

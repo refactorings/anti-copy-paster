@@ -3,8 +3,15 @@ package org.jetbrains.research.anticopypaster.agents;
 import com.google.gson.*;
 import java.util.*;
 import java.util.function.Function;
+import com.intellij.openapi.project.Project;
+import org.jetbrains.research.anticopypaster.rag.RagService;
 
 public class refactor {
+
+    // RAG defaults (can be overridden by passing a pre-built ragExamples string)
+    private static final String DEFAULT_REFACTOR_DB_PATH = "resources/refactor_database.csv";
+    private static final int DEFAULT_RAG_TOP_K = 2;
+    private static final int DEFAULT_RAG_MAX_CHARS = 700;
 
     public static class CloneRange {
         public int startLine;
@@ -22,11 +29,22 @@ public class refactor {
         public String refactorType;
         public String reason;
 
+        /**
+         * Representative clone code/snippet (preferred over line ranges; used as the RAG query).
+         * This should be provided by the detection agent.
+         */
+        public String cloneCode;
+
         public DetectedClone(String id, List<CloneRange> ranges, String refactorType, String reason) {
+            this(id, ranges, refactorType, reason, "");
+        }
+
+        public DetectedClone(String id, List<CloneRange> ranges, String refactorType, String reason, String cloneCode) {
             this.id = id;
             this.ranges = ranges;
             this.refactorType = refactorType;
             this.reason = reason;
+            this.cloneCode = (cloneCode == null ? "" : cloneCode);
         }
     }
 
@@ -45,14 +63,37 @@ public class refactor {
     }
 
     public RefactorResult refactorFile(String fileName, String fileSource, DetectedClone clone, String ragExamples, Function<String, String> llmCaller) {
+        // Backward-compatible entrypoint when Project is not available.
+        return refactorFile(null, fileName, fileSource, clone, ragExamples, llmCaller);
+    }
+
+    /**
+     * Refactor with optional in-agent RAG.
+     * If `ragExamples` is empty, we will build a few-shot bundle using RagService and `clone.cloneCode` as the query.
+     * IMPORTANT: We do NOT use line numbers/ranges as the RAG query.
+     */
+    public RefactorResult refactorFile(Project project, String fileName, String fileSource, DetectedClone clone, String ragExamples, Function<String, String> llmCaller) {
         if (clone == null) {
             return fail(fileName, "DetectedClone is null");
         }
-        if (clone.ranges == null || clone.ranges.isEmpty()) {
-            return fail(fileName, "DetectedClone ranges are null or empty");
+
+        // If caller didn't provide RAG examples, build them here using clone code as the query.
+        String rag = (ragExamples == null ? "" : ragExamples.trim());
+        if (rag.isEmpty()) {
+            String query = (clone.cloneCode == null ? "" : clone.cloneCode.trim());
+            // As a last resort (if detection didn't provide clone code), use a truncated file source.
+            if (query.isEmpty()) {
+                query = safeTruncate(fileSource, DEFAULT_RAG_MAX_CHARS);
+            }
+            try {
+                rag = RagService.buildRefactorRagGuidance(project, DEFAULT_REFACTOR_DB_PATH, query, DEFAULT_RAG_TOP_K, DEFAULT_RAG_MAX_CHARS);
+            } catch (Throwable t) {
+                // RAG is optional; continue without it.
+                rag = "";
+            }
         }
 
-        String prompt = buildRefactorPrompt(fileName, fileSource, clone, ragExamples);
+        String prompt = buildRefactorPrompt(fileName, fileSource, clone, rag);
         String rawOutput;
         try {
             rawOutput = llmCaller.apply(prompt);
@@ -100,10 +141,20 @@ public class refactor {
         sb.append("```\n").append(fileSource).append("\n```\n\n");
 
         sb.append("Detected clone id: ").append(clone.id).append("\n");
-        sb.append("Clone ranges (1-based line numbers):\n");
-        for (CloneRange range : clone.ranges) {
-            sb.append("- from line ").append(range.startLine).append(" to line ").append(range.endLine).append("\n");
+
+        // Prefer clone code for grounding (line ranges are optional and may be unstable).
+        if (clone.cloneCode != null && !clone.cloneCode.trim().isEmpty()) {
+            sb.append("Representative clone code (use this as the main target to de-duplicate):\n");
+            sb.append("```\n").append(clone.cloneCode).append("\n```\n\n");
         }
+
+        if (clone.ranges != null && !clone.ranges.isEmpty()) {
+            sb.append("Approximate clone ranges (may be imprecise):\n");
+            for (CloneRange range : clone.ranges) {
+                sb.append("- from line ").append(range.startLine).append(" to line ").append(range.endLine).append("\n");
+            }
+        }
+
         String refactorType = (clone.refactorType == null || clone.refactorType.trim().isEmpty()) ? "Extract Method" : clone.refactorType.trim();
         sb.append("Suggested refactor type: ").append(refactorType).append("\n");
         if (clone.reason != null && !clone.reason.trim().isEmpty()) {
@@ -171,6 +222,14 @@ public class refactor {
             return raw.substring(first, last + 1).trim();
         }
         return null;
+    }
+
+    private static String safeTruncate(String s, int maxChars) {
+        if (s == null) return "";
+        String t = s.trim();
+        if (maxChars <= 0) return t;
+        if (t.length() <= maxChars) return t;
+        return t.substring(0, maxChars) + "\n...<truncated>...";
     }
 
     private RefactorResult fail(String fileName, String message) {
