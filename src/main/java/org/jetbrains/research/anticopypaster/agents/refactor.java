@@ -155,8 +155,9 @@ public class refactor {
             }
         }
 
-        String refactorType = (clone.refactorType == null || clone.refactorType.trim().isEmpty()) ? "Extract Method" : clone.refactorType.trim();
-        sb.append("Suggested refactor type: ").append(refactorType).append("\n");
+        // Force a single refactoring strategy to keep the workflow stable and reproducible.
+        // We only allow Extract Method (and helper method extraction) as the clone-removal technique.
+        sb.append("Refactor type: Extract Method\n");
         if (clone.reason != null && !clone.reason.trim().isEmpty()) {
             sb.append("Reason: ").append(clone.reason).append("\n");
         }
@@ -167,6 +168,8 @@ public class refactor {
         }
 
         sb.append("\nInstructions:\n");
+        sb.append("- Use ONLY Extract Method (and creating private helper methods) to remove duplication.\n");
+        sb.append("- Do NOT use any other refactoring type (e.g., Rename, Move Method, Introduce Parameter Object, etc.).\n");
         sb.append("- Restrict modifications only to this file.\n");
         sb.append("- Preserve package and import statements exactly.\n");
         sb.append("- Keep public API signatures unchanged where possible.\n");

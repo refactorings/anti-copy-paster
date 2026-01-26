@@ -29,15 +29,27 @@ public final class ProjectSettingsReader {
             }
             if (inst == null) return null;
 
-            // ✅ 这些名字你需要按你 ProjectSettingsState 的真实 getter/field 对齐
-            String provider   = reflectString(inst, "getLlmProvider", "llmProvider", "provider");
-            String model      = reflectString(inst, "getSelectedAiderModel", "getModel", "model", "deployment");
+            // ProjectSettingsState uses getLlmprovider() (lowercase p) and the field name llmProvider
+            String provider   = reflectString(inst, "getLlmProvider", "getLlmprovider", "llmProvider", "provider");
+            // ProjectSettingsState uses getAiderModel() and the field name aiderModel
+            String model      = reflectString(inst,
+                    "getSelectedAiderModel",
+                    "getAiderModel",
+                    "getModel",
+                    "aiderModel",
+                    "model",
+                    "deployment");
             String apiKey     = reflectString(inst, "getAiderApiKey", "getApiKey", "apiKey", "key");
             String apiBase    = reflectString(inst, "getApiBase", "apiBase", "baseUrl", "endpoint");
             String apiVersion = reflectString(inst, "getApiVersion", "apiVersion", "version");
-            String ollamaModel= reflectString(inst, "getOllamaModel", "ollamaModel");
+            // ProjectSettingsState uses getOllamaModelName() and the field name ollamaModelName
+            String ollamaModel= reflectString(inst, "getOllamaModelName", "getOllamaModel", "ollamaModelName", "ollamaModel");
 
-            return new LlmConfig(provider, model, apiKey, apiBase, apiVersion, ollamaModel);
+            // Defensive fallback: prefer stored fields if reflective getter names drift
+            if (provider == null) provider = "";
+            if (model == null) model = "";
+
+            return new LlmConfig(provider.trim(), model.trim(), apiKey, apiBase, apiVersion, ollamaModel);
 
         } catch (Throwable t) {
             return null;
