@@ -73,7 +73,6 @@ public final class RagService {
         List<CloneFewShot> pool = loadCloneFewShot(cloneDbPathOrResource, project, maxChars);
         if (pool.isEmpty() || k <= 0) return base;
 
-        // Selection strategy (same spirit as你旧代码): 优先覆盖 Type1..4 + 适量 No clone
         List<CloneFewShot> selected = selectDetectionExamples(pool, k);
 
         StringBuilder sb = new StringBuilder();

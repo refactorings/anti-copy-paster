@@ -72,7 +72,7 @@ public class detection {
         prompt.append("You are an expert code clone detection assistant.\n");
         prompt.append("Analyze the following Java source code from a single file named '").append(fileName).append("'.\n");
         prompt.append("Your task is to detect meaningful code clones within this same file only.\n");
-        prompt.append("Ignore trivial one-line repetitions and focus on substantial code duplication.\n");
+        prompt.append("Ignore trivial one-line repetitions and focus on substantial code clones.\n");
 
         // Inject few-shot examples (RAG) when we have an IntelliJ Project context.
         // RagService will try classpath first, then fall back to project-relative filesystem paths.

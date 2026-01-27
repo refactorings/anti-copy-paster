@@ -169,7 +169,7 @@ public class refactor {
         }
 
         sb.append("\nInstructions:\n");
-        sb.append("- Use ONLY Extract Method (and creating private helper methods) to remove duplication.\n");
+        sb.append("- Use ONLY Extract Method (and creating private helper methods) to remove clones.\n");
         sb.append("- Do NOT use any other refactoring type (e.g., Rename, Move Method, Introduce Parameter Object, etc.).\n");
         sb.append("- Restrict modifications only to this file.\n");
         sb.append("- Preserve package and import statements exactly.\n");
