@@ -107,7 +107,6 @@ public class detection {
         }
         prompt.append("IMPORTANT: For each detected clone, you MUST include cloneCodeA and cloneCodeB as verbatim copies from the provided fileSource.\n");
         prompt.append("- Do NOT rewrite, reformat, rename variables, or add missing context. Copy the exact characters from fileSource.\n");
-        prompt.append("- If you are not confident you can copy verbatim, set cloneCodeA/cloneCodeB to an empty string instead of guessing.\n\n");
         prompt.append("Output ONLY a valid JSON object with the following structure:\n");
         prompt.append("{\n");
         prompt.append("  \"status\": \"found_clones\" or \"no_clones\",\n");

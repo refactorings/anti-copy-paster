@@ -95,9 +95,7 @@ public class refactor {
 
         String prompt = buildRefactorPrompt(fileName, fileSource, clone, rag);
         String rawOutput;
-        System.out.println("[REFACTORING_PROMPT_START]");
-        System.out.println(prompt);
-        System.out.println("[REFACTORING_PROMPT_END]");
+
         try {
             rawOutput = llmCaller.apply(prompt);
         } catch (Exception e) {

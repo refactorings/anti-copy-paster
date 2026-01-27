@@ -68,6 +68,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= !Objects.equals(settingsComponent.getAllFilesCheckboxes(), settings.getAllFilesCheckboxes());
         modified |= !Objects.equals(settingsComponent.getSelectedAnalysisButton(), settings.getSelectedAnalysisButton());
         modified |= !Objects.equals(settingsComponent.getOllamaModel(), settings.getOllamaModelName());
+        modified |= settingsComponent.getMaxAttempts() != settings.getMaxAttempts();
         return modified;
     }
 
@@ -118,6 +119,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.extractionType = settingsComponent.getExtractionType();
         settings.modelSensitivity = settingsComponent.getModelSensitivity();
         settings.maxParams = settingsComponent.getMaxParams();
+        settings.setMaxAttempts(settingsComponent.getMaxAttempts());
         settings.setLlmprovider(settingsComponent.getLlmProvider());
         settings.setAiderModel(settingsComponent.getSelectedAiderModel());
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
@@ -155,6 +157,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setExtractionType(settings.extractionType);
         settingsComponent.setModelSensitivity(settings.modelSensitivity);
         settingsComponent.setMaxParams(settings.maxParams);
+        settingsComponent.setMaxAttempts(settings.getMaxAttempts());
         settingsComponent.setLlmProvider(settings.getLlmprovider());
         settingsComponent.setSelectedAiderModel(settings.getAiderModel());
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());

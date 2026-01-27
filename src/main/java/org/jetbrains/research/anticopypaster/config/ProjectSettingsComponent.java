@@ -88,6 +88,9 @@ public class ProjectSettingsComponent {
     private JPanel ollamaModelPanel;
     private JTextField ollamaModel;
     private JPanel fileSelectionPanel;
+    private JSlider iterationSlider;
+    private JPanel iterationNumberPanel;
+    private JLabel iterationHelp;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     private final Project projectRef;
     private Integer pendingMainModelIndex = null;
@@ -449,12 +452,6 @@ public class ProjectSettingsComponent {
         if (llmProviderComboBox.getActionListeners().length > 0) {
             llmProviderComboBox.getActionListeners()[0].actionPerformed(null);
         }
-        // Watch for changes in the Aider API key field
-//        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-//            public void insertUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
-//            public void removeUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
-//            public void changedUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
-//        });
 
         // Watch for changes in the model selection combo box
         aidermodelComboBox.addActionListener(e -> notifySettingsChanged());
@@ -468,7 +465,7 @@ public class ProjectSettingsComponent {
                             "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
                     }));
                     case "Gemini" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-pro-exp-03-25", "gemini-2.5-flash", "gemini-2.5-flash-lite-preview-06-17", "gemini-2.5-flash-lite-preview-09-2025", "gemini-2.5-flash-preview-09-2025"
+                            "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro-preview", "gemini-3-flash-preview"
                     }));
                     case "Anthropic" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
                            "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
@@ -508,6 +505,18 @@ public class ProjectSettingsComponent {
         minimumMethodSelector.setModel(new SpinnerNumberModel(2, 2, Integer.MAX_VALUE, 1));
         maxParamsSpinner.setModel(new SpinnerNumberModel(10, 0, 255, 1));
         createUIComponents();
+
+        // Make iteration slider move in discrete steps and show ticks
+        if (iterationSlider != null) {
+            iterationSlider.setPaintTicks(true);
+            iterationSlider.setSnapToTicks(true);
+            if (iterationSlider.getMajorTickSpacing() <= 0) {
+                iterationSlider.setMajorTickSpacing(1);
+            }
+            if (iterationSlider.getMinorTickSpacing() <= 0) {
+                iterationSlider.setMinorTickSpacing(1);
+            }
+        }
 
         // Record initial model state
         lastMainModel = modelComboBox.getSelectedItem();
@@ -578,9 +587,9 @@ public class ProjectSettingsComponent {
         Object currentSelection = nameModel.getSelectedItem();
         if (isMainModelAider) {
             // When Aider is selected as the main model, only allow "Aider" in name model
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Aider"});
+            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Clone"});
             nameModel.setModel(model);
-            nameModel.setSelectedItem("Aider");
+            nameModel.setSelectedItem("Clone");
         }
         else if (isMainModelCopilot) {
             // When Copilot is selected as the main model, only allow "Copilot" in name model
@@ -590,7 +599,7 @@ public class ProjectSettingsComponent {
         }
         else {
             // When other main models are selected, restore all options
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Aider"});
+            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Clone"});
             nameModel.setModel(model);
             if (currentSelection != null && model.getIndexOf(currentSelection) != -1) {
                 nameModel.setSelectedItem(currentSelection);
@@ -1055,6 +1064,20 @@ public class ProjectSettingsComponent {
     }
 
     /**
+     * Gets the maximum number of refactoring attempts from the iteration slider.
+     */
+    public int getMaxAttempts() {
+        return iterationSlider.getValue();
+    }
+
+    /**
+     * Sets the maximum number of refactoring attempts on the iteration slider.
+     */
+    public void setMaxAttempts(int maxAttempts) {
+        iterationSlider.setValue(maxAttempts);
+    }
+
+    /**
      * Initializes custom UI components, icons, and clickable help links.
      */
     private void createUIComponents() {
@@ -1077,6 +1100,8 @@ public class ProjectSettingsComponent {
         aiderHelpLabel.setIcon(AllIcons.Ide.External_link_arrow);
         apiBaseHelp = new JLabel();
         apiBaseHelp.setIcon(AllIcons.General.ContextHelp);
+        iterationHelp = new JLabel();
+        iterationHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
     /**

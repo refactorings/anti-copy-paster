@@ -26,6 +26,7 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public int timeBuffer = 10;
     public JudgementModel judgementModel = JudgementModel.TENSORFLOW;
     public ExtractionType extractionType = ExtractionType.TYPE_TWO;
+    public int maxAttempts = 3;
 
     public int maxParams = 10;
 
@@ -140,6 +141,14 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public void setFilesPath(String path) {
         this.filesPath = path;
+    }
+
+    public int getMaxAttempts() {
+        return maxAttempts;
+    }
+
+    public void setMaxAttempts(int maxAttempts) {
+        this.maxAttempts = maxAttempts;
     }
 
     public ArrayList<JCheckBox> getAllFilesCheckboxes() {

@@ -65,6 +65,7 @@ import org.jetbrains.research.anticopypaster.llm.LlmClient;
 import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
 import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
 import org.jetbrains.research.anticopypaster.rag.RagService;
+import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
 /**
  * Central workflow entry for multi-agent clone refactoring.
@@ -73,7 +74,6 @@ import org.jetbrains.research.anticopypaster.rag.RagService;
  */
 public final class CloneRefactorWorkflow {
 
-    private static final int MAX_ATTEMPTS = 3;
 
     // RAG few-shot databases (place these CSVs under src/main/resources/rag/ in the plugin)
     // so they can be loaded as classpath resources.
@@ -218,6 +218,18 @@ public final class CloneRefactorWorkflow {
                 _LAST_TEST_VIEWER = viewer;
                 viewer.accept("[START] " + fileName);
 
+                // Read max attempts from Settings (iteration slider)
+                int maxAttempts = 3;
+                try {
+                    ProjectSettingsState st = ProjectSettingsState.getInstance(project);
+                    if (st != null) {
+                        maxAttempts = Math.max(1, st.getMaxAttempts());
+                    }
+                } catch (Throwable ignored) {
+                    // keep default
+                }
+                logStage(viewer, "SETTINGS", "maxAttempts=" + maxAttempts);
+
                 // Resolve LLM from settings (provider/model/api key/base/version)
                 LLM = LlmClientFactory.fromProjectSettings(project, viewer);
 
@@ -301,9 +313,9 @@ public final class CloneRefactorWorkflow {
                 String feedback = null;
 
                 /* ---------- Retry Loop ---------- */
-                for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                for (int attempt = 1; attempt <= maxAttempts; attempt++) {
 
-                    logStage(viewer, "ATTEMPT", attempt + "/" + MAX_ATTEMPTS);
+                    logStage(viewer, "ATTEMPT", attempt + "/" + maxAttempts);
 
                     /* ===== Refactor ===== */
                     // Prepend refactor few-shot examples (RAG) to the feedback for the refactor agent.
