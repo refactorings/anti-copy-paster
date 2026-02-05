@@ -4,6 +4,8 @@
     <vendor>JetBrains</vendor>
     <version>2023.2-2.0</version>
 
+    <idea-version since-build="241.0"/>
+
     <description><![CDATA[
     Tracks the copying and pasting actions and suggests extracting duplicates into a new method. Based on imbalanced-pruned experiment.
     ]]></description>

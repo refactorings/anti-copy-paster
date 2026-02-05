@@ -80,7 +80,7 @@ intellij {
     version.set(properties("platformVersion"))
     type.set(properties("platformType"))
     downloadSources.set(properties("platformDownloadSources").toBoolean())
-    updateSinceUntilBuild.set(true)
+    updateSinceUntilBuild.set(false)
     plugins.set(properties("platformPlugins").split(',').map(String::trim).filter(String::isNotEmpty))
     plugins.add("terminal")
 }
