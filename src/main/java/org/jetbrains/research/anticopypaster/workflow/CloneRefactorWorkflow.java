@@ -4,6 +4,12 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiManager;
 
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.util.PsiTreeUtil;
+
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -29,6 +35,8 @@ import org.jetbrains.research.anticopypaster.agents.detection;
 import org.jetbrains.research.anticopypaster.agents.refactor;
 import org.jetbrains.research.anticopypaster.agents.compile;
 import org.jetbrains.research.anticopypaster.agents.testing;
+import org.jetbrains.research.anticopypaster.agents.ExtractMethodUsefulnessAnalyzer;
+import org.jetbrains.research.anticopypaster.agents.FragmentUsefulnessAnalyzer;
 
 import java.io.*;
 import java.net.URI;
@@ -82,6 +90,9 @@ public final class CloneRefactorWorkflow {
     // RAG retrieval tuning
     private static final int REFACTOR_RAG_TOP_K = 5;
     private static final int REFACTOR_RAG_MAX_CHARS = 8000;
+
+    // Refactor proposal preview (console)
+    private static final int REFACTOR_PROPOSAL_PREVIEW_CHARS = 12000;
 
     // Captured for buildProjectClasspathFromIde + streaming viewers in test runner
     private static volatile Project _LAST_PROJECT_FOR_TESTS = null;
@@ -195,9 +206,14 @@ public final class CloneRefactorWorkflow {
      * ============================================================ */
 
     public static void run(Project project, List<VirtualFile> targets) {
+        run(project, targets, null);
+    }
+
+    /** Snippet-centered entry: pastedSnippet is the user's pasted/selected code. */
+    public static void run(Project project, List<VirtualFile> targets, String pastedSnippet) {
         if (targets == null || targets.isEmpty()) return;
         for (VirtualFile vf : targets) {
-            runOnSingleFile(project, vf);
+            runOnSingleFile(project, vf, pastedSnippet);
         }
     }
 
@@ -205,7 +221,7 @@ public final class CloneRefactorWorkflow {
      * Core Workflow
      * ============================================================ */
 
-    private static void runOnSingleFile(Project project, VirtualFile vf) {
+    private static void runOnSingleFile(Project project, VirtualFile vf, String pastedSnippet) {
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
@@ -217,6 +233,21 @@ public final class CloneRefactorWorkflow {
                 _LAST_PROJECT_FOR_TESTS = project;
                 _LAST_TEST_VIEWER = viewer;
                 viewer.accept("[START] " + fileName);
+                if (pastedSnippet != null && !pastedSnippet.isBlank()) {
+                    String pv = pastedSnippet.strip();
+                    if (pv.length() > 200) pv = pv.substring(0, 200) + "...";
+                    logStage(viewer, "PASTE", "snippet provided (chars=" + pastedSnippet.length() + "): " + pv.replace("\n", "\\n"));
+                } else {
+                    logStage(viewer, "PASTE", "no snippet provided (workflow will likely return no_clones with snippet-centered detection)");
+                }
+
+                // Classify pasted snippet: whole-method vs fragment (best-effort).
+                PsiMethod wholeMethod = findWholeMethodCoveredBySnippet(project, vf, originalSource, pastedSnippet);
+                if (wholeMethod != null) {
+                    logStage(viewer, "PASTE", "snippet type=WHOLE_METHOD, method=" + wholeMethod.getName());
+                } else if (pastedSnippet != null && !pastedSnippet.isBlank()) {
+                    logStage(viewer, "PASTE", "snippet type=FRAGMENT");
+                }
 
                 // Read max attempts from Settings (iteration slider)
                 int maxAttempts = 3;
@@ -268,7 +299,7 @@ public final class CloneRefactorWorkflow {
                                 project,
                                 fileName,
                                 originalSource,
-                                null,
+                                pastedSnippet,
                                 llmCaller
                         );
                 logStage(viewer, "DETECTION", "raw result: " + (det == null ? "null" : ("clones=" + (det.clones == null ? "null" : det.clones.size()))));
@@ -348,6 +379,127 @@ public final class CloneRefactorWorkflow {
                     // Do NOT apply immediately. We will compile/test the proposed source in an isolated temp output first.
                     String proposedSource = rr.newSource;
                     logStage(viewer, "REFACTOR", "proposal generated (not applied yet)");
+
+                    // ===== Show proposed refactored code (for debugging / transparency) =====
+                    if (viewer != null) {
+                        String src = proposedSource == null ? "" : proposedSource;
+                        int maxChars = REFACTOR_PROPOSAL_PREVIEW_CHARS; // keep console usable
+                        String shown = src.length() > maxChars ? (src.substring(0, maxChars) + "\n...<truncated>...") : src;
+                        viewer.accept("[REFACTOR_CODE] proposedSource (showing up to " + maxChars + " chars):\n" + shown);
+                    }
+
+                    // Also persist the full proposed source to a file under the project, so the user can open it.
+                    try {
+                        String basePath = project == null ? null : project.getBasePath();
+                        if (basePath != null && !basePath.isBlank()) {
+                            File outDir = new File(basePath, ".anticopypaster" + File.separator + "proposals");
+                            if (!outDir.exists()) outDir.mkdirs();
+                            File outFile = new File(outDir, fileName + ".attempt" + attempt + ".proposed.java");
+                            Files.writeString(outFile.toPath(), proposedSource, StandardCharsets.UTF_8);
+                            logStage(viewer, "REFACTOR_CODE", "full proposed source saved to: " + outFile.getAbsolutePath());
+                        }
+                    } catch (Throwable t) {
+                        logStage(viewer, "REFACTOR_CODE", "failed to save proposed source: " + t.getMessage());
+                    }
+
+                    // ===== Useful Check =====
+                    // For WHOLE_METHOD pasted snippets, we can apply the whole-method usefulness analyzer.
+                    // For FRAGMENT snippets, we skip this whole-method gate for now (a fragment-aware analyzer should be used).
+                    ExtractMethodUsefulnessAnalyzer.UsefulnessResult ur = null;
+                    boolean ranWholeMethodGate = (wholeMethod != null);
+
+                    if (ranWholeMethodGate) {
+                        ur = ExtractMethodUsefulnessAnalyzer.analyze(
+                                project,
+                                fileName,
+                                currentSource,
+                                proposedSource,
+                                new ExtractMethodUsefulnessAnalyzer.UsefulnessConfig()
+                        );
+
+                        if (ur != null && !ur.isUseful) {
+                            String msg = "Not useful refactoring proposal: score=" + ur.score + ", reasons=" + ur.reasons +
+                                    (ur.notes == null || ur.notes.isBlank() ? "" : (", notes=" + ur.notes));
+                            logStage(viewer, "USEFUL", msg);
+                            notify(project,
+                                    "[Clone] Skipping non-useful refactor (attempt " + attempt + ") for: " + fileName + "\n" + msg,
+                                    NotificationType.WARNING);
+
+                            // Provide feedback to the next refactor attempt.
+                            feedback = "Your Extract Method refactoring is not useful. Reasons: " + ur.reasons +
+                                    ". Please avoid trivial extraction (one-liners), avoid extracting almost the whole method, and avoid too many parameters. " +
+                                    "Extract a cohesive block that reduces duplication and improves readability.";
+                            continue;
+                        }
+                        if (ur != null) {
+                            logStage(viewer, "USEFUL", "ok: score=" + ur.score + (ur.notes == null || ur.notes.isBlank() ? "" : (", notes=" + ur.notes)));
+                        }
+                    } else {
+                        // Fragment path: run fragment-aware usefulness analyzer (same categories incl. incomplete refactoring).
+                        try {
+                            detection.CloneRange rA = (clone.ranges != null && clone.ranges.size() > 0) ? clone.ranges.get(0) : null;
+                            detection.CloneRange rB = (clone.ranges != null && clone.ranges.size() > 1) ? clone.ranges.get(1) : null;
+
+                            FragmentUsefulnessAnalyzer.LineRange lrA = (rA == null)
+                                    ? new FragmentUsefulnessAnalyzer.LineRange(1, 1)
+                                    : new FragmentUsefulnessAnalyzer.LineRange(rA.startLine, rA.endLine);
+                            FragmentUsefulnessAnalyzer.LineRange lrB = (rB == null)
+                                    ? new FragmentUsefulnessAnalyzer.LineRange(1, 1)
+                                    : new FragmentUsefulnessAnalyzer.LineRange(rB.startLine, rB.endLine);
+
+                            String[] ab = extractCloneCodeABFromReason(clone.reason);
+                            String codeA = ab[0];
+                            String codeB = ab[1];
+
+                            // Fallbacks: if detection didn't embed code blocks, use the pasted snippet as A.
+                            if (codeA == null || codeA.isBlank()) codeA = pastedSnippet == null ? "" : pastedSnippet;
+
+                            FragmentUsefulnessAnalyzer.UsefulnessResult fr =
+                                    FragmentUsefulnessAnalyzer.analyze(
+                                            project,
+                                            fileName,
+                                            currentSource,
+                                            proposedSource,
+                                            lrA,
+                                            lrB,
+                                            codeA,
+                                            codeB,
+                                            new FragmentUsefulnessAnalyzer.UsefulnessConfig()
+                                    );
+
+                            if (fr != null && !fr.isUseful) {
+                                String msg = "Not useful FRAGMENT refactoring proposal: strategy=" + fr.strategy +
+                                        ", score=" + fr.score + ", reasons=" + fr.reasons +
+                                        (fr.notes == null || fr.notes.isBlank() ? "" : (", notes=" + fr.notes));
+                                logStage(viewer, "USEFUL", msg);
+                                notify(project,
+                                        "[Clone] Skipping non-useful fragment refactor (attempt " + attempt + ") for: " + fileName + "\n" + msg,
+                                        NotificationType.WARNING);
+
+                                // Feedback for the next attempt: focus on duplication removal and incomplete refactoring.
+                                feedback = "Your refactoring is not useful. Strategy=" + fr.strategy + ". Reasons: " + fr.reasons + ". " +
+                                        "You must actually remove or significantly reduce the duplicated fragment in BOTH places. " +
+                                        "Avoid incomplete refactoring where the two fragments remain highly similar after changes. " +
+                                        "Prefer extracting a helper method (or a small set of helpers) and replacing BOTH fragments with calls.";
+                                continue;
+                            }
+
+                            if (fr != null) {
+                                logStage(viewer, "USEFUL", "ok(FRAGMENT): strategy=" + fr.strategy + ", score=" + fr.score +
+                                        (fr.notes == null || fr.notes.isBlank() ? "" : (", notes=" + fr.notes)));
+                            } else {
+                                logStage(viewer, "USEFUL", "fragment analyzer returned null; proceeding (best-effort)");
+                            }
+
+                            if (viewer != null) {
+                                logStage(viewer, "USEFUL", "fragment ranges: A=" + lrA + ", B=" + lrB +
+                                        ", codeA.preview=" + previewOneLine(codeA, 120) +
+                                        ", codeB.preview=" + previewOneLine(codeB, 120));
+                            }
+                        } catch (Throwable t) {
+                            logStage(viewer, "USEFUL", "fragment usefulness check failed: " + t.getMessage() + " (proceeding)");
+                        }
+                    }
 
                     // Compile the proposed source to a temp classes dir, without touching the original file.
                     String ideCp = buildProjectClasspathFromIde(project);
@@ -487,9 +639,93 @@ public final class CloneRefactorWorkflow {
         });
     }
 
-    /* ============================================================
-     * Compile
-     * ============================================================ */
+    // ---- Snippet classification helpers (whole method vs fragment) ----
+
+    /** Best-effort: find pasted snippet line range in the given source text. Returns {startLine,endLine} 1-based, or null if not found. */
+    private static int[] findSnippetLineRangeInText(String fileSource, String pastedSnippet) {
+        try {
+            if (fileSource == null || pastedSnippet == null) return null;
+            if (pastedSnippet.isBlank()) return null;
+
+            int idx = fileSource.indexOf(pastedSnippet);
+            if (idx < 0) return null;
+
+            int startLine = 1;
+            for (int i = 0; i < idx; i++) {
+                if (fileSource.charAt(i) == '\n') startLine++;
+            }
+
+            int endIdx = Math.min(fileSource.length(), idx + pastedSnippet.length());
+            int endLine = startLine;
+            for (int i = idx; i < endIdx; i++) {
+                if (fileSource.charAt(i) == '\n') endLine++;
+            }
+
+            return new int[]{startLine, endLine};
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Returns 1-based {startLine,endLine} for a PSI element using the file document, or null on failure. */
+    private static int[] elementLineRange(Project project, VirtualFile vf, PsiElement el) {
+        try {
+            if (project == null || project.isDisposed() || vf == null || el == null) return null;
+            Document doc = FileDocumentManager.getInstance().getDocument(vf);
+            if (doc == null) return null;
+
+            int startOffset = Math.max(0, el.getTextRange().getStartOffset());
+            int endOffset = Math.max(startOffset, el.getTextRange().getEndOffset());
+
+            int startLine = doc.getLineNumber(startOffset) + 1;
+            int endLine = doc.getLineNumber(Math.max(0, endOffset - 1)) + 1;
+
+            return new int[]{startLine, endLine};
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * Determine whether the pasted snippet covers an entire method.
+     * Returns the host PsiMethod if the snippet range fully covers that method's range, else null.
+     */
+    private static PsiMethod findWholeMethodCoveredBySnippet(Project project, VirtualFile vf, String fileSource, String pastedSnippet) {
+        try {
+            if (project == null || project.isDisposed() || vf == null) return null;
+            if (pastedSnippet == null || pastedSnippet.isBlank()) return null;
+
+            int[] sn = findSnippetLineRangeInText(fileSource, pastedSnippet);
+            if (sn == null) return null;
+
+            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+            if (!(psiFile instanceof PsiJavaFile)) return null;
+
+            // Find a method near the snippet start by using offset (best-effort).
+            int idx = fileSource == null ? -1 : fileSource.indexOf(pastedSnippet);
+            if (idx < 0) return null;
+
+            PsiElement at = psiFile.findElementAt(Math.min(idx, Math.max(0, psiFile.getTextLength() - 1)));
+            PsiMethod host = PsiTreeUtil.getParentOfType(at, PsiMethod.class, false);
+            if (host == null) return null;
+
+            int[] mr = elementLineRange(project, vf, host);
+            if (mr == null) return null;
+
+            // Full coverage (line-based, inclusive)
+            int snippetStart = sn[0];
+            int snippetEnd = sn[1];
+            int methodStart = mr[0];
+            int methodEnd = mr[1];
+
+            if (snippetStart <= methodStart && snippetEnd >= methodEnd) {
+                return host;
+            }
+            return null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
 
     /* ============================================================
      * Compile
@@ -1774,6 +2010,30 @@ public final class CloneRefactorWorkflow {
         }
 
         return tempOut;
+    }
+
+    // Extract clone code blocks embedded by the detection agent in `clone.reason`.
+    // Expected tags:
+    //   [CLONE_CODE_A]...[/CLONE_CODE_A]
+    //   [CLONE_CODE_B]...[/CLONE_CODE_B]
+    private static String[] extractCloneCodeABFromReason(String reason) {
+        try {
+            if (reason == null || reason.isBlank()) return new String[]{"", ""};
+            Matcher ma = Pattern.compile("(?s)\\[CLONE_CODE_A\\](.*?)\\[/CLONE_CODE_A\\]").matcher(reason);
+            Matcher mb = Pattern.compile("(?s)\\[CLONE_CODE_B\\](.*?)\\[/CLONE_CODE_B\\]").matcher(reason);
+            String a = ma.find() ? ma.group(1) : "";
+            String b = mb.find() ? mb.group(1) : "";
+            return new String[]{a == null ? "" : a.strip(), b == null ? "" : b.strip()};
+        } catch (Throwable t) {
+            return new String[]{"", ""};
+        }
+    }
+
+    private static String previewOneLine(String s, int max) {
+        if (s == null) return "";
+        String v = s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n").strip();
+        if (v.length() > max) v = v.substring(0, max) + "...";
+        return v;
     }
 }
 

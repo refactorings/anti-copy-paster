@@ -146,12 +146,12 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             List<VirtualFile> finalTargets = targets;
             ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
-                    for (VirtualFile vf : finalTargets) {
-                        org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.run(
-                                project,
-                                List.of(vf)
-                        );
-                    }
+                    // Snippet-centered: only search clones related to the pasted code.
+                    org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.run(
+                            project,
+                            finalTargets,
+                            text
+                    );
                 } catch (Throwable t) {
                     ApplicationManager.getApplication().invokeLater(() ->
                             notify(project, "Refactoring workflow failed: " + t.getMessage()));

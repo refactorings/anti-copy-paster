@@ -45,6 +45,12 @@ public final class RagService {
     /** RRF constant */
     public static int RRF_K = 60;
 
+    /** Hard cap on how many refactor examples to include in the guidance (even if caller asks for more). */
+    public static int MAX_REFACTOR_EXAMPLES_IN_GUIDANCE = 6;
+
+    /** Hard cap on total refactor guidance size (characters). */
+    public static int MAX_REFACTOR_GUIDANCE_CHARS = 12000;
+
     /** HTTP client shared */
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
@@ -136,8 +142,9 @@ public final class RagService {
         // 3) RRF fuse
         List<Scored<RefactorExample>> fused = reciprocalRankFusion(sparse, dense);
 
-        // 4) take top-k
-        List<Scored<RefactorExample>> top = fused.subList(0, Math.min(k, fused.size()));
+        // 4) take top-k, but clamp to hard max
+        int kEff = Math.min(k, MAX_REFACTOR_EXAMPLES_IN_GUIDANCE);
+        List<Scored<RefactorExample>> top = fused.subList(0, Math.min(kEff, fused.size()));
         List<RefactorExample> examples = new ArrayList<>();
         Map<RefactorExample, Double> scoreMap = new IdentityHashMap<>();
         for (Scored<RefactorExample> s : top) {
@@ -180,6 +187,11 @@ public final class RagService {
                 sb.append("NOTE: ").append(ex.rationale).append("\n");
             }
             sb.append("\n");
+        }
+        // Hard cap the overall guidance size to avoid exceeding the LLM context window.
+        if (MAX_REFACTOR_GUIDANCE_CHARS > 0 && sb.length() > MAX_REFACTOR_GUIDANCE_CHARS) {
+            String cut = sb.substring(0, MAX_REFACTOR_GUIDANCE_CHARS);
+            return cut + "\n...<RAG_TRUNCATED>...\n";
         }
         return sb.toString();
     }
