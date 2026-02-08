@@ -20,6 +20,7 @@ import java.net.URISyntaxException;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.Hashtable;
 
 
 public class ProjectSettingsComponent {
@@ -507,15 +508,25 @@ public class ProjectSettingsComponent {
         createUIComponents();
 
         // Make iteration slider move in discrete steps and show ticks
+        // Show ONLY min/max labels (not every tick)
         if (iterationSlider != null) {
             iterationSlider.setPaintTicks(true);
             iterationSlider.setSnapToTicks(true);
+
             if (iterationSlider.getMajorTickSpacing() <= 0) {
                 iterationSlider.setMajorTickSpacing(1);
             }
-            if (iterationSlider.getMinorTickSpacing() <= 0) {
-                iterationSlider.setMinorTickSpacing(1);
-            }
+            // Minor ticks are optional; keep them only if already configured.
+            // If you want minor ticks, you can set them in the .form; we won't force them here.
+
+            // Only show labels at the two ends
+            int min = iterationSlider.getMinimum();
+            int max = iterationSlider.getMaximum();
+            Hashtable<Integer, JLabel> labelTable = new Hashtable<>();
+            labelTable.put(min, new JLabel(String.valueOf(min)));
+            labelTable.put(max, new JLabel(String.valueOf(max)));
+            iterationSlider.setLabelTable(labelTable);
+            iterationSlider.setPaintLabels(true);
         }
 
         // Record initial model state

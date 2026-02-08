@@ -79,6 +79,7 @@ public final class FragmentUsefulnessAnalyzer {
 
     public enum Strategy {
         EXTRACT_METHOD,
+        EXCESSIVE_REFACTORING,
         POST_EXTRACTION_DELETION,
         DIRECT_REMOVAL,
         DELEGATION_TO_EXISTING,
@@ -92,6 +93,7 @@ public final class FragmentUsefulnessAnalyzer {
         NOT_A_CLONE_IN_BEFORE,
         CLONE_REDUCED_OR_REMOVED,
         INCOMPLETE_REFACTORING_DETECTED,
+        EXCESSIVE_REFACTORING_DETECTED,
         ANALYZER_FALLBACK,
         NON_EXTRACT_METHOD_STRATEGY
     }
@@ -274,6 +276,46 @@ public final class FragmentUsefulnessAnalyzer {
                 if (simAfter <= cfg.cloneSimilarityAfterReduced) score = 45;
                 if (aRemoved || bRemoved) score = Math.max(score, 40);
                 return new UsefulnessResult(false, score, strategy, reasons, notes);
+            }
+
+            // 6.5) Excessive refactoring (JSS taxonomy): extracted method is larger than the original cloned fragments.
+            // We only check this when the refactoring was classified as EXTRACT_METHOD.
+            // Definition used here: if the extracted method BODY has more lines than the larger of the two BEFORE fragments,
+            // we treat it as excessive and mark it as NOT useful.
+            try {
+                // Count BEFORE fragment lines (use the larger fragment as baseline).
+                int baseLinesA = countNonEmptyCodeLines(beforeA);
+                int baseLinesB = countNonEmptyCodeLines(beforeB);
+                int baseLines = Math.max(baseLinesA, baseLinesB);
+
+                // Identify the extracted method: it should be a newly-added method that both sides delegate to.
+                // We re-compute the shared callee set from evidence.
+                Set<String> shared = new HashSet<>(evA.calleeKeys);
+                shared.retainAll(evB.calleeKeys);
+
+                String extractedKey = null;
+                for (String k : shared) {
+                    if (addedMethodKeys.contains(k)) {
+                        extractedKey = k;
+                        break;
+                    }
+                }
+
+                if (extractedKey != null) {
+                    PsiMethod extracted = afterMethods.get(extractedKey);
+                    int extractedLines = countMethodBodyNonEmptyLines(extracted);
+
+                    // Small tolerance to avoid false positives (e.g., braces, one extra return line)
+                    int tolerance = 2;
+                    if (extractedLines > baseLines + tolerance) {
+                        reasons.add(Reason.EXCESSIVE_REFACTORING_DETECTED);
+                        Strategy excessive = Strategy.EXCESSIVE_REFACTORING;
+                        String exNotes = notes + ", extractedLines=" + extractedLines + ", baseFragmentLines=" + baseLines + ", tol=" + tolerance;
+                        return new UsefulnessResult(false, 35, excessive, reasons, exNotes);
+                    }
+                }
+            } catch (Throwable ignored) {
+                // best-effort; do not fail analysis
             }
 
             // Extract-Method: consider useful only when the clone is reduced/removed.
@@ -717,6 +759,39 @@ public final class FragmentUsefulnessAnalyzer {
     /* =============================
      * Utilities
      * ============================= */
+
+    /** Counts non-empty, non-comment-only lines in a text snippet (best-effort). */
+    private static int countNonEmptyCodeLines(String text) {
+        try {
+            if (text == null) return 0;
+            String[] lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n", -1);
+            int n = 0;
+            for (String raw : lines) {
+                if (raw == null) continue;
+                String s = raw.trim();
+                if (s.isEmpty()) continue;
+                // very light filtering for obvious comment-only lines
+                if (s.startsWith("//")) continue;
+                if (s.equals("{") || s.equals("}")) continue;
+                n++;
+            }
+            return n;
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    /** Counts non-empty lines inside a method body using PSI text (best-effort). */
+    private static int countMethodBodyNonEmptyLines(PsiMethod m) {
+        try {
+            if (m == null) return 0;
+            PsiCodeBlock body = m.getBody();
+            if (body == null) return 0;
+            return countNonEmptyCodeLines(body.getText());
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
 
     private static UsefulnessResult fallback(String msg) {
         return new UsefulnessResult(true, 60, Strategy.UNKNOWN,
