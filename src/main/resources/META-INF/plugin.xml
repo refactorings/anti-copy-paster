@@ -14,7 +14,7 @@
     <depends>com.intellij.modules.java</depends>
     <depends>com.intellij.modules.lang</depends>
     <depends>org.jetbrains.plugins.terminal</depends>
-    <depends>com.intellij.junit</depends>
+    <depends optional="true">com.intellij.junit</depends>
     <depends optional="true">com.github.copilot</depends>
 
     <extensions defaultExtensionNs="com.intellij">

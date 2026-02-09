@@ -80,10 +80,13 @@ intellij {
     version.set(properties("platformVersion"))
     type.set(properties("platformType"))
     downloadSources.set(properties("platformDownloadSources").toBoolean())
-    updateSinceUntilBuild.set(false) //set false to support multiple versions of the platform
-    plugins.set(properties("platformPlugins").split(',').map(String::trim).filter(String::isNotEmpty))
-    plugins.add("terminal")
-    plugins.add("junit")
+    updateSinceUntilBuild.set(false) //set false to support different versions of the platform depending on the settings in plugin.xml
+    val basePlugins = properties("platformPlugins")
+        .split(',')
+        .map(String::trim)
+        .filter(String::isNotEmpty)
+
+    plugins.set((basePlugins + listOf("terminal", "junit")).distinct())
 }
 
 tasks {

@@ -71,18 +71,38 @@ public final class ExtractMethodUsefulnessAnalyzer {
 
     public enum Reason {
         NO_CLONES_DETECTED,
-        CLONES_REDUCED_OR_REMOVED,
+        EXTRACT_METHOD_CONFIRMED,
+
         INCOMPLETE_REFACTORING_DETECTED,
+        EXCESSIVE_REFACTORING_DETECTED,
+        POST_EXTRACTION_CLONE_DELETION_DETECTED,
+        DIRECT_CLONE_REMOVAL_DETECTED,
+        CALL_BASED_CLONE_SUBSTITUTION_DETECTED,
+        CLONE_REMOVAL_BY_DELEGATION_DETECTED,
+        FRAGMENTATION_OF_LOGIC_DETECTED,
+
         ANALYZER_FALLBACK
     }
 
     public enum Strategy {
+        // "Good" outcome (the only one we accept as useful)
         EXTRACT_METHOD,
+
+        // Failure modes / non-Extract-Method outcomes (JSS taxonomy)
+        INCOMPLETE_REFACTORING,
+        EXCESSIVE_REFACTORING,
+        POST_EXTRACTION_CLONE_DELETION,
+        DIRECT_CLONE_REMOVAL,
+        CALL_BASED_CLONE_SUBSTITUTION,
+        CLONE_REMOVAL_BY_DELEGATION,
+        FRAGMENTATION_OF_LOGIC,
+
+        // Backward-compat / legacy labels (kept to avoid breaking other code paths)
         POST_EXTRACTION_DELETION,
         DIRECT_REMOVAL,
         DELEGATION_TO_EXISTING,
         FRAGMENTATION,
-        INCOMPLETE_REFACTORING,
+
         UNKNOWN
     }
 
@@ -139,15 +159,17 @@ public final class ExtractMethodUsefulnessAnalyzer {
             // Find clone candidates in BEFORE (whole-method)
             List<PairScore> clonePairs = findClonePairs(beforeSig, cfg);
             if (clonePairs.isEmpty()) {
-                return new UsefulnessResult(true, 60, List.of(Reason.NO_CLONES_DETECTED),
-                        "No whole-method clone pairs detected in BEFORE; usefulness gate skipped.");
+                return new UsefulnessResult(false, 30, List.of(Reason.NO_CLONES_DETECTED),
+                        "No whole-method clone pairs detected in BEFORE; cannot confirm Extract Method.");
             }
 
-            // Evaluate each pair after refactoring
+            // STRICT usefulness: ALL pairs must be EXTRACT_METHOD, else NOT useful.
             int analyzed = 0;
-            int removedOrReduced = 0;
-            int incomplete = 0;
+            int extractOk = 0;
             EnumMap<Strategy, Integer> strategyCounts = new EnumMap<>(Strategy.class);
+
+            // Track which non-Extract-Method outcomes happened at least once
+            EnumSet<Reason> failReasons = EnumSet.noneOf(Reason.class);
 
             for (PairScore ps : clonePairs) {
                 if (analyzed >= cfg.maxPairs) break;
@@ -156,39 +178,41 @@ public final class ExtractMethodUsefulnessAnalyzer {
                 PairOutcome out = evaluatePair(ps, beforeMethods, afterMethods, beforeSig, afterSig, addedKeys, afterPsi, cfg);
                 strategyCounts.put(out.strategy, strategyCounts.getOrDefault(out.strategy, 0) + 1);
 
-                if (out.strategy == Strategy.INCOMPLETE_REFACTORING) {
-                    incomplete++;
-                } else if (out.reducedOrRemoved) {
-                    removedOrReduced++;
+                if (out.strategy == Strategy.EXTRACT_METHOD) {
+                    extractOk++;
+                    continue;
+                }
+
+                // Any non-EXTRACT_METHOD outcome makes the proposal NOT useful.
+                switch (out.strategy) {
+                    case INCOMPLETE_REFACTORING -> failReasons.add(Reason.INCOMPLETE_REFACTORING_DETECTED);
+                    case EXCESSIVE_REFACTORING -> failReasons.add(Reason.EXCESSIVE_REFACTORING_DETECTED);
+                    case POST_EXTRACTION_CLONE_DELETION -> failReasons.add(Reason.POST_EXTRACTION_CLONE_DELETION_DETECTED);
+                    case DIRECT_CLONE_REMOVAL -> failReasons.add(Reason.DIRECT_CLONE_REMOVAL_DETECTED);
+                    case CALL_BASED_CLONE_SUBSTITUTION -> failReasons.add(Reason.CALL_BASED_CLONE_SUBSTITUTION_DETECTED);
+                    case CLONE_REMOVAL_BY_DELEGATION -> failReasons.add(Reason.CLONE_REMOVAL_BY_DELEGATION_DETECTED);
+                    case FRAGMENTATION_OF_LOGIC -> failReasons.add(Reason.FRAGMENTATION_OF_LOGIC_DETECTED);
+                    default -> failReasons.add(Reason.ANALYZER_FALLBACK);
                 }
             }
 
             List<Reason> reasons = new ArrayList<>();
-            boolean isUseful;
-            int score = 100;
+            int score;
 
-            if (incomplete > 0) {
-                reasons.add(Reason.INCOMPLETE_REFACTORING_DETECTED);
-                isUseful = false;
-                score -= 50;
-                score -= Math.min(30, incomplete * 10);
-            } else if (removedOrReduced > 0) {
-                reasons.add(Reason.CLONES_REDUCED_OR_REMOVED);
-                isUseful = true;
-                score -= Math.max(0, 30 - removedOrReduced * 5);
-                score += Math.min(10, removedOrReduced); // small bonus
+            boolean isUseful = (analyzed > 0) && (extractOk == analyzed) && failReasons.isEmpty();
+            if (isUseful) {
+                reasons.add(Reason.EXTRACT_METHOD_CONFIRMED);
+                score = 100;
             } else {
-                // No incomplete, but also no clear reduction: don't block hard; mark low confidence.
-                reasons.add(Reason.ANALYZER_FALLBACK);
-                isUseful = true;
-                score = 55;
+                reasons.addAll(failReasons.isEmpty() ? List.of(Reason.ANALYZER_FALLBACK) : new ArrayList<>(failReasons));
+                // Score: start from 60 and subtract per failure type + per non-extract pair
+                int nonExtract = analyzed - extractOk;
+                score = 60 - Math.min(40, nonExtract * 10);
+                score = clamp(score, 0, 100);
             }
 
-            score = clamp(score, 0, 100);
-
             String notes = "analyzedPairs=" + analyzed +
-                    ", reducedOrRemoved=" + removedOrReduced +
-                    ", incomplete=" + incomplete +
+                    ", extractMethodPairs=" + extractOk +
                     ", addedMethods=" + addedKeys.size() +
                     ", strategies=" + summarizeStrategies(strategyCounts);
 
@@ -239,15 +263,15 @@ public final class ExtractMethodUsefulnessAnalyzer {
             DelegateInfo del = (remaining == null) ? null : detectDelegate(remaining, afterPsi, cfg);
 
             if (!addedKeys.isEmpty() && del != null && del.isDelegate) {
-                // Helper introduced somewhere + remaining method delegates
-                return new PairOutcome(Strategy.POST_EXTRACTION_DELETION, true);
+                // Helper introduced somewhere + remaining method delegates, while the other clone is deleted.
+                return new PairOutcome(Strategy.POST_EXTRACTION_CLONE_DELETION, true);
             }
-            return new PairOutcome(Strategy.DIRECT_REMOVAL, true);
+            // One side deleted without a symmetric Extract Method outcome.
+            return new PairOutcome(Strategy.DIRECT_CLONE_REMOVAL, true);
         }
 
-        // If both deleted, clones removed.
         if (aDeleted && bDeleted) {
-            return new PairOutcome(Strategy.DIRECT_REMOVAL, true);
+            return new PairOutcome(Strategy.DIRECT_CLONE_REMOVAL, true);
         }
 
         // Both still exist: compare AFTER similarity
@@ -259,19 +283,63 @@ public final class ExtractMethodUsefulnessAnalyzer {
         DelegateInfo aDel = detectDelegate(aAfter, afterPsi, cfg);
         DelegateInfo bDel = detectDelegate(bAfter, afterPsi, cfg);
 
-        // Case: both are thin delegates to the same callee method(s)
+        /* =============================
+         * Excessive refactoring (whole-method)
+         * ============================= */
+        // See helper methods below
+
+        // -----------------------------
+        // Step 1: delegate-based checks
+        // -----------------------------
+
+        // (1) Both are thin delegates to the same callee(s)
         if (aDel.isDelegate && bDel.isDelegate) {
             Set<String> shared = new HashSet<>(aDel.calleeKeys);
             shared.retainAll(bDel.calleeKeys);
 
             if (!shared.isEmpty()) {
-                // If shared callee is new => extract-method style. If existing => delegation-to-existing.
-                boolean sharedHasNew = shared.stream().anyMatch(addedKeys::contains);
+                // If they delegate to >=2 shared callees, this is fragmentation of logic.
                 if (shared.size() >= 2) {
-                    return new PairOutcome(Strategy.FRAGMENTATION, true);
+                    return new PairOutcome(Strategy.FRAGMENTATION_OF_LOGIC, true);
                 }
-                return new PairOutcome(sharedHasNew ? Strategy.EXTRACT_METHOD : Strategy.DELEGATION_TO_EXISTING, true);
+
+                // Exactly one shared callee.
+                String only = shared.iterator().next();
+                boolean isNew = addedKeys.contains(only);
+
+                if (isNew) {
+                    // Intended Extract Method: both delegates to the newly added helper
+                    PsiMethod helper = afterMethods.get(only);
+                    PsiMethod beforeA = beforeMethods.get(aKey);
+                    PsiMethod beforeB = beforeMethods.get(bKey);
+
+                    // Excessive refactoring: helper includes much more code than original clones
+                    // (heuristic ratio 1.20)
+                    if (helper != null && isExcessiveExtraction(beforeA, beforeB, helper, 1.20)) {
+                        return new PairOutcome(Strategy.EXCESSIVE_REFACTORING, false);
+                    }
+
+                    return new PairOutcome(Strategy.EXTRACT_METHOD, true);
+                }
+
+                // Delegation to an existing method (call-based clone substitution)
+                return new PairOutcome(Strategy.CALL_BASED_CLONE_SUBSTITUTION, true);
             }
+        }
+
+        // (2) Asymmetric delegation cases
+        // If exactly one side is a delegate, and it delegates to the other clone method => call-based clone substitution.
+        if (aDel.isDelegate ^ bDel.isDelegate) {
+            DelegateInfo del = aDel.isDelegate ? aDel : bDel;
+            String delegatedFrom = aDel.isDelegate ? aKey : bKey;
+            String delegatedToOther = aDel.isDelegate ? bKey : aKey;
+
+            if (!del.calleeKeys.isEmpty() && del.calleeKeys.contains(delegatedToOther)) {
+                return new PairOutcome(Strategy.CALL_BASED_CLONE_SUBSTITUTION, true);
+            }
+
+            // Delegate exists but not to the same shared callee => clone removal by delegation
+            return new PairOutcome(Strategy.CLONE_REMOVAL_BY_DELEGATION, true);
         }
 
         // Fragmentation: even if not pure delegates, both methods may now call multiple shared helpers and similarity drops.
@@ -281,7 +349,7 @@ public final class ExtractMethodUsefulnessAnalyzer {
         sharedCalls.retainAll(bCalls);
 
         if (sharedCalls.size() >= 2 && simAfter <= cfg.cloneSimilarityAfterReduced) {
-            return new PairOutcome(Strategy.FRAGMENTATION, true);
+            return new PairOutcome(Strategy.FRAGMENTATION_OF_LOGIC, true);
         }
 
         // If similarity remains high after, decide whether this is incomplete refactoring.
@@ -299,11 +367,54 @@ public final class ExtractMethodUsefulnessAnalyzer {
 
         // Similarity dropped enough => reduced (even if strategy unknown)
         if (simAfter <= cfg.cloneSimilarityAfterReduced) {
-            return new PairOutcome(Strategy.UNKNOWN, true);
+            // Similarity reduced, but we cannot prove it is Extract Method.
+            return new PairOutcome(Strategy.UNKNOWN, false);
         }
 
         // Middle region: reduced a bit, but not clear
         return new PairOutcome(Strategy.UNKNOWN, false);
+    }
+
+    /* =============================
+     * Excessive refactoring (whole-method)
+     * ============================= */
+
+    private static int bodyLineCount(PsiMethod m) {
+        try {
+            if (m == null || m.getBody() == null) return 0;
+            PsiCodeBlock b = m.getBody();
+            if (b == null) return 0;
+            PsiStatement[] st = b.getStatements();
+            if (st == null) return 0;
+            if (st.length == 0) return 0;
+
+            int start = st[0].getTextRange() == null ? -1 : st[0].getTextRange().getStartOffset();
+            int end = st[st.length - 1].getTextRange() == null ? -1 : st[st.length - 1].getTextRange().getEndOffset();
+            if (start < 0 || end < 0 || end <= start) return 0;
+
+            String txt = b.getText();
+            if (txt == null || txt.isBlank()) return 0;
+            // Approx line count by counting '\n' inside the body text
+            int lines = 1;
+            for (int i = 0; i < txt.length(); i++) if (txt.charAt(i) == '\n') lines++;
+            return lines;
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    private static boolean isExcessiveExtraction(PsiMethod beforeA,
+                                                 PsiMethod beforeB,
+                                                 PsiMethod extractedHelper,
+                                                 double maxRatio) {
+        // Heuristic: extracted helper is "excessive" if its body is much larger than each original clone body.
+        // Default ratio: 1.20 means helper is 20% larger than the larger clone body.
+        int aLines = bodyLineCount(beforeA);
+        int bLines = bodyLineCount(beforeB);
+        int hLines = bodyLineCount(extractedHelper);
+        int base = Math.max(aLines, bLines);
+        if (base <= 0 || hLines <= 0) return false;
+        return hLines > (int) Math.ceil(base * maxRatio);
     }
 
     /* =============================

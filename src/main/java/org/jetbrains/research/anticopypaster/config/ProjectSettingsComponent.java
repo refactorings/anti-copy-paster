@@ -1083,9 +1083,20 @@ public class ProjectSettingsComponent {
     }
 
     /**
+     * Returns true if the main model selection is Clone_multiagent.
+     */
+    private boolean isCloneMultiAgentSelected() {
+        Object sel = modelComboBox != null ? modelComboBox.getSelectedItem() : null;
+        return "Clone_multiagent".equals(sel);
+    }
+
+    /**
      * Returns the Aider API key from the password field.
      */
     public String getAiderApiKey() {
+        if (isCloneMultiAgentSelected() && multiAgentApiKey != null) {
+            return new String(multiAgentApiKey.getPassword());
+        }
         return new String(aiderApiKey.getPassword());
     }
 
@@ -1093,6 +1104,9 @@ public class ProjectSettingsComponent {
      * Returns the selected Aider model name.
      */
     public String getSelectedAiderModel() {
+        if (isCloneMultiAgentSelected() && multiAgentAidermodelComboBox != null) {
+            return (String) multiAgentAidermodelComboBox.getSelectedItem();
+        }
         return (String) aidermodelComboBox.getSelectedItem();
     }
 
@@ -1100,6 +1114,16 @@ public class ProjectSettingsComponent {
      * Sets the Aider API key and scrolls the field to the start.
      */
     public void setAiderApiKey(String apiKey) {
+        if (isCloneMultiAgentSelected() && multiAgentApiKey != null) {
+            multiAgentApiKey.setText(apiKey);
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    multiAgentApiKey.setCaretPosition(0);
+                } catch (Exception ignored) {
+                }
+            });
+            return;
+        }
         aiderApiKey.setText(apiKey);
         scrollApiKeyToStart();
     }
@@ -1108,6 +1132,10 @@ public class ProjectSettingsComponent {
      * Selects the Aider model in the combo box.
      */
     public void setSelectedAiderModel(String model) {
+        if (isCloneMultiAgentSelected() && multiAgentAidermodelComboBox != null) {
+            multiAgentAidermodelComboBox.setSelectedItem(model);
+            return;
+        }
         aidermodelComboBox.setSelectedItem(model);
     }
 
@@ -1115,6 +1143,9 @@ public class ProjectSettingsComponent {
      * Returns the selected LLM provider.
      */
     public String getLlmProvider() {
+        if (isCloneMultiAgentSelected() && multiAgentLlmProviderComboBox != null) {
+            return (String) multiAgentLlmProviderComboBox.getSelectedItem();
+        }
         return (String) llmProviderComboBox.getSelectedItem();
     }
 
@@ -1122,35 +1153,69 @@ public class ProjectSettingsComponent {
      * Selects the LLM provider in the combo box.
      */
     public void setLlmProvider(String provider) {
+        if (isCloneMultiAgentSelected() && multiAgentLlmProviderComboBox != null) {
+            multiAgentLlmProviderComboBox.setSelectedItem(provider);
+            return;
+        }
         llmProviderComboBox.setSelectedItem(provider);
     }
 
     /**
      * Returns the Azure/OpenAI API base URL text.
      */
-    public String getApiBase() {return apiBase.getText(); }
+    public String getApiBase() {
+        if (isCloneMultiAgentSelected() && multiAgentApiBase != null) {
+            return multiAgentApiBase.getText();
+        }
+        return apiBase.getText();
+    }
+
     public void setOllamaModel(String model) {
+        if (isCloneMultiAgentSelected() && multiAgentOllamaModel != null) {
+            multiAgentOllamaModel.setText(model);
+            return;
+        }
         ollamaModel.setText(model);
     }
 
     public String getOllamaModel() {
+        if (isCloneMultiAgentSelected() && multiAgentOllamaModel != null) {
+            return multiAgentOllamaModel.getText();
+        }
         return ollamaModel.getText();
     }
 
     /**
      * Sets the Azure/OpenAI API base URL text.
      */
-    public void setApiBase(String base) { apiBase.setText(base); }
+    public void setApiBase(String base) {
+        if (isCloneMultiAgentSelected() && multiAgentApiBase != null) {
+            multiAgentApiBase.setText(base);
+            return;
+        }
+        apiBase.setText(base);
+    }
 
     /**
      * Returns the Azure API version text.
      */
-    public String getApiVersion() {return apiVersion.getText(); }
+    public String getApiVersion() {
+        if (isCloneMultiAgentSelected() && multiAgentApiVersion != null) {
+            return multiAgentApiVersion.getText();
+        }
+        return apiVersion.getText();
+    }
 
     /**
      * Sets the Azure API version text.
      */
-    public void setApiVersion(String version) { apiVersion.setText(version); }
+    public void setApiVersion(String version) {
+        if (isCloneMultiAgentSelected() && multiAgentApiVersion != null) {
+            multiAgentApiVersion.setText(version);
+            return;
+        }
+        apiVersion.setText(version);
+    }
 
     /**
      * Returns the list backing the dynamically generated file checkboxes.
@@ -1255,6 +1320,9 @@ public class ProjectSettingsComponent {
      * Gets the maximum number of refactoring attempts from the iteration slider.
      */
     public int getMaxAttempts() {
+        if (isCloneMultiAgentSelected() && multiAgentIterationSlider != null) {
+            return multiAgentIterationSlider.getValue();
+        }
         return iterationSlider.getValue();
     }
 
@@ -1262,6 +1330,10 @@ public class ProjectSettingsComponent {
      * Sets the maximum number of refactoring attempts on the iteration slider.
      */
     public void setMaxAttempts(int maxAttempts) {
+        if (isCloneMultiAgentSelected() && multiAgentIterationSlider != null) {
+            multiAgentIterationSlider.setValue(maxAttempts);
+            return;
+        }
         iterationSlider.setValue(maxAttempts);
     }
 
