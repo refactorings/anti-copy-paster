@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "org.jetbrains.research.anticopypaster"
-version = "2025.1-3.2"
+version = "2025.1-3.2" //version of the plugin, not the platform
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -80,9 +80,10 @@ intellij {
     version.set(properties("platformVersion"))
     type.set(properties("platformType"))
     downloadSources.set(properties("platformDownloadSources").toBoolean())
-    updateSinceUntilBuild.set(false)
+    updateSinceUntilBuild.set(false) //set false to support multiple versions of the platform
     plugins.set(properties("platformPlugins").split(',').map(String::trim).filter(String::isNotEmpty))
     plugins.add("terminal")
+    plugins.add("junit")
 }
 
 tasks {

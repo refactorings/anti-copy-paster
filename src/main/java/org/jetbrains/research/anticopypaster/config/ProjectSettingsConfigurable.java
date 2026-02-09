@@ -56,6 +56,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= settingsComponent.getNameModel() != settings.useNameRec;
         modified |= settingsComponent.getNumOfPreds() != settings.numOfPreds;
         modified |= settingsComponent.getJudgementModel() != settings.judgementModel;
+        modified |= settingsComponent.getCloneMode() != settings.getCloneMode();
         modified |= settingsComponent.getExtractionType() != settings.extractionType;
         modified |= settingsComponent.getModelSensitivity() != settings.modelSensitivity;
         modified |= settingsComponent.getMaxParams() != settings.maxParams;
@@ -116,6 +117,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.useNameRec = settingsComponent.getNameModel();
         settings.numOfPreds = settingsComponent.getNumOfPreds();
         settings.judgementModel = settingsComponent.getJudgementModel();
+        settings.setCloneMode(settingsComponent.getCloneMode());
         settings.extractionType = settingsComponent.getExtractionType();
         settings.modelSensitivity = settingsComponent.getModelSensitivity();
         settings.maxParams = settingsComponent.getMaxParams();
@@ -154,6 +156,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setNameModel(settings.useNameRec);
         settingsComponent.setNumOfPreds(settings.numOfPreds);
         settingsComponent.setJudgementModel(settings.judgementModel);
+        settingsComponent.setCloneMode(settings.getCloneMode());
         settingsComponent.setExtractionType(settings.extractionType);
         settingsComponent.setModelSensitivity(settings.modelSensitivity);
         settingsComponent.setMaxParams(settings.maxParams);

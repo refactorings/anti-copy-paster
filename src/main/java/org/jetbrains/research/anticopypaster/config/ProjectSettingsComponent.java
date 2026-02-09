@@ -54,7 +54,55 @@ public class ProjectSettingsComponent {
     private JLabel upToLabel;
     private JPanel manualHeuristicsPanel;
     private JPanel aiSettingsPanel;
+    private JPanel multiAgentSettingsPanel;
+
     private JPanel aiderSettingsPanel;
+
+    // Original (Multi-agent panel) widget references (preserved before we alias to duplicated Aider widgets)
+    private JComboBox multiAgentLlmProviderComboBox;
+    private JComboBox multiAgentAidermodelComboBox;
+    private JPasswordField multiAgentApiKey;
+
+    private JPanel multiAgentProviderPanel;
+    private JPanel multiAgentApiKeyPanel;
+    private JPanel multiAgentModelPanel;
+
+    private JPanel multiAgentAzureApiVersion;
+    private JTextField multiAgentApiVersion;
+
+    private JPanel multiAgentAzureApiBase;
+    private JTextField multiAgentApiBase;
+    private JLabel multiAgentApiBaseHelp;
+
+    private JPanel multiAgentOllamaModelPanel;
+    private JTextField multiAgentOllamaModel;
+
+    private JSlider multiAgentIterationSlider;
+    private JPanel multiAgentIterationNumberPanel;
+    private JLabel multiAgentIterationHelp;
+
+    // Aider panel bindings (copied from multiAgentSettingsPanel with `aider*` prefixes)
+    private JComboBox aiderLlmProviderComboBox;
+    private JComboBox aiderAidermodelComboBox;
+    private JPasswordField aiderAiderApiKey;
+
+    private JPanel aiderProviderPanel;
+    private JPanel aiderApiKeyPanel;
+    private JPanel aiderModelPanel;
+
+    private JPanel aiderAzureApiVersion;
+    private JTextField aiderApiVersion;
+
+    private JPanel aiderAzureApiBase;
+    private JTextField aiderApiBase;
+    private JLabel aiderApiBaseHelp;
+
+    private JPanel aiderOllamaModelPanel;
+    private JTextField aiderOllamaModel;
+
+    private JSlider aiderIterationSlider;
+    private JPanel aiderIterationNumberPanel;
+    private JLabel aiderIterationHelp;
     private JSpinner timeBufferSelector;
     private JSpinner minimumMethodSelector;
     private JSpinner maxParamsSpinner;
@@ -92,6 +140,8 @@ public class ProjectSettingsComponent {
     private JSlider iterationSlider;
     private JPanel iterationNumberPanel;
     private JLabel iterationHelp;
+    private JTextField textField1;
+    private JLabel aiderPath;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     private final Project projectRef;
     private Integer pendingMainModelIndex = null;
@@ -134,6 +184,88 @@ public class ProjectSettingsComponent {
         llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, DeepSeek or Azure.");
         aidermodelComboBox.setToolTipText("Select the specific model you want to use from the provider.");
         aiderApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
+
+        // Preserve the original (multi-agent panel) widgets before we alias to the duplicated Aider panel widgets.
+        multiAgentLlmProviderComboBox = llmProviderComboBox;
+        multiAgentAidermodelComboBox = aidermodelComboBox;
+        multiAgentApiKey = aiderApiKey;
+
+        multiAgentProviderPanel = providerPanel;
+        multiAgentApiKeyPanel = apiKeyPanel;
+        multiAgentModelPanel = modelPanel;
+
+        multiAgentAzureApiVersion = azureApiVersion;
+        multiAgentApiVersion = apiVersion;
+
+        multiAgentAzureApiBase = azureApiBase;
+        multiAgentApiBase = apiBase;
+        multiAgentApiBaseHelp = apiBaseHelp;
+
+        multiAgentOllamaModelPanel = ollamaModelPanel;
+        multiAgentOllamaModel = ollamaModel;
+
+        multiAgentIterationSlider = iterationSlider;
+        multiAgentIterationNumberPanel = iterationNumberPanel;
+        multiAgentIterationHelp = iterationHelp;
+
+        // If the new duplicated Aider panel exists (aiderSettingsPanel + aider* bindings),
+        // alias those components into the existing fields so the rest of this class continues to work.
+        // This lets us keep all provider/model/api-key logic in one place.
+        if (aiderSettingsPanel != null) {
+            if (aiderLlmProviderComboBox != null) {
+                llmProviderComboBox = aiderLlmProviderComboBox;
+            }
+            if (aiderAidermodelComboBox != null) {
+                aidermodelComboBox = aiderAidermodelComboBox;
+            }
+            if (aiderAiderApiKey != null) {
+                aiderApiKey = aiderAiderApiKey;
+            }
+
+            if (aiderProviderPanel != null) {
+                providerPanel = aiderProviderPanel;
+            }
+            if (aiderApiKeyPanel != null) {
+                apiKeyPanel = aiderApiKeyPanel;
+            }
+            if (aiderModelPanel != null) {
+                modelPanel = aiderModelPanel;
+            }
+
+            if (aiderAzureApiVersion != null) {
+                azureApiVersion = aiderAzureApiVersion;
+            }
+            if (aiderApiVersion != null) {
+                apiVersion = aiderApiVersion;
+            }
+
+            if (aiderAzureApiBase != null) {
+                azureApiBase = aiderAzureApiBase;
+            }
+            if (aiderApiBase != null) {
+                apiBase = aiderApiBase;
+            }
+            if (aiderApiBaseHelp != null) {
+                apiBaseHelp = aiderApiBaseHelp;
+            }
+
+            if (aiderOllamaModelPanel != null) {
+                ollamaModelPanel = aiderOllamaModelPanel;
+            }
+            if (aiderOllamaModel != null) {
+                ollamaModel = aiderOllamaModel;
+            }
+
+            if (aiderIterationSlider != null) {
+                iterationSlider = aiderIterationSlider;
+            }
+            if (aiderIterationNumberPanel != null) {
+                iterationNumberPanel = aiderIterationNumberPanel;
+            }
+            if (aiderIterationHelp != null) {
+                iterationHelp = aiderIterationHelp;
+            }
+        }
         filesPath.setToolTipText("Specify the path to the directory with the files you would like to search for clones in.");
 
         // Add warning icon and tooltip for empty API key
@@ -442,65 +574,32 @@ public class ProjectSettingsComponent {
             public void removeUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
             public void changedUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
         });
+        // Ensure initial provider/model state is applied
         String initProvider = (String) llmProviderComboBox.getSelectedItem();
+        setModelOptionsForProvider(initProvider, aidermodelComboBox);
         updateProviderSpecificPanels(initProvider);
         // Initialize provider and model dropdowns if empty
         if (llmProviderComboBox.getSelectedItem() == null) {
             llmProviderComboBox.setSelectedItem("OpenAI");
         }
 
-        // Manually trigger action listener to populate models
-        if (llmProviderComboBox.getActionListeners().length > 0) {
-            llmProviderComboBox.getActionListeners()[0].actionPerformed(null);
-        }
-
         // Watch for changes in the model selection combo box
         aidermodelComboBox.addActionListener(e -> notifySettingsChanged());
-        // Update model list when provider changes. You can add different providers and their models here.
-        llmProviderComboBox.addActionListener(e -> {
-            String selectedProvider = (String) llmProviderComboBox.getSelectedItem();
-            if (selectedProvider != null) {
-                switch (selectedProvider) {
-                    case "OpenAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
-                            "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
-                    }));
-                    case "Gemini" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro-preview", "gemini-3-flash-preview"
-                    }));
-                    case "Anthropic" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                           "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
-                            "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-4-opus-20250514", "claude-4-sonnet-20250514",
-                            "claude-opus-4-1", "claude-opus-4-1-20250805", "claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929",
-                    }));
-                    case "DeepSeek" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "deepseek-chat", "deepseek-coder", "deepseek-reasoner", "deepseek-v3"
-                    }));
-                    case "Azure" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
-                    }));
-                    case "xAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                           "grok-2", "grok-2-latest", "grok-3", "grok-3-beta", "grok-3-fast-beta", "grok-3-latest", "grok-3-mini", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-4", "grok-4-0709", "grok-4-fast-non-reasoning", "grok-4-latest", "grok-beta", "grok-code-fast", "grok-code-fast-1", "grok-code-fast-1-0825"
-                    }));
 
-                    default -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gpt-5" // fallback
-                    }));
-                }
-                // Toggle Azure-specific fields on provider change
-                updateProviderSpecificPanels(selectedProvider);
-                // Refresh layout to reflect visibility changes
-                azureApiVersion.revalidate();
-                azureApiVersion.repaint();
-                azureApiBase.revalidate();
-                azureApiBase.repaint();
-                mainPanel.revalidate();
-                mainPanel.repaint();
-            }
-        });
+        // Unified provider/model wiring for BOTH Clone (Aider panel alias) and Clone_multiagent (original panel)
+        wireProviderAndModel(llmProviderComboBox, aidermodelComboBox, apiKeyPanel, modelPanel, azureApiVersion, azureApiBase, ollamaModelPanel);
 
-        // Ensure warning icons are up-to-date at startup
-        updateOllamaWarnings();
+        if (multiAgentLlmProviderComboBox != null && multiAgentLlmProviderComboBox != llmProviderComboBox) {
+            wireProviderAndModel(
+                    multiAgentLlmProviderComboBox,
+                    multiAgentAidermodelComboBox,
+                    multiAgentApiKeyPanel,
+                    multiAgentModelPanel,
+                    multiAgentAzureApiVersion,
+                    multiAgentAzureApiBase,
+                    multiAgentOllamaModelPanel
+            );
+        }
 
         timeBufferSelector.setModel(new SpinnerNumberModel(10, 0, Integer.MAX_VALUE, 1));
         minimumMethodSelector.setModel(new SpinnerNumberModel(2, 2, Integer.MAX_VALUE, 1));
@@ -566,43 +665,86 @@ public class ProjectSettingsComponent {
      * and synchronizes the available options in the name model dropdown.
      */
     private void updatePanelVisibilities() {
-        boolean isMainModelAider = (modelComboBox.getSelectedIndex() == 2);
-        boolean isNameModelAider = (nameModel.getSelectedIndex() == 2);
-        boolean isMainModelCopilot = (modelComboBox.getSelectedIndex() == 3);
+        String mainModel = (String) modelComboBox.getSelectedItem();
+        String nameModelValue = (String) nameModel.getSelectedItem();
 
-        manualHeuristicsPanel.setVisible(modelComboBox.getSelectedIndex() == 1);
-        aiSettingsPanel.setVisible(modelComboBox.getSelectedIndex() == 0);
+        boolean isMainClone = "Clone".equals(mainModel);
+        boolean isMainCloneMulti = "Clone_multiagent".equals(mainModel);
+        boolean isMainCopilot = "Copilot".equals(mainModel);
 
-        // Show Aider settings if either model selection is Aider, but hide if main model is Copilot
-        boolean showAiderSettings = (isMainModelAider || isNameModelAider) && !isMainModelCopilot;
-        aiderSettingsPanel.setVisible(showAiderSettings);
-        aiderSettingsPanel.revalidate();
-        aiderSettingsPanel.repaint();
-        aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
-        // Keep Aider help label visibility in sync with the Aider settings panel.
+        boolean isNameClone = "Clone".equals(nameModelValue);
+        boolean isNameCloneMulti = "Clone_multiagent".equals(nameModelValue);
+
+        boolean isMainManual = "my manual heuristics".equals(mainModel);
+        boolean isMainAiModel = "the AI model".equals(mainModel);
+
+        manualHeuristicsPanel.setVisible(isMainManual);
+        aiSettingsPanel.setVisible(isMainAiModel);
+
+        // Show Aider (single-agent) clone settings when either selection is "Clone",
+        // but hide if the main model is Copilot.
+        boolean showAiderSettings = (isMainClone || isNameClone) && !isMainCopilot;
+
+        // Show multi-agent clone settings when either selection is "Clone_multiagent",
+        // but hide if the main model is Copilot.
+        boolean showMultiAgentSettings = (isMainCloneMulti || isNameCloneMulti) && !isMainCopilot;
+
+        if (aiderSettingsPanel != null) {
+            aiderSettingsPanel.setVisible(showAiderSettings);
+            aiderSettingsPanel.revalidate();
+            aiderSettingsPanel.repaint();
+            aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
+        }
+
+        if (multiAgentSettingsPanel != null) {
+            multiAgentSettingsPanel.setVisible(showMultiAgentSettings);
+            multiAgentSettingsPanel.revalidate();
+            multiAgentSettingsPanel.repaint();
+            if (showMultiAgentSettings) {
+                multiAgentSettingsPanel.setMinimumSize(new Dimension(200, 100));
+            }
+        }
+
+        // Keep Aider help label visibility in sync with the Clone (Aider) panel.
         if (aiderHelpLabel != null) {
             aiderHelpLabel.setVisible(showAiderSettings);
             aiderHelpLabel.revalidate();
             aiderHelpLabel.repaint();
         }
 
-        // Show file-selection scope controls only for Aider or Copilot as main model
-        boolean showFileSelection = isMainModelAider || isMainModelCopilot;
+        // Ensure provider-specific rows are correct for the currently visible clone settings panel
+        if (showAiderSettings && aiderLlmProviderComboBox != null) {
+            String provider = (String) aiderLlmProviderComboBox.getSelectedItem();
+            updateProviderSpecificPanelsFor(provider, apiKeyPanel, modelPanel, azureApiVersion, azureApiBase, ollamaModelPanel);
+        }
+        if (showMultiAgentSettings && multiAgentLlmProviderComboBox != null) {
+            String provider = (String) multiAgentLlmProviderComboBox.getSelectedItem();
+            updateProviderSpecificPanelsFor(provider, multiAgentApiKeyPanel, multiAgentModelPanel, multiAgentAzureApiVersion, multiAgentAzureApiBase, multiAgentOllamaModelPanel);
+        }
+
+        // Show file-selection scope controls for Clone/Clone_multiagent/Copilot as main model
+        boolean showFileSelection = isMainClone || isMainCloneMulti || isMainCopilot;
         if (fileSelectionPanel != null) {
             fileSelectionPanel.setVisible(showFileSelection);
             fileSelectionPanel.revalidate();
             fileSelectionPanel.repaint();
         }
 
-        // Filter nameModel options based on whether main model is Aider or Copilot, preserving selection if possible
+        // Filter nameModel options based on whether main model is Clone, Clone_multiagent, or Copilot, preserving selection if possible
         Object currentSelection = nameModel.getSelectedItem();
-        if (isMainModelAider) {
-            // When Aider is selected as the main model, only allow "Aider" in name model
+        if (isMainClone) {
+            // When Clone is selected as the main model, only allow "Clone" in name model
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Clone"});
             nameModel.setModel(model);
             nameModel.setSelectedItem("Clone");
         }
-        else if (isMainModelCopilot) {
+        else if (isMainCloneMulti) {
+            // When Clone_multiagent is selected as the main model, only allow "Clone_multiagent" in name model
+            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Clone_multiagent"});
+            nameModel.setModel(model);
+            nameModel.setSelectedItem("Clone_multiagent");
+        }
+        else if (isMainCopilot) {
             // When Copilot is selected as the main model, only allow "Copilot" in name model
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Copilot"});
             nameModel.setModel(model);
@@ -610,15 +752,14 @@ public class ProjectSettingsComponent {
         }
         else {
             // When other main models are selected, restore all options
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Clone"});
+            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Clone", "Clone_multiagent", "Copilot"});
             nameModel.setModel(model);
             if (currentSelection != null && model.getIndexOf(currentSelection) != -1) {
                 nameModel.setSelectedItem(currentSelection);
             } else {
-                nameModel.setSelectedIndex(0); // fallback to first item if previous selection no longer valid
+                nameModel.setSelectedIndex(0);
             }
         }
-
     }
 
     /**
@@ -677,13 +818,43 @@ public class ProjectSettingsComponent {
      * Returns which judgement model to use (ML, manual heuristics, or Aider).
      */
     public ProjectSettingsState.JudgementModel getJudgementModel() {
-        return switch (modelComboBox.getSelectedIndex()) {
-            case 0 -> ProjectSettingsState.JudgementModel.TENSORFLOW;
-            case 1 -> ProjectSettingsState.JudgementModel.USER_SETTINGS;
-            case 2 -> ProjectSettingsState.JudgementModel.AIDER;
-            case 3 -> ProjectSettingsState.JudgementModel.COPILOT;
-            default -> throw new IllegalStateException("Unknown option selected.");
-        };
+        String mainModel = (String) modelComboBox.getSelectedItem();
+        if ("the AI model".equals(mainModel)) return ProjectSettingsState.JudgementModel.TENSORFLOW;
+        if ("my manual heuristics".equals(mainModel)) return ProjectSettingsState.JudgementModel.USER_SETTINGS;
+        if ("Clone".equals(mainModel)) return ProjectSettingsState.JudgementModel.AIDER;
+        if ("Clone_multiagent".equals(mainModel)) return ProjectSettingsState.JudgementModel.AIDER; // treat as AIDER for now
+        if ("Copilot".equals(mainModel)) return ProjectSettingsState.JudgementModel.COPILOT;
+        throw new IllegalStateException("Unknown option selected: " + mainModel);
+    }
+
+    /**
+     * Returns which clone pipeline mode is selected based on the main model combo-box.
+     */
+    public ProjectSettingsState.CloneMode getCloneMode() {
+        String mainModel = (String) modelComboBox.getSelectedItem();
+        if ("Clone_multiagent".equals(mainModel)) {
+            return ProjectSettingsState.CloneMode.MULTI_AGENT;
+        }
+        // Default and "Clone"
+        return ProjectSettingsState.CloneMode.SINGLE_AGENT;
+    }
+
+    /**
+     * Sets the clone pipeline mode by updating the main model combo-box.
+     */
+    public void setCloneMode(ProjectSettingsState.CloneMode mode) {
+        isLoadingSettings = true;
+        try {
+            if (mode == ProjectSettingsState.CloneMode.MULTI_AGENT) {
+                modelComboBox.setSelectedItem("Clone_multiagent");
+            } else {
+                modelComboBox.setSelectedItem("Clone");
+            }
+            lastMainModel = modelComboBox.getSelectedItem();
+            updatePanelVisibilities();
+        } finally {
+            isLoadingSettings = false;
+        }
     }
 
     /**
@@ -692,7 +863,13 @@ public class ProjectSettingsComponent {
     public void setJudgementModel(ProjectSettingsState.JudgementModel model) {
         isLoadingSettings = true;
         try {
-            modelComboBox.setSelectedIndex(model.getIdx());
+            switch (model) {
+                case TENSORFLOW -> modelComboBox.setSelectedItem("the AI model");
+                case USER_SETTINGS -> modelComboBox.setSelectedItem("my manual heuristics");
+                case AIDER -> modelComboBox.setSelectedItem("Clone");
+                case COPILOT -> modelComboBox.setSelectedItem("Copilot");
+                default -> modelComboBox.setSelectedItem("the AI model");
+            }
             lastMainModel = modelComboBox.getSelectedItem();
             updatePanelVisibilities();
         } finally {
@@ -1113,6 +1290,12 @@ public class ProjectSettingsComponent {
         apiBaseHelp.setIcon(AllIcons.General.ContextHelp);
         iterationHelp = new JLabel();
         iterationHelp.setIcon(AllIcons.General.ContextHelp);
+
+        // Help labels for the duplicated Aider settings panel (custom-create bindings)
+        aiderApiBaseHelp = new JLabel();
+        aiderApiBaseHelp.setIcon(AllIcons.General.ContextHelp);
+        aiderIterationHelp = new JLabel();
+        aiderIterationHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
     /**
@@ -1180,30 +1363,64 @@ public class ProjectSettingsComponent {
      * Shows or hides Azure-specific fields based on the selected provider.
      */
     private void updateProviderSpecificPanels(String provider) {
-        boolean isAzure = provider != null && "Azure".equalsIgnoreCase(provider);
-        boolean isOllama = provider != null && "Ollama".equalsIgnoreCase(provider);
-
-        // Hide API key column when using Ollama (no API key needed)
-        if (apiKeyPanel != null) {
-            apiKeyPanel.setVisible(!isOllama);
-        }
-
-        // Azure-specific fields only for Azure
-        azureApiVersion.setVisible(isAzure);
-        azureApiBase.setVisible(isAzure || isOllama);
-
-        if (ollamaModelPanel != null) {
-            ollamaModelPanel.setVisible(isOllama);
-        }
-        if (modelPanel != null) {
-            modelPanel.setVisible(!isOllama);
-        }
-
-        // Refresh layouts so UI updates immediately
-        if (apiKeyPanel != null) { apiKeyPanel.revalidate(); apiKeyPanel.repaint(); }
-        if (mainPanel != null) { mainPanel.revalidate(); mainPanel.repaint(); }
-
+        updateProviderSpecificPanelsFor(provider, apiKeyPanel, modelPanel, azureApiVersion, azureApiBase, ollamaModelPanel);
         updateOllamaWarnings();
+    }
+
+    private void setModelOptionsForProvider(String provider, JComboBox modelComboBoxToUpdate) {
+        if (modelComboBoxToUpdate == null) return;
+        if (provider == null) {
+            modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {"gpt-5"}));
+            return;
+        }
+
+        switch (provider) {
+            case "OpenAI" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
+                    "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
+            }));
+            case "Gemini" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro-preview", "gemini-3-flash-preview"
+            }));
+            case "Anthropic" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
+                    "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-4-opus-20250514", "claude-4-sonnet-20250514",
+                    "claude-opus-4-1", "claude-opus-4-1-20250805", "claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929"
+            }));
+            case "DeepSeek" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "deepseek-chat", "deepseek-coder", "deepseek-reasoner", "deepseek-v3"
+            }));
+            case "Azure" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
+            }));
+            case "xAI" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "grok-2", "grok-2-latest", "grok-3", "grok-3-beta", "grok-3-fast-beta", "grok-3-latest", "grok-3-mini", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-4", "grok-4-0709", "grok-4-fast-non-reasoning", "grok-4-latest", "grok-beta", "grok-code-fast", "grok-code-fast-1", "grok-code-fast-1-0825"
+            }));
+            default -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {"gpt-5"}));
+        }
+    }
+
+    private void wireProviderAndModel(
+            JComboBox providerCombo,
+            JComboBox modelCombo,
+            JPanel apiKeyPanelX,
+            JPanel modelPanelX,
+            JPanel azureApiVersionX,
+            JPanel azureApiBaseX,
+            JPanel ollamaModelPanelX
+    ) {
+        if (providerCombo == null) return;
+
+        providerCombo.addActionListener(e -> {
+            String selectedProvider = (String) providerCombo.getSelectedItem();
+            setModelOptionsForProvider(selectedProvider, modelCombo);
+            updateProviderSpecificPanelsFor(selectedProvider, apiKeyPanelX, modelPanelX, azureApiVersionX, azureApiBaseX, ollamaModelPanelX);
+        });
+
+        // Apply initial state
+        String initProviderLocal = (String) providerCombo.getSelectedItem();
+        setModelOptionsForProvider(initProviderLocal, modelCombo);
+        updateProviderSpecificPanelsFor(initProviderLocal, apiKeyPanelX, modelPanelX, azureApiVersionX, azureApiBaseX, ollamaModelPanelX);
     }
 
     /**
@@ -1235,5 +1452,44 @@ public class ProjectSettingsComponent {
 
         if (azureApiBase != null) { azureApiBase.revalidate(); azureApiBase.repaint(); }
         if (ollamaModelPanel != null) { ollamaModelPanel.revalidate(); ollamaModelPanel.repaint(); }
+    }
+
+    /**
+     * Shows or hides provider-specific fields for an arbitrary set of panels (used for both Aider and Clone_multiagent).
+     */
+    private void updateProviderSpecificPanelsFor(
+            String provider,
+            JPanel apiKeyPanelX,
+            JPanel modelPanelX,
+            JPanel azureApiVersionX,
+            JPanel azureApiBaseX,
+            JPanel ollamaModelPanelX
+    ) {
+        boolean isAzure = provider != null && "Azure".equalsIgnoreCase(provider);
+        boolean isOllama = provider != null && "Ollama".equalsIgnoreCase(provider);
+
+        if (apiKeyPanelX != null) {
+            apiKeyPanelX.setVisible(!isOllama);
+        }
+        if (azureApiVersionX != null) {
+            azureApiVersionX.setVisible(isAzure);
+        }
+        if (azureApiBaseX != null) {
+            azureApiBaseX.setVisible(isAzure || isOllama);
+        }
+        if (ollamaModelPanelX != null) {
+            ollamaModelPanelX.setVisible(isOllama);
+        }
+        if (modelPanelX != null) {
+            modelPanelX.setVisible(!isOllama);
+        }
+
+        // Refresh layouts so UI updates immediately
+        if (apiKeyPanelX != null) { apiKeyPanelX.revalidate(); apiKeyPanelX.repaint(); }
+        if (azureApiVersionX != null) { azureApiVersionX.revalidate(); azureApiVersionX.repaint(); }
+        if (azureApiBaseX != null) { azureApiBaseX.revalidate(); azureApiBaseX.repaint(); }
+        if (ollamaModelPanelX != null) { ollamaModelPanelX.revalidate(); ollamaModelPanelX.repaint(); }
+        if (modelPanelX != null) { modelPanelX.revalidate(); modelPanelX.repaint(); }
+        if (mainPanel != null) { mainPanel.revalidate(); mainPanel.repaint(); }
     }
 }

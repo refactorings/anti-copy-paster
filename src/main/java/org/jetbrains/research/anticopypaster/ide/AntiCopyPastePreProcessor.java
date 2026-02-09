@@ -111,8 +111,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         }
 
         if (currentModelType == ProjectSettingsState.JudgementModel.AIDER) {
-            // NOTE: AIDER option is now repurposed to run the internal LLM-based workflow
-            // without invoking the external aider tool.
+            ProjectSettingsState.CloneMode cloneMode = state.getCloneMode();
 
             // Reuse unified target selection across three scopes
             List<VirtualFile> targets =
@@ -121,18 +120,18 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             if ("Multiple Files".equals(selectedAnalysisButton)) {
                 if (filesPath == null || filesPath.isEmpty()) {
                     ApplicationManager.getApplication().invokeLater(() ->
-                            notify(project, "Invalid directory path provided. Please configure a valid directory."));
+                            notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file."));
                     return text;
                 }
                 File filesDir = new File(filesPath);
                 if (!filesDir.isDirectory()) {
                     ApplicationManager.getApplication().invokeLater(() ->
-                            notify(project, "Invalid directory path provided. Please configure a valid directory."));
+                            notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file."));
                     return text;
                 }
                 if (targets == null || targets.isEmpty()) {
                     ApplicationManager.getApplication().invokeLater(() ->
-                            notify(project, "No files selected. Please select at least one file."));
+                            notify(project, "No files have been selected in the plugin menu. Please select at least one file."));
                     return text;
                 }
             }
@@ -142,11 +141,38 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 targets = List.of(file.getVirtualFile());
             }
 
-            // Run internal clone-detection + refactoring workflow
+            if (cloneMode == ProjectSettingsState.CloneMode.SINGLE_AGENT) {
+                // ===== SINGLE-AGENT CLONE PIPELINE (original behavior) =====
+                String model = state.getAiderModel();
+                String apiKey = state.getAiderApiKey();
+                String provider = state.getLlmprovider();
+                String aiderPath = state.getAiderPath();
+                String apiBase = "";
+                String apiVersion = "";
+
+                if ("Azure".equals(provider)) {
+                    apiBase = state.getApiBase();
+                    apiVersion = state.getApiVersion();
+                }
+                if ("Ollama".equals(provider)) {
+                    apiBase = state.getApiBase();
+                    model = state.getOllamaModelName();
+                }
+
+                if (targets != null && !targets.isEmpty()) {
+                    for (VirtualFile vf : targets) {
+                        AiderHelper.checkAndSuggestRefactor(
+                                project, vf, provider, model, apiKey, aiderPath, apiBase, apiVersion
+                        );
+                    }
+                }
+                return text;
+            }
+
+            // ===== MULTI-AGENT CLONE PIPELINE =====
             List<VirtualFile> finalTargets = targets;
             ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
-                    // Snippet-centered: only search clones related to the pasted code.
                     org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.run(
                             project,
                             finalTargets,
@@ -154,7 +180,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                     );
                 } catch (Throwable t) {
                     ApplicationManager.getApplication().invokeLater(() ->
-                            notify(project, "Refactoring workflow failed: " + t.getMessage()));
+                            notify(project, "Multi-agent refactoring workflow failed: " + t.getMessage()));
                 }
             });
 
