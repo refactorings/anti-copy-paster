@@ -81,6 +81,7 @@ public final class ExtractMethodUsefulnessAnalyzer {
         CLONE_REMOVAL_BY_DELEGATION_DETECTED,
         FRAGMENTATION_OF_LOGIC_DETECTED,
 
+        EXTRACT_METHOD_NOT_CONFIRMED,
         ANALYZER_FALLBACK
     }
 
@@ -159,8 +160,13 @@ public final class ExtractMethodUsefulnessAnalyzer {
             // Find clone candidates in BEFORE (whole-method)
             List<PairScore> clonePairs = findClonePairs(beforeSig, cfg);
             if (clonePairs.isEmpty()) {
-                return new UsefulnessResult(false, 30, List.of(Reason.NO_CLONES_DETECTED),
-                        "No whole-method clone pairs detected in BEFORE; cannot confirm Extract Method.");
+                // We do NOT require re-detecting a whole-method clone in BEFORE.
+                // Usefulness here only checks whether the AFTER code has a clear Extract Method shape.
+                ConfirmResult confirm = confirmExtractMethodShape(beforeMethods, afterMethods, addedKeys, afterPsi, cfg);
+                if (confirm.confirmed) {
+                    return new UsefulnessResult(true, 100, List.of(Reason.EXTRACT_METHOD_CONFIRMED), confirm.notes);
+                }
+                return new UsefulnessResult(false, 45, List.of(Reason.EXTRACT_METHOD_NOT_CONFIRMED), confirm.notes);
             }
 
             // STRICT usefulness: ALL pairs must be EXTRACT_METHOD, else NOT useful.
@@ -226,6 +232,74 @@ public final class ExtractMethodUsefulnessAnalyzer {
     /* =============================
      * Pair evaluation
      * ============================= */
+
+    private static final class ConfirmResult {
+        final boolean confirmed;
+        final String notes;
+
+        ConfirmResult(boolean confirmed, String notes) {
+            this.confirmed = confirmed;
+            this.notes = notes == null ? "" : notes;
+        }
+    }
+
+    /**
+     * Confirm Extract Method shape without relying on BEFORE clone re-detection.
+     * We only look for a structural pattern in AFTER:
+     * (1) a newly added helper method exists, and
+     * (2) at least two methods that already existed in BEFORE become thin delegates, and
+     * (3) they all delegate to the same newly added helper.
+     */
+    private static ConfirmResult confirmExtractMethodShape(Map<String, PsiMethod> beforeMethods,
+                                                          Map<String, PsiMethod> afterMethods,
+                                                          Set<String> addedKeys,
+                                                          PsiJavaFile afterPsi,
+                                                          UsefulnessConfig cfg) {
+        try {
+            if (afterPsi == null) return new ConfirmResult(false, "PSI parse failed");
+            if (addedKeys == null || addedKeys.isEmpty()) {
+                return new ConfirmResult(false, "No newly added helper method found in AFTER");
+            }
+
+            // Map: helperKey -> list of existing(before) methods that delegate to it in AFTER
+            Map<String, List<String>> helperToDelegates = new HashMap<>();
+
+            for (Map.Entry<String, PsiMethod> e : afterMethods.entrySet()) {
+                String methodKey = e.getKey();
+                PsiMethod mAfter = e.getValue();
+
+                // Only consider methods that existed before (avoid counting freshly added wrappers)
+                if (beforeMethods == null || !beforeMethods.containsKey(methodKey)) continue;
+
+                DelegateInfo del = detectDelegate(mAfter, afterPsi, cfg);
+                if (!del.isDelegate || del.calleeKeys.isEmpty()) continue;
+
+                // Only count delegation to newly added helpers
+                for (String callee : del.calleeKeys) {
+                    if (!addedKeys.contains(callee)) continue;
+                    helperToDelegates.computeIfAbsent(callee, k -> new ArrayList<>()).add(methodKey);
+                }
+            }
+
+            // Confirm: any helper has >=2 existing methods delegating to it
+            for (Map.Entry<String, List<String>> e : helperToDelegates.entrySet()) {
+                String helperKey = e.getKey();
+                List<String> delegates = e.getValue();
+                if (delegates != null && delegates.size() >= 2) {
+                    String notes = "Confirmed Extract Method shape via delegates-to-new-helper: helper=" + helperKey +
+                            ", delegates=" + delegates.size() +
+                            ", addedMethods=" + addedKeys.size();
+                    return new ConfirmResult(true, notes);
+                }
+            }
+
+            return new ConfirmResult(false,
+                    "Cannot confirm Extract Method shape: no >=2 existing methods delegate to the same newly added helper");
+
+        } catch (Throwable t) {
+            return new ConfirmResult(false, "Analyzer error while confirming Extract Method shape");
+        }
+    }
 
     private static final class PairOutcome {
         final Strategy strategy;
@@ -537,8 +611,21 @@ public final class ExtractMethodUsefulnessAnalyzer {
     }
 
     private static List<PairScore> findClonePairs(Map<String, Sig> beforeSig, UsefulnessConfig cfg) {
+        // Phase 1: normal whole-method clone mining (skip very small methods to avoid noise).
+        List<PairScore> pairs = computePairs(beforeSig, cfg.minTokenCount, cfg.cloneSimilarityBefore, cfg.maxPairs);
+        if (!pairs.isEmpty()) return pairs;
+
+        // Phase 2: fallback for short wrapper methods.
+        // In practice, many good Extract Method outcomes start from tiny wrappers (e.g., two methods that both call the
+        // same internal helper). Those methods may have < minTokenCount tokens, so Phase 1 finds nothing.
+        // Here we allow smaller methods, but require a stricter similarity to reduce false positives.
+        double strictSim = Math.max(cfg.cloneSimilarityBefore, 0.95);
+        return computePairs(beforeSig, 3, strictSim, cfg.maxPairs);
+    }
+
+    private static List<PairScore> computePairs(Map<String, Sig> beforeSig, int minTokens, double simThreshold, int maxPairs) {
         List<String> keys = beforeSig.entrySet().stream()
-                .filter(e -> e.getValue() != null && e.getValue().tokenCount >= cfg.minTokenCount)
+                .filter(e -> e.getValue() != null && e.getValue().tokenCount >= minTokens)
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toList());
 
@@ -548,7 +635,7 @@ public final class ExtractMethodUsefulnessAnalyzer {
                 Sig a = beforeSig.get(keys.get(i));
                 Sig b = beforeSig.get(keys.get(j));
                 double sim = jaccard(a, b);
-                if (sim >= cfg.cloneSimilarityBefore) {
+                if (sim >= simThreshold) {
                     pairs.add(new PairScore(keys.get(i), keys.get(j), sim));
                 }
             }
@@ -558,8 +645,9 @@ public final class ExtractMethodUsefulnessAnalyzer {
         pairs.sort((p1, p2) -> Double.compare(p2.sim, p1.sim));
 
         // Cap to avoid huge runtime
-        if (pairs.size() > cfg.maxPairs) {
-            return pairs.subList(0, cfg.maxPairs);
+        int cap = Math.max(1, maxPairs);
+        if (pairs.size() > cap) {
+            return pairs.subList(0, cap);
         }
         return pairs;
     }
@@ -787,7 +875,8 @@ public final class ExtractMethodUsefulnessAnalyzer {
      * ============================= */
 
     private static UsefulnessResult fallback(String msg) {
-        return new UsefulnessResult(true, 55, List.of(Reason.ANALYZER_FALLBACK),
+        // Strict mode: only confirmed EXTRACT_METHOD is useful.
+        return new UsefulnessResult(false, 40, List.of(Reason.ANALYZER_FALLBACK),
                 "Analyzer fallback: " + (msg == null ? "" : msg));
     }
 

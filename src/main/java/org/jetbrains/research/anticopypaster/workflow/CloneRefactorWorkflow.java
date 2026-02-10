@@ -351,6 +351,16 @@ public final class CloneRefactorWorkflow {
                     }
                     String feedbackForRefactor = combinedFeedback.isBlank() ? null : combinedFeedback;
 
+                    // [REFACTOR_PROMPT] logging: print only the non-RAG portion, i.e., feedback (previous feedback or fallback), not refactorRagGuidance.
+                    if (viewer != null) {
+                        viewer.accept("[REFACTOR_PROMPT]");
+                        if (feedback != null && !feedback.isBlank()) {
+                            viewer.accept(feedback);
+                        } else {
+                            viewer.accept("<initial attempt, no feedback>");
+                        }
+                    }
+
                     refactor.RefactorResult rr =
                             refactorAgent.refactorFile(
                                     fileName,
@@ -392,6 +402,106 @@ public final class CloneRefactorWorkflow {
                     } catch (Throwable t) {
                         logStage(viewer, "REFACTOR_CODE", "failed to save proposed source: " + t.getMessage());
                     }
+
+                    // ===== Usefulness Check (run BEFORE compilation/testing) =====
+                    // If the refactoring is not useful, we treat the attempt as failed and retry.
+                    boolean isUseful = true;
+
+                    if (wholeMethod != null) {
+                        ExtractMethodUsefulnessAnalyzer.UsefulnessResult urBeforeCompile =
+                                ExtractMethodUsefulnessAnalyzer.analyze(
+                                        project,
+                                        fileName,
+                                        currentSource,
+                                        proposedSource,
+                                        new ExtractMethodUsefulnessAnalyzer.UsefulnessConfig()
+                                );
+
+                        if (urBeforeCompile != null && !urBeforeCompile.isUseful) {
+                            isUseful = false;
+                            String msg = "Not useful refactoring proposal (before compile): score=" + urBeforeCompile.score + ", reasons=" + urBeforeCompile.reasons +
+                                    (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes));
+                            logStage(viewer, "USEFUL", msg);
+                            notify(project,
+                                    "[Clone] Refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n" + msg,
+                                    NotificationType.WARNING);
+
+                            feedback = "Your Extract Method refactoring is not useful. Reasons: " + urBeforeCompile.reasons +
+                                    ". Please do a real Extract Method that removes duplication in BOTH places. " +
+                                    "Avoid incomplete refactoring (clone still remains), avoid deleting one side, and avoid delegating to unrelated existing methods.";
+                        } else if (urBeforeCompile != null) {
+                            logStage(viewer, "USEFUL", "ok (before compile): score=" + urBeforeCompile.score +
+                                    (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes)));
+                        }
+
+                    } else {
+                        // Fragment path: use the fragment-aware analyzer.
+                        try {
+                            detection.CloneRange rA = (clone.ranges != null && clone.ranges.size() > 0) ? clone.ranges.get(0) : null;
+                            detection.CloneRange rB = (clone.ranges != null && clone.ranges.size() > 1) ? clone.ranges.get(1) : null;
+
+                            FragmentUsefulnessAnalyzer.LineRange lrA = (rA == null)
+                                    ? new FragmentUsefulnessAnalyzer.LineRange(1, 1)
+                                    : new FragmentUsefulnessAnalyzer.LineRange(rA.startLine, rA.endLine);
+                            FragmentUsefulnessAnalyzer.LineRange lrB = (rB == null)
+                                    ? new FragmentUsefulnessAnalyzer.LineRange(1, 1)
+                                    : new FragmentUsefulnessAnalyzer.LineRange(rB.startLine, rB.endLine);
+
+                            String[] ab = extractCloneCodeABFromReason(clone.reason);
+                            String codeA = ab[0];
+                            String codeB = ab[1];
+
+                            // Fallbacks: if detection didn't embed code blocks, use the pasted snippet as A.
+                            if (codeA == null || codeA.isBlank()) codeA = pastedSnippet == null ? "" : pastedSnippet;
+
+                            FragmentUsefulnessAnalyzer.UsefulnessResult frBeforeCompile =
+                                    FragmentUsefulnessAnalyzer.analyze(
+                                            project,
+                                            fileName,
+                                            currentSource,
+                                            proposedSource,
+                                            lrA,
+                                            lrB,
+                                            codeA,
+                                            codeB,
+                                            new FragmentUsefulnessAnalyzer.UsefulnessConfig()
+                                    );
+
+                            if (frBeforeCompile != null && !frBeforeCompile.isUseful) {
+                                isUseful = false;
+                                String msg = "Not useful FRAGMENT refactoring proposal (before compile): strategy=" + frBeforeCompile.strategy +
+                                        ", score=" + frBeforeCompile.score + ", reasons=" + frBeforeCompile.reasons +
+                                        (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes));
+                                logStage(viewer, "USEFUL", msg);
+                                notify(project,
+                                        "[Clone] Fragment refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n" + msg,
+                                        NotificationType.WARNING);
+
+                                feedback = "Your refactoring is not useful. Strategy=" + frBeforeCompile.strategy + ". Reasons=" + frBeforeCompile.reasons + ". " +
+                                        "You must actually remove or significantly reduce the duplicated fragment in BOTH places. " +
+                                        "Avoid incomplete refactoring, deleting one side, or delegating only one side.";
+                            } else if (frBeforeCompile != null) {
+                                logStage(viewer, "USEFUL", "ok(FRAGMENT, before compile): strategy=" + frBeforeCompile.strategy + ", score=" + frBeforeCompile.score +
+                                        (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes)));
+                            }
+
+                            if (viewer != null) {
+                                logStage(viewer, "USEFUL", "fragment ranges(before compile): A=" + lrA + ", B=" + lrB +
+                                        ", codeA.preview=" + previewOneLine(codeA, 120) +
+                                        ", codeB.preview=" + previewOneLine(codeB, 120));
+                            }
+                        } catch (Throwable t) {
+                            // If usefulness check fails, do NOT block the attempt.
+                            logStage(viewer, "USEFUL", "fragment usefulness check failed (before compile): " + t.getMessage() + " (proceeding)");
+                        }
+                    }
+
+                    if (!isUseful) {
+                        // Do not compile/test/apply; retry with feedback.
+                        _LAST_PATCHED_CLASSES_DIR = null;
+                        continue;
+                    }
+                    // ===== End usefulness check =====
 
                     // Compile the proposed source to a temp classes dir, without touching the original file.
                     String ideCp = buildProjectClasspathFromIde(project);
@@ -495,107 +605,6 @@ public final class CloneRefactorWorkflow {
 
                     if (tr != null && "tests_passed".equals(tr.status)) {
                         logStage(viewer, "TEST", "passed");
-
-                        // ===== Usefulness Check (run ONLY after tests passed) =====
-                        // If the refactoring is not useful, we treat the attempt as failed and retry.
-                        boolean isUseful = true;
-
-                        if (wholeMethod != null) {
-                            ExtractMethodUsefulnessAnalyzer.UsefulnessResult urAfterTest =
-                                    ExtractMethodUsefulnessAnalyzer.analyze(
-                                            project,
-                                            fileName,
-                                            currentSource,
-                                            proposedSource,
-                                            new ExtractMethodUsefulnessAnalyzer.UsefulnessConfig()
-                                    );
-
-                            if (urAfterTest != null && !urAfterTest.isUseful) {
-                                isUseful = false;
-                                String msg = "Not useful refactoring proposal (after tests): score=" + urAfterTest.score + ", reasons=" + urAfterTest.reasons +
-                                        (urAfterTest.notes == null || urAfterTest.notes.isBlank() ? "" : (", notes=" + urAfterTest.notes));
-                                logStage(viewer, "USEFUL", msg);
-                                notify(project,
-                                        "[Clone] Tests passed but refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n" + msg,
-                                        NotificationType.WARNING);
-
-                                feedback = "Your Extract Method refactoring is not useful. Reasons: " + urAfterTest.reasons +
-                                        ". Please do a real Extract Method that removes duplication in BOTH places. " +
-                                        "Avoid incomplete refactoring (clone still remains), avoid deleting one side, and avoid delegating to unrelated existing methods.";
-                            } else if (urAfterTest != null) {
-                                logStage(viewer, "USEFUL", "ok (after tests): score=" + urAfterTest.score +
-                                        (urAfterTest.notes == null || urAfterTest.notes.isBlank() ? "" : (", notes=" + urAfterTest.notes)));
-                            }
-
-                        } else {
-                            // Fragment path: use the fragment-aware analyzer.
-                            try {
-                                detection.CloneRange rA = (clone.ranges != null && clone.ranges.size() > 0) ? clone.ranges.get(0) : null;
-                                detection.CloneRange rB = (clone.ranges != null && clone.ranges.size() > 1) ? clone.ranges.get(1) : null;
-
-                                FragmentUsefulnessAnalyzer.LineRange lrA = (rA == null)
-                                        ? new FragmentUsefulnessAnalyzer.LineRange(1, 1)
-                                        : new FragmentUsefulnessAnalyzer.LineRange(rA.startLine, rA.endLine);
-                                FragmentUsefulnessAnalyzer.LineRange lrB = (rB == null)
-                                        ? new FragmentUsefulnessAnalyzer.LineRange(1, 1)
-                                        : new FragmentUsefulnessAnalyzer.LineRange(rB.startLine, rB.endLine);
-
-                                String[] ab = extractCloneCodeABFromReason(clone.reason);
-                                String codeA = ab[0];
-                                String codeB = ab[1];
-
-                                // Fallbacks: if detection didn't embed code blocks, use the pasted snippet as A.
-                                if (codeA == null || codeA.isBlank()) codeA = pastedSnippet == null ? "" : pastedSnippet;
-
-                                FragmentUsefulnessAnalyzer.UsefulnessResult frAfterTest =
-                                        FragmentUsefulnessAnalyzer.analyze(
-                                                project,
-                                                fileName,
-                                                currentSource,
-                                                proposedSource,
-                                                lrA,
-                                                lrB,
-                                                codeA,
-                                                codeB,
-                                                new FragmentUsefulnessAnalyzer.UsefulnessConfig()
-                                        );
-
-                                if (frAfterTest != null && !frAfterTest.isUseful) {
-                                    isUseful = false;
-                                    String msg = "Not useful FRAGMENT refactoring proposal (after tests): strategy=" + frAfterTest.strategy +
-                                            ", score=" + frAfterTest.score + ", reasons=" + frAfterTest.reasons +
-                                            (frAfterTest.notes == null || frAfterTest.notes.isBlank() ? "" : (", notes=" + frAfterTest.notes));
-                                    logStage(viewer, "USEFUL", msg);
-                                    notify(project,
-                                            "[Clone] Tests passed but fragment refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n" + msg,
-                                            NotificationType.WARNING);
-
-                                    feedback = "Your refactoring is not useful. Strategy=" + frAfterTest.strategy + ". Reasons=" + frAfterTest.reasons + ". " +
-                                            "You must actually remove or significantly reduce the duplicated fragment in BOTH places. " +
-                                            "Avoid incomplete refactoring, deleting one side, or delegating only one side.";
-                                } else if (frAfterTest != null) {
-                                    logStage(viewer, "USEFUL", "ok(FRAGMENT, after tests): strategy=" + frAfterTest.strategy + ", score=" + frAfterTest.score +
-                                            (frAfterTest.notes == null || frAfterTest.notes.isBlank() ? "" : (", notes=" + frAfterTest.notes)));
-                                }
-
-                                if (viewer != null) {
-                                    logStage(viewer, "USEFUL", "fragment ranges(after tests): A=" + lrA + ", B=" + lrB +
-                                            ", codeA.preview=" + previewOneLine(codeA, 120) +
-                                            ", codeB.preview=" + previewOneLine(codeB, 120));
-                                }
-                            } catch (Throwable t) {
-                                // If usefulness check fails, do NOT block a passing refactor.
-                                logStage(viewer, "USEFUL", "fragment usefulness check failed (after tests): " + t.getMessage() + " (proceeding)");
-                            }
-                        }
-
-                        if (!isUseful) {
-                            // Do not apply the change; retry with feedback.
-                            _LAST_PATCHED_CLASSES_DIR = null;
-                            continue;
-                        }
-
-                        // ===== End usefulness check =====
 
                         // Now that compile+test passed, ask user whether to apply the refactor to the real file.
                         boolean applyNow = showDiffAndConfirmApply(project, fileName, currentSource, proposedSource);

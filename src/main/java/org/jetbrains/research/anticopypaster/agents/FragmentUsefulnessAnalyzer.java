@@ -150,17 +150,20 @@ public final class FragmentUsefulnessAnalyzer {
 
             List<Reason> reasons = new ArrayList<>();
 
-            int minTok = Math.min(beforeSigA.tokenCount, beforeSigB.tokenCount);
+            int minTok = Math.min(beforeSigA.tokenCount, beforeSigA.tokenCount);
             if (minTok < cfg.minTokenCount) {
                 reasons.add(Reason.FRAGMENT_TOO_SMALL);
-                return new UsefulnessResult(true, 55, Strategy.UNKNOWN, reasons,
+                // STRICT MODE: if we cannot reliably measure similarity due to too few tokens,
+                // we do NOT treat this as useful.
+                return new UsefulnessResult(false, 30, Strategy.UNKNOWN, reasons,
                         "minTokenCount=" + minTok + " (<" + cfg.minTokenCount + ")");
             }
 
             double simBefore = jaccard(beforeSigA, beforeSigB);
             if (simBefore < cfg.cloneSimilarityBefore) {
                 reasons.add(Reason.NOT_A_CLONE_IN_BEFORE);
-                return new UsefulnessResult(true, 55, Strategy.UNKNOWN, reasons,
+                // STRICT MODE: if BEFORE is not a clone, this refactoring should NOT pass usefulness.
+                return new UsefulnessResult(false, 30, Strategy.UNKNOWN, reasons,
                         "simBefore=" + fmt(simBefore) + " (<" + cfg.cloneSimilarityBefore + ")");
             }
 

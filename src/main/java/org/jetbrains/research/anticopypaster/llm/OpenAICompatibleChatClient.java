@@ -33,7 +33,10 @@ public final class OpenAICompatibleChatClient implements LlmClient {
         messages.add(userMsg);
 
         body.add("messages", messages);
-        body.addProperty("temperature", 0.2);
+        // GPT-5 only supports the default temperature (1). Do not override it.
+        if (!model.startsWith("gpt-5")) {
+            body.addProperty("temperature", 0.2);
+        }
 
         String url = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         url = url + "/v1/chat/completions";
