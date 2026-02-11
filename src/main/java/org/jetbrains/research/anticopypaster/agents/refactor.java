@@ -98,8 +98,41 @@ public class refactor {
 
         try {
             rawOutput = llmCaller.apply(prompt);
+
+            // Persist full LLM output to a temp file so it won't be lost in the console scroll.
+            String dumpPath = "";
+            try {
+                java.io.File f = java.io.File.createTempFile("acp_llm_output_", ".txt");
+                try (java.io.FileWriter w = new java.io.FileWriter(f)) {
+                    w.write(rawOutput == null ? "" : rawOutput);
+                }
+                dumpPath = f.getAbsolutePath();
+            } catch (Throwable ignored) {
+            }
+
+            System.out.println("========== [LLM_OUTPUT_SAVED] " + dumpPath + " ==========");
+
+            // Still print a short header+tail preview for quick sanity checks.
+            try {
+                if (rawOutput != null) {
+                    int headLen = Math.min(600, rawOutput.length());
+                    int tailLen = Math.min(600, rawOutput.length());
+                    System.out.println("[LLM_OUTPUT_HEAD]\n" + rawOutput.substring(0, headLen));
+                    System.out.println("[LLM_OUTPUT_TAIL]\n" + rawOutput.substring(Math.max(0, rawOutput.length() - tailLen)));
+                }
+            } catch (Throwable ignored) {
+            }
         } catch (Exception e) {
             return fail(fileName, "LLM caller threw exception: " + e.getMessage());
+        }
+        // DEBUG: log raw LLM output length and a short preview
+        try {
+            System.out.println("[DEBUG][REFACTOR] raw LLM output length = " + rawOutput.length());
+            int previewLen = Math.min(800, rawOutput.length());
+            System.out.println("[DEBUG][REFACTOR] raw LLM output preview:\n" +
+                    rawOutput.substring(0, previewLen));
+        } catch (Throwable t) {
+            System.out.println("[DEBUG][REFACTOR] failed to log raw LLM output: " + t.getMessage());
         }
         if (rawOutput == null || rawOutput.isEmpty()) {
             return fail(fileName, "LLM caller returned empty output");
@@ -199,6 +232,12 @@ public class refactor {
                 if (!code.isEmpty()) {
                     return code;
                 }
+            } else {
+                // Some models omit the closing fence. If we see a Java-looking file, take the rest.
+                String tail = raw.substring(start).trim();
+                if (!tail.isEmpty() && (tail.contains("package ") || tail.contains("class ") || tail.contains("interface "))) {
+                    return tail;
+                }
             }
         }
 
@@ -211,6 +250,12 @@ public class refactor {
                 String code = raw.substring(start, end).trim();
                 if (!code.isEmpty()) {
                     return code;
+                }
+            } else {
+                // Missing closing fence: take the rest if it looks like Java source.
+                String tail = raw.substring(start).trim();
+                if (!tail.isEmpty() && (tail.contains("package ") || tail.contains("class ") || tail.contains("interface "))) {
+                    return tail;
                 }
             }
         }

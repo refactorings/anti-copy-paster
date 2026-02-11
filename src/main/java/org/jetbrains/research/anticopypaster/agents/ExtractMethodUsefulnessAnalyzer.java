@@ -74,7 +74,6 @@ public final class ExtractMethodUsefulnessAnalyzer {
         EXTRACT_METHOD_CONFIRMED,
 
         INCOMPLETE_REFACTORING_DETECTED,
-        EXCESSIVE_REFACTORING_DETECTED,
         POST_EXTRACTION_CLONE_DELETION_DETECTED,
         DIRECT_CLONE_REMOVAL_DETECTED,
         CALL_BASED_CLONE_SUBSTITUTION_DETECTED,
@@ -91,7 +90,6 @@ public final class ExtractMethodUsefulnessAnalyzer {
 
         // Failure modes / non-Extract-Method outcomes (JSS taxonomy)
         INCOMPLETE_REFACTORING,
-        EXCESSIVE_REFACTORING,
         POST_EXTRACTION_CLONE_DELETION,
         DIRECT_CLONE_REMOVAL,
         CALL_BASED_CLONE_SUBSTITUTION,
@@ -157,8 +155,48 @@ public final class ExtractMethodUsefulnessAnalyzer {
             Set<String> addedKeys = new HashSet<>(afterMethods.keySet());
             addedKeys.removeAll(beforeMethods.keySet());
 
-            // Find clone candidates in BEFORE (whole-method)
-            List<PairScore> clonePairs = findClonePairs(beforeSig, cfg);
+            // Focus mode (preferred): identify the refactoring target methods by looking for
+            // >=2 existing (BEFORE) methods that became thin delegates to the same newly added helper in AFTER.
+            // This avoids noisy whole-file clone mining dominated by trivial getters/setters.
+            Map<String, List<String>> helperToDelegates = new HashMap<>();
+            for (Map.Entry<String, PsiMethod> e : afterMethods.entrySet()) {
+                String methodKey = e.getKey();
+                PsiMethod mAfter = e.getValue();
+                if (!beforeMethods.containsKey(methodKey)) continue; // must exist in BEFORE
+                DelegateInfo del = detectDelegate(mAfter, afterPsi, cfg);
+                if (!del.isDelegate || del.calleeKeys.isEmpty()) continue;
+                for (String callee : del.calleeKeys) {
+                    if (!addedKeys.contains(callee)) continue; // only new helpers
+                    helperToDelegates.computeIfAbsent(callee, k -> new ArrayList<>()).add(methodKey);
+                }
+            }
+
+            // Pick the strongest helper target group (most delegates).
+            List<String> focusKeys = List.of();
+            String focusHelper = null;
+            for (Map.Entry<String, List<String>> e : helperToDelegates.entrySet()) {
+                List<String> ds = e.getValue();
+                if (ds == null || ds.size() < 2) continue;
+                if (focusKeys.isEmpty() || ds.size() > focusKeys.size()) {
+                    focusKeys = ds;
+                    focusHelper = e.getKey();
+                }
+            }
+
+            // Debug lines to surface in the viewer via notes (avoid relying on stdout/idea.log).
+            List<String> debugLines = new ArrayList<>();
+
+            // Focused clonePairs: only consider pairs among the methods that delegate to the same newly added helper.
+            // This approximates “analyze only the detection pair”.
+            List<PairScore> clonePairs;
+            if (focusKeys != null && focusKeys.size() >= 2) {
+                clonePairs = computePairsRestricted(beforeSig, focusKeys, 0.0, cfg.maxPairs);
+                debugLines.add("focusHelper=" + (focusHelper == null ? "" : focusHelper) + ", focusMethods=" + focusKeys.size());
+                debugLines.add("clonePairsFound=" + clonePairs.size());
+            } else {
+                clonePairs = findClonePairs(beforeSig, cfg);
+                debugLines.add("clonePairsFound=" + clonePairs.size());
+            }
             if (clonePairs.isEmpty()) {
                 // We do NOT require re-detecting a whole-method clone in BEFORE.
                 // Usefulness here only checks whether the AFTER code has a clear Extract Method shape.
@@ -182,6 +220,22 @@ public final class ExtractMethodUsefulnessAnalyzer {
                 analyzed++;
 
                 PairOutcome out = evaluatePair(ps, beforeMethods, afterMethods, beforeSig, afterSig, addedKeys, afterPsi, cfg);
+
+                double simAfterDbg = 0.0;
+                try {
+                    Sig aDbg = afterSig.get(ps.aKey);
+                    Sig bDbg = afterSig.get(ps.bKey);
+                    simAfterDbg = jaccard(aDbg, bDbg);
+                } catch (Throwable ignored) {}
+
+                // Add compact debug line to debugLines (cap to 10 pairs)
+                if (debugLines.size() < 11) { // cap to keep notes readable (1 header + up to 10 pairs)
+                    debugLines.add(ps.aKey + " <-> " + ps.bKey +
+                            " | before=" + String.format(java.util.Locale.ROOT, "%.3f", ps.sim) +
+                            ", after=" + String.format(java.util.Locale.ROOT, "%.3f", simAfterDbg) +
+                            ", outcome=" + out.strategy);
+                }
+
                 strategyCounts.put(out.strategy, strategyCounts.getOrDefault(out.strategy, 0) + 1);
 
                 if (out.strategy == Strategy.EXTRACT_METHOD) {
@@ -192,12 +246,14 @@ public final class ExtractMethodUsefulnessAnalyzer {
                 // Any non-EXTRACT_METHOD outcome makes the proposal NOT useful.
                 switch (out.strategy) {
                     case INCOMPLETE_REFACTORING -> failReasons.add(Reason.INCOMPLETE_REFACTORING_DETECTED);
-                    case EXCESSIVE_REFACTORING -> failReasons.add(Reason.EXCESSIVE_REFACTORING_DETECTED);
                     case POST_EXTRACTION_CLONE_DELETION -> failReasons.add(Reason.POST_EXTRACTION_CLONE_DELETION_DETECTED);
                     case DIRECT_CLONE_REMOVAL -> failReasons.add(Reason.DIRECT_CLONE_REMOVAL_DETECTED);
                     case CALL_BASED_CLONE_SUBSTITUTION -> failReasons.add(Reason.CALL_BASED_CLONE_SUBSTITUTION_DETECTED);
                     case CLONE_REMOVAL_BY_DELEGATION -> failReasons.add(Reason.CLONE_REMOVAL_BY_DELEGATION_DETECTED);
                     case FRAGMENTATION_OF_LOGIC -> failReasons.add(Reason.FRAGMENTATION_OF_LOGIC_DETECTED);
+                    case UNKNOWN -> {
+                        // Neutral/indeterminate for this pair; do not penalize the whole proposal.
+                    }
                     default -> failReasons.add(Reason.ANALYZER_FALLBACK);
                 }
             }
@@ -205,22 +261,26 @@ public final class ExtractMethodUsefulnessAnalyzer {
             List<Reason> reasons = new ArrayList<>();
             int score;
 
-            boolean isUseful = (analyzed > 0) && (extractOk == analyzed) && failReasons.isEmpty();
+            // Relaxed usefulness rule:
+            // Useful if there exists at least one confirmed EXTRACT_METHOD pair
+            // and no severe failure signals were detected.
+            boolean isUseful = (extractOk >= 1) && failReasons.isEmpty();
+
             if (isUseful) {
                 reasons.add(Reason.EXTRACT_METHOD_CONFIRMED);
                 score = 100;
             } else {
-                reasons.addAll(failReasons.isEmpty() ? List.of(Reason.ANALYZER_FALLBACK) : new ArrayList<>(failReasons));
-                // Score: start from 60 and subtract per failure type + per non-extract pair
-                int nonExtract = analyzed - extractOk;
-                score = 60 - Math.min(40, nonExtract * 10);
-                score = clamp(score, 0, 100);
+                reasons.addAll(failReasons.isEmpty()
+                        ? List.of(Reason.EXTRACT_METHOD_NOT_CONFIRMED)
+                        : new ArrayList<>(failReasons));
+                score = 40; // simple fallback score (not used for decision logic)
             }
 
             String notes = "analyzedPairs=" + analyzed +
                     ", extractMethodPairs=" + extractOk +
                     ", addedMethods=" + addedKeys.size() +
-                    ", strategies=" + summarizeStrategies(strategyCounts);
+                    ", strategies=" + summarizeStrategies(strategyCounts) +
+                    ", debug=" + debugLines;
 
             return new UsefulnessResult(isUseful, score, reasons, notes);
 
@@ -387,12 +447,6 @@ public final class ExtractMethodUsefulnessAnalyzer {
                     PsiMethod beforeA = beforeMethods.get(aKey);
                     PsiMethod beforeB = beforeMethods.get(bKey);
 
-                    // Excessive refactoring: helper includes much more code than original clones
-                    // (heuristic ratio 1.20)
-                    if (helper != null && isExcessiveExtraction(beforeA, beforeB, helper, 1.20)) {
-                        return new PairOutcome(Strategy.EXCESSIVE_REFACTORING, false);
-                    }
-
                     return new PairOutcome(Strategy.EXTRACT_METHOD, true);
                 }
 
@@ -428,9 +482,15 @@ public final class ExtractMethodUsefulnessAnalyzer {
 
         // If similarity remains high after, decide whether this is incomplete refactoring.
         if (simAfter >= cfg.cloneSimilarityAfterStill) {
-            boolean refactorAttempt = (!addedKeys.isEmpty()) ||
-                    aDel.isDelegate || bDel.isDelegate ||
-                    (!sharedCalls.isEmpty());
+            // Pair-local evidence of a refactoring attempt:
+            // - either method became a thin delegate, OR
+            // - they now share callees, OR
+            // - either side calls a newly added helper method.
+            boolean callsNewHelper = intersects(aCalls, addedKeys) || intersects(bCalls, addedKeys) ||
+                    (aDel.isDelegate && intersects(aDel.calleeKeys, addedKeys)) ||
+                    (bDel.isDelegate && intersects(bDel.calleeKeys, addedKeys));
+
+            boolean refactorAttempt = aDel.isDelegate || bDel.isDelegate || (!sharedCalls.isEmpty()) || callsNewHelper;
 
             if (refactorAttempt) {
                 return new PairOutcome(Strategy.INCOMPLETE_REFACTORING, false);
@@ -449,47 +509,7 @@ public final class ExtractMethodUsefulnessAnalyzer {
         return new PairOutcome(Strategy.UNKNOWN, false);
     }
 
-    /* =============================
-     * Excessive refactoring (whole-method)
-     * ============================= */
 
-    private static int bodyLineCount(PsiMethod m) {
-        try {
-            if (m == null || m.getBody() == null) return 0;
-            PsiCodeBlock b = m.getBody();
-            if (b == null) return 0;
-            PsiStatement[] st = b.getStatements();
-            if (st == null) return 0;
-            if (st.length == 0) return 0;
-
-            int start = st[0].getTextRange() == null ? -1 : st[0].getTextRange().getStartOffset();
-            int end = st[st.length - 1].getTextRange() == null ? -1 : st[st.length - 1].getTextRange().getEndOffset();
-            if (start < 0 || end < 0 || end <= start) return 0;
-
-            String txt = b.getText();
-            if (txt == null || txt.isBlank()) return 0;
-            // Approx line count by counting '\n' inside the body text
-            int lines = 1;
-            for (int i = 0; i < txt.length(); i++) if (txt.charAt(i) == '\n') lines++;
-            return lines;
-        } catch (Throwable t) {
-            return 0;
-        }
-    }
-
-    private static boolean isExcessiveExtraction(PsiMethod beforeA,
-                                                 PsiMethod beforeB,
-                                                 PsiMethod extractedHelper,
-                                                 double maxRatio) {
-        // Heuristic: extracted helper is "excessive" if its body is much larger than each original clone body.
-        // Default ratio: 1.20 means helper is 20% larger than the larger clone body.
-        int aLines = bodyLineCount(beforeA);
-        int bLines = bodyLineCount(beforeB);
-        int hLines = bodyLineCount(extractedHelper);
-        int base = Math.max(aLines, bLines);
-        if (base <= 0 || hLines <= 0) return false;
-        return hLines > (int) Math.ceil(base * maxRatio);
-    }
 
     /* =============================
      * Delegate / call analysis
@@ -649,6 +669,29 @@ public final class ExtractMethodUsefulnessAnalyzer {
         if (pairs.size() > cap) {
             return pairs.subList(0, cap);
         }
+        return pairs;
+    }
+
+    private static List<PairScore> computePairsRestricted(Map<String, Sig> beforeSig,
+                                                         List<String> keys,
+                                                         double simThreshold,
+                                                         int maxPairs) {
+        if (beforeSig == null || keys == null) return List.of();
+        List<String> present = keys.stream().filter(k -> beforeSig.containsKey(k)).collect(Collectors.toList());
+        List<PairScore> pairs = new ArrayList<>();
+        for (int i = 0; i < present.size(); i++) {
+            for (int j = i + 1; j < present.size(); j++) {
+                Sig a = beforeSig.get(present.get(i));
+                Sig b = beforeSig.get(present.get(j));
+                double sim = jaccard(a, b);
+                if (sim >= simThreshold) {
+                    pairs.add(new PairScore(present.get(i), present.get(j), sim));
+                }
+            }
+        }
+        pairs.sort((p1, p2) -> Double.compare(p2.sim, p1.sim));
+        int cap = Math.max(1, maxPairs);
+        if (pairs.size() > cap) return pairs.subList(0, cap);
         return pairs;
     }
 
@@ -895,5 +938,18 @@ public final class ExtractMethodUsefulnessAnalyzer {
         }
         sb.append("}");
         return sb.toString();
+    }
+    /**
+     * Returns true if the two sets intersect.
+     */
+    private static boolean intersects(Set<String> a, Set<String> b) {
+        if (a == null || b == null || a.isEmpty() || b.isEmpty()) return false;
+        // Iterate the smaller set for efficiency
+        Set<String> small = a.size() <= b.size() ? a : b;
+        Set<String> large = small == a ? b : a;
+        for (String s : small) {
+            if (large.contains(s)) return true;
+        }
+        return false;
     }
 }

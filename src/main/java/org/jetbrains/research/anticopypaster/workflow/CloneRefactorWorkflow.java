@@ -234,11 +234,6 @@ public final class CloneRefactorWorkflow {
 
                 // Classify pasted snippet: whole-method vs fragment (best-effort).
                 PsiMethod wholeMethod = findWholeMethodCoveredBySnippet(project, vf, originalSource, pastedSnippet);
-                if (wholeMethod != null) {
-                    logStage(viewer, "PASTE", "snippet type=WHOLE_METHOD (matched via PSI), method=" + wholeMethod.getName());
-                } else if (pastedSnippet != null && !pastedSnippet.isBlank()) {
-                    logStage(viewer, "PASTE", "snippet type=FRAGMENT");
-                }
 
                 // Read max attempts from Settings (iteration slider)
                 int maxAttempts = 3;
@@ -311,25 +306,43 @@ public final class CloneRefactorWorkflow {
 
                 // Precompute RAG guidance once per file (it will be prepended to refactor feedback each attempt).
                 String refactorRagGuidance = "";
+                boolean skipRagForModel = false;
                 try {
-                    refactorRagGuidance = RagService.buildRefactorRagGuidance(
-                            project,
-                            REFACTOR_RAG_DB_RESOURCE,
-                            refactorRagQuery,
-                            REFACTOR_RAG_TOP_K,
-                            REFACTOR_RAG_MAX_CHARS
-                    );
-                } catch (Throwable t) {
-                    refactorRagGuidance = "";
-                    logStage(viewer, "RAG", "refactor RAG guidance failed: " + t.getMessage());
+                    ProjectSettingsState stForRag = ProjectSettingsState.getInstance(project);
+                    if (stForRag != null) {
+                        String modelName = stForRag.getAiderModel();
+                        if (modelName != null && modelName.toLowerCase(Locale.ROOT).contains("gpt-3.5")) {
+                            skipRagForModel = true;
+                            logStage(viewer, "RAG", "Skipping RAG for model: " + modelName);
+                        }
+                    }
+                } catch (Throwable ignored) {
+                    // ignore and proceed normally
                 }
 
-                if (viewer != null) {
-                    String q = refactorRagQuery == null ? "" : refactorRagQuery;
-                    if (q.length() > 600) q = q.substring(0, 600) + "...";
-                    logStage(viewer, "RAG", "refactor query preview: " + q.replace("\n", "\\n"));
-                    logStage(viewer, "RAG", "refactor guidance chars: " + (refactorRagGuidance == null ? 0 : refactorRagGuidance.length()));
+                if (!skipRagForModel) {
+                    try {
+                        refactorRagGuidance = RagService.buildRefactorRagGuidance(
+                                project,
+                                REFACTOR_RAG_DB_RESOURCE,
+                                refactorRagQuery,
+                                REFACTOR_RAG_TOP_K,
+                                REFACTOR_RAG_MAX_CHARS
+                        );
+                    } catch (Throwable t) {
+                        refactorRagGuidance = "";
+                        logStage(viewer, "RAG", "refactor RAG guidance failed: " + t.getMessage());
+                    }
+                } else {
+                    refactorRagGuidance = "";
                 }
+
+//                if (viewer != null) {
+//                    String q = refactorRagQuery == null ? "" : refactorRagQuery;
+//                    if (q.length() > 600) q = q.substring(0, 600) + "...";
+//                    logStage(viewer, "RAG", "refactor query preview: " + q.replace("\n", "\\n"));
+//                    logStage(viewer, "RAG", "refactor guidance chars: " + (refactorRagGuidance == null ? 0 : refactorRagGuidance.length()));
+//                }
 
                 String currentSource = originalSource;
                 String feedback = null;
@@ -351,15 +364,6 @@ public final class CloneRefactorWorkflow {
                     }
                     String feedbackForRefactor = combinedFeedback.isBlank() ? null : combinedFeedback;
 
-                    // [REFACTOR_PROMPT] logging: print only the non-RAG portion, i.e., feedback (previous feedback or fallback), not refactorRagGuidance.
-                    if (viewer != null) {
-                        viewer.accept("[REFACTOR_PROMPT]");
-                        if (feedback != null && !feedback.isBlank()) {
-                            viewer.accept(feedback);
-                        } else {
-                            viewer.accept("<initial attempt, no feedback>");
-                        }
-                    }
 
                     refactor.RefactorResult rr =
                             refactorAgent.refactorFile(
@@ -369,6 +373,7 @@ public final class CloneRefactorWorkflow {
                                     feedbackForRefactor,
                                     llmCaller
                             );
+
 
                     if (rr == null || rr.newSource == null || rr.newSource.isBlank()) {
                         feedback = "Refactor produced empty or invalid output.";
@@ -419,16 +424,19 @@ public final class CloneRefactorWorkflow {
 
                         if (urBeforeCompile != null && !urBeforeCompile.isUseful) {
                             isUseful = false;
-                            String msg = "Not useful refactoring proposal (before compile): score=" + urBeforeCompile.score + ", reasons=" + urBeforeCompile.reasons +
-                                    (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes));
-                            logStage(viewer, "USEFUL", msg);
+//                            String msg = "Not useful refactoring proposal (before compile): score=" + urBeforeCompile.score + ", reasons=" + urBeforeCompile.reasons +
+//                                    (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes));
+                            logStage(viewer, "USEFUL", "Not useful refactoring proposal");
                             notify(project,
-                                    "[Clone] Refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n" + msg,
+                                    "[Clone] Refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n",
                                     NotificationType.WARNING);
 
-                            feedback = "Your Extract Method refactoring is not useful. Reasons: " + urBeforeCompile.reasons +
-                                    ". Please do a real Extract Method that removes duplication in BOTH places. " +
-                                    "Avoid incomplete refactoring (clone still remains), avoid deleting one side, and avoid delegating to unrelated existing methods.";
+                            feedback = "Your Extract Method refactoring is not useful. " +
+                                    "Please do a real Extract Method that removes duplication in BOTH places. " +
+                                    "Extract the entire duplicated code into a new helper method.\n" +
+                                    "The extracted method must include all statements in the clone region,\n" +
+                                    "including method calls, control flow, and calls to super methods.\n" +
+                                    "Do not leave any duplicated statements in the original methods. avoid deleting one side, and avoid delegating to unrelated existing methods.";
                         } else if (urBeforeCompile != null) {
                             logStage(viewer, "USEFUL", "ok (before compile): score=" + urBeforeCompile.score +
                                     (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes)));
@@ -469,15 +477,15 @@ public final class CloneRefactorWorkflow {
 
                             if (frBeforeCompile != null && !frBeforeCompile.isUseful) {
                                 isUseful = false;
-                                String msg = "Not useful FRAGMENT refactoring proposal (before compile): strategy=" + frBeforeCompile.strategy +
-                                        ", score=" + frBeforeCompile.score + ", reasons=" + frBeforeCompile.reasons +
-                                        (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes));
-                                logStage(viewer, "USEFUL", msg);
+//                                String msg = "Not useful FRAGMENT refactoring proposal (before compile): strategy=" + frBeforeCompile.strategy +
+//                                        ", score=" + frBeforeCompile.score + ", reasons=" + frBeforeCompile.reasons +
+//                                        (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes));
+                                logStage(viewer, "USEFUL", "Not useful refactoring proposal");
                                 notify(project,
-                                        "[Clone] Fragment refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n" + msg,
+                                        "[Clone] Fragment refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n",
                                         NotificationType.WARNING);
 
-                                feedback = "Your refactoring is not useful. Strategy=" + frBeforeCompile.strategy + ". Reasons=" + frBeforeCompile.reasons + ". " +
+                                feedback = "Your refactoring is not useful. " + " Reasons=" + frBeforeCompile.reasons + ". " +
                                         "You must actually remove or significantly reduce the duplicated fragment in BOTH places. " +
                                         "Avoid incomplete refactoring, deleting one side, or delegating only one side.";
                             } else if (frBeforeCompile != null) {

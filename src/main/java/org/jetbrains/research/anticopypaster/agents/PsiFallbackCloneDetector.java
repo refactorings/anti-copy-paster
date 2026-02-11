@@ -114,20 +114,27 @@ public final class PsiFallbackCloneDetector {
 
             if (occurrences.size() < 2) {
                 // Exact/near-exact text match did not find duplicates.
-                // Try a lightweight Type-2 fallback: tokenize both snippet and file, normalize identifiers/literals,
-                // and look for matching token-kind sequences.
+                // NEW: Type-1 (ignore whitespace/comments) fallback: tokenize both snippet and file,
+                // skip whitespace/comments, and look for exact token-text sequences.
                 occurrences = new LinkedHashSet<>();
-                occurrences.addAll(findType2Occurrences(project, psiFile, snippet, fileText));
+                occurrences.addAll(findType1OccurrencesIgnoreComments(psiFile, snippet, fileText));
 
                 if (occurrences.size() < 2) {
-                    // Still nothing — try a high-recall Type-3-ish fallback based on token shingles (k-grams).
-                    // This can catch small edits/insertions/deletions while staying fast in same-file scope.
+                    // Still nothing — try a lightweight Type-2 fallback: tokenize both snippet and file, normalize identifiers/literals,
+                    // and look for matching token-kind sequences.
                     occurrences = new LinkedHashSet<>();
-                    occurrences.addAll(findType3OccurrencesByShingles(psiFile, snippet, fileText));
+                    occurrences.addAll(findType2Occurrences(project, psiFile, snippet, fileText));
 
                     if (occurrences.size() < 2) {
-                        // Still nothing — return empty.
-                        return Collections.emptyList();
+                        // Still nothing — try a high-recall Type-3-ish fallback based on token shingles (k-grams).
+                        // This can catch small edits/insertions/deletions while staying fast in same-file scope.
+                        occurrences = new LinkedHashSet<>();
+                        occurrences.addAll(findType3OccurrencesByShingles(psiFile, snippet, fileText));
+
+                        if (occurrences.size() < 2) {
+                            // Still nothing — return empty.
+                            return Collections.emptyList();
+                        }
                     }
                 }
             }
@@ -165,6 +172,7 @@ public final class PsiFallbackCloneDetector {
     // ---------------------------- helpers ----------------------------
 
     private static final int MIN_TOKENS_FOR_TYPE2 = 6;
+    private static final int MIN_TOKENS_FOR_TYPE1_NO_COMMENTS = 6;
 
     // Type-3-ish (high recall) shingle matcher settings
     private static final int MIN_TOKENS_FOR_TYPE3 = 10;
@@ -435,6 +443,108 @@ public final class PsiFallbackCloneDetector {
             if (i < end) sb.append('\n');
         }
         return sb.toString();
+    }
+
+    // Type-1 (ignore whitespace/comments) token matcher helpers
+
+    private static final class RawTok {
+        final String text;
+        final int startOffset;
+        final int endOffset;
+
+        private RawTok(String text, int startOffset, int endOffset) {
+            this.text = text;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+        }
+    }
+
+    private static Set<Occurrence> findType1OccurrencesIgnoreComments(PsiFile psiFile, String pastedSnippet, String fileText) {
+        if (psiFile == null) return Collections.emptySet();
+        if (pastedSnippet == null || pastedSnippet.trim().isEmpty()) return Collections.emptySet();
+        if (fileText == null || fileText.isEmpty()) return Collections.emptySet();
+
+        LanguageLevel level;
+        try {
+            level = PsiUtil.getLanguageLevel(psiFile);
+        } catch (Throwable t) {
+            level = LanguageLevel.HIGHEST;
+        }
+
+        List<RawTok> needle = lexRawNoComments(pastedSnippet, level);
+        if (needle.size() < MIN_TOKENS_FOR_TYPE1_NO_COMMENTS) return Collections.emptySet();
+
+        List<RawTok> hay = lexRawNoComments(fileText, level);
+        if (hay.size() < needle.size()) return Collections.emptySet();
+
+        int m = needle.size();
+        Set<Occurrence> out = new LinkedHashSet<>();
+
+        // Naive sliding-window match (single-file scope; acceptable in practice).
+        for (int i = 0; i <= hay.size() - m; i++) {
+            boolean ok = true;
+            for (int j = 0; j < m; j++) {
+                if (!needle.get(j).text.equals(hay.get(i + j).text)) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (!ok) continue;
+
+            int start = hay.get(i).startOffset;
+            int end = hay.get(i + m - 1).endOffset;
+            if (start >= 0 && end > start) {
+                out.add(new Occurrence(start, end));
+            }
+        }
+
+        return out;
+    }
+
+    private static List<RawTok> lexRawNoComments(String text, LanguageLevel level) {
+        if (text == null || text.isEmpty()) return Collections.emptyList();
+
+        JavaLexer lexer;
+        try {
+            lexer = new JavaLexer(level);
+        } catch (Throwable t) {
+            return Collections.emptyList();
+        }
+
+        List<RawTok> out = new ArrayList<>();
+        lexer.start(text);
+        IElementType tt;
+        while ((tt = lexer.getTokenType()) != null) {
+            int s = lexer.getTokenStart();
+            int e = lexer.getTokenEnd();
+
+            // Skip whitespace
+            if (tt == TokenType.WHITE_SPACE) {
+                lexer.advance();
+                continue;
+            }
+
+            // Skip comments (including Javadoc). Some token constants are not exposed in the public API,
+            // so we use a conservative name-based check for doc comments.
+            if (tt == JavaTokenType.END_OF_LINE_COMMENT ||
+                    tt == JavaTokenType.C_STYLE_COMMENT ||
+                    tt.toString().contains("DOC_COMMENT")) {
+                lexer.advance();
+                continue;
+            }
+
+            String tokText;
+            try {
+                tokText = text.substring(s, e);
+            } catch (Throwable t) {
+                tokText = tt.toString();
+            }
+
+            out.add(new RawTok(tokText, s, e));
+            lexer.advance();
+        }
+
+        return out;
     }
 
 

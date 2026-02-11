@@ -1449,18 +1449,17 @@ public class ProjectSettingsComponent {
         switch (provider) {
             case "OpenAI" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
                     "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
-                    "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
+                    "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.1", "gpt-5.2", "gpt-5.2-pro"
             }));
             case "Gemini" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
                     "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro-preview", "gemini-3-flash-preview"
             }));
             case "Anthropic" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
-                    "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
-                    "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-4-opus-20250514", "claude-4-sonnet-20250514",
-                    "claude-opus-4-1", "claude-opus-4-1-20250805", "claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929"
+                    "claude-3-haiku-20240307", "claude-sonnet-4-20250514", "claude-sonnet-4-5-20250929",
+                    "claude-opus-4-20250514", "claude-opus-4-1-20250805", "claude-haiku-4-5-20251001", "claude-opus-4-5-20251101", "claude-opus-4-6"
             }));
             case "DeepSeek" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
-                    "deepseek-chat", "deepseek-coder", "deepseek-reasoner", "deepseek-v3"
+                    "deepseek-chat",  "deepseek-reasoner"
             }));
             case "Azure" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
                     "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
