@@ -5,6 +5,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.tree.IElementType;
+import com.intellij.psi.util.PsiUtilCore;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -526,6 +527,52 @@ public final class ExtractMethodUsefulnessAnalyzer {
     }
 
     /**
+     * Fallback: in in-memory PSI, resolveMethod() may return null.
+     * Try to resolve a callee key by syntactic lookup (name + arity) within the same PsiJavaFile.
+     */
+    private static String fallbackResolveMethodKeyByNameAndArity(PsiJavaFile file,
+                                                                String methodName,
+                                                                int argCount) {
+        try {
+            if (file == null || methodName == null || methodName.isBlank()) return null;
+
+            PsiClass[] classes = file.getClasses();
+            if (classes == null || classes.length == 0) return null;
+
+            Deque<PsiClass> stack = new ArrayDeque<>();
+            Collections.addAll(stack, classes);
+
+            while (!stack.isEmpty()) {
+                PsiClass c = stack.pop();
+                if (c == null) continue;
+
+                PsiMethod[] ms = c.getMethods();
+                if (ms != null) {
+                    for (PsiMethod m : ms) {
+                        if (m == null) continue;
+                        if (!methodName.equals(m.getName())) continue;
+                        int pc = 0;
+                        try {
+                            pc = m.getParameterList() == null ? 0 : m.getParameterList().getParametersCount();
+                        } catch (Throwable ignored) {}
+                        if (pc == argCount) {
+                            String key = methodKey(c, m);
+                            if (key != null && !key.isBlank()) return key;
+                        }
+                    }
+                }
+
+                PsiClass[] inners = c.getInnerClasses();
+                if (inners != null) Collections.addAll(stack, inners);
+            }
+
+            return null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
      * Detect if a method is a thin delegate:
      * - body has 1 statement, which is either a return call or expression call
      * - call resolves to a method in the same PSI file
@@ -551,13 +598,21 @@ public final class ExtractMethodUsefulnessAnalyzer {
             }
 
             if (call == null) return new DelegateInfo(false, Set.of());
-            PsiMethod resolved = call.resolveMethod();
-            if (resolved == null) return new DelegateInfo(false, Set.of());
+            PsiMethod resolved = null;
+            try {
+                resolved = call.resolveMethod();
+            } catch (Throwable ignored) {}
 
             int argCount = call.getArgumentList() == null ? 0 : call.getArgumentList().getExpressionCount();
             if (argCount > cfg.maxDelegateParams) return new DelegateInfo(false, Set.of());
 
-            String key = resolveMethodKeyInFile(file, resolved);
+            String key;
+            if (resolved != null) {
+                key = resolveMethodKeyInFile(file, resolved);
+            } else {
+                String name = call.getMethodExpression() == null ? null : call.getMethodExpression().getReferenceName();
+                key = fallbackResolveMethodKeyByNameAndArity(file, name, argCount);
+            }
             if (key == null || key.isBlank()) return new DelegateInfo(false, Set.of());
 
             return new DelegateInfo(true, Set.of(key));
@@ -583,8 +638,16 @@ public final class ExtractMethodUsefulnessAnalyzer {
                     resolved = call.resolveMethod();
                 } catch (Throwable ignored) {}
 
-                if (resolved == null) continue;
-                String key = resolveMethodKeyInFile(file, resolved);
+                int argCount = call.getArgumentList() == null ? 0 : call.getArgumentList().getExpressionCount();
+
+                String key;
+                if (resolved != null) {
+                    key = resolveMethodKeyInFile(file, resolved);
+                } else {
+                    String name = call.getMethodExpression() == null ? null : call.getMethodExpression().getReferenceName();
+                    key = fallbackResolveMethodKeyByNameAndArity(file, name, argCount);
+                }
+
                 if (key != null && !key.isBlank()) out.add(key);
             }
             return out;
@@ -596,6 +659,11 @@ public final class ExtractMethodUsefulnessAnalyzer {
     private static String resolveMethodKeyInFile(PsiJavaFile file, PsiMethod resolved) {
         try {
             if (file == null || resolved == null) return null;
+            PsiFile containing = resolved.getContainingFile();
+            if (containing != null && !containing.isEquivalentTo(file)) {
+                // Only treat as in-file if it belongs to this PsiJavaFile.
+                return null;
+            }
             PsiClass owner = resolved.getContainingClass();
             if (owner == null) return null;
             return methodKey(owner, resolved);

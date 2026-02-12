@@ -49,10 +49,16 @@ import java.nio.file.Files;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.List;
+import org.jetbrains.research.anticopypaster.rag.RagService;
 
 public class AiderHelper {
 
     private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
+
+    // RAG defaults to mirror the multi-agent refactor baseline (refactor.java)
+    private static final String DEFAULT_REFACTOR_DB_PATH = "refactor_database.csv";
+    private static final int DEFAULT_RAG_TOP_K = 2;
+    private static final int DEFAULT_RAG_MAX_CHARS = 700;
 
     /**
      * Cache of last-known-good converted JUnit4 tests per CUT (fully-qualified class name).
@@ -439,6 +445,16 @@ public class AiderHelper {
             File tempFile = File.createTempFile("aider_clonecheck_", ".java");
             Files.copy(originalFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             String tempFilePath = tempFile.getAbsolutePath();
+            // Fairness: prevent Aider from pulling external web context by auto-scraping URLs in the file header/comments.
+            try {
+                String tmp = Files.readString(tempFile.toPath(), StandardCharsets.UTF_8);
+                String sanitized = neutralizeHttpUrls(tmp);
+                if (!sanitized.equals(tmp)) {
+                    Files.writeString(tempFile.toPath(), sanitized, StandardCharsets.UTF_8);
+                }
+            } catch (Throwable ignored) {
+                // best-effort only
+            }
 
             ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
@@ -538,35 +554,85 @@ public class AiderHelper {
                 File originalFile = new File(filePath);
                 File tempFile = File.createTempFile("aider_refactor_", ".java");
                 Files.copy(originalFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                // Fairness: prevent Aider from pulling external web context by auto-scraping URLs in the file header/comments.
+                try {
+                    String tmp = Files.readString(tempFile.toPath(), StandardCharsets.UTF_8);
+                    String sanitized = neutralizeHttpUrls(tmp);
+                    if (!sanitized.equals(tmp)) {
+                        Files.writeString(tempFile.toPath(), sanitized, StandardCharsets.UTF_8);
+                    }
+                } catch (Throwable ignored) {
+                    // best-effort only
+                }
 
                 Consumer<String> viewer = openStreamingViewer(project, "Clone Refactoring Output");
-                String output = runAiderWithPromptStreaming(project, aiderPath, tempFile.getAbsolutePath(),
-                        "Refactor this file by Extract Method to eliminate clones. Output the COMPLETE final Java file ONLY, inside a single ```java code block. Do NOT output patches, SEARCH/REPLACE markers, or explanations.",
-                        provider, model, apikey, apiBase, apiVersion, viewer);
-                System.out.println("===> Refactor output:\n" + output);
 
+                // Build a fair-comparison prompt that mirrors the multi-agent refactor baseline (refactor.java)
+                String originalForPrompt = "";
+                try {
+                    originalForPrompt = Files.readString(originalFile.toPath(), StandardCharsets.UTF_8);
+                    // Also neutralize URLs inside the prompt copy.
+                    originalForPrompt = neutralizeHttpUrls(originalForPrompt);
+                } catch (Throwable t) {
+                    originalForPrompt = "";
+                }
+
+                // Optional RAG: use the (truncated) file as the query when we don't have a representative clone snippet.
+                String rag = "";
+                try {
+                    String query = safeTruncate(originalForPrompt, DEFAULT_RAG_MAX_CHARS);
+                    rag = RagService.buildRefactorRagGuidance(project, DEFAULT_REFACTOR_DB_PATH, query, DEFAULT_RAG_TOP_K, DEFAULT_RAG_MAX_CHARS);
+                } catch (Throwable ignored) {
+                    rag = "";
+                }
+
+                String refactorPrompt = buildAiderRefactorPrompt(fileName, originalForPrompt, rag);
+
+                // Aider typically uses diff-based edit formats (SEARCH/REPLACE) and applies edits directly to the file.
+                // For stability and fairness, we ignore stdout formatting and read the final refactored file from disk.
+                String output = null;
+                try {
+                    output = runAiderWithPromptStreaming(project, aiderPath, tempFile.getAbsolutePath(),
+                            refactorPrompt,
+                            provider, model, apikey, apiBase, apiVersion, viewer);
+                } catch (Throwable tRun) {
+                    notify(project, "Aider refactor run failed: " + tRun.getMessage());
+                }
                 if (output != null) {
+                    System.out.println("===> Refactor output (stdout):\n" + output);
+                }
+
+                // Always read the on-disk content after Aider finishes; this is the source of truth.
+                String originalContent = Files.readString(originalFile.toPath(), StandardCharsets.UTF_8);
+                String refactoredContent = Files.readString(tempFile.toPath(), StandardCharsets.UTF_8);
+
+                // If Aider did not change the temp file, try a best-effort fallback: extract a full-file Java code block.
+                // (Some models can be configured to output whole files.)
+                if (originalContent.equals(refactoredContent) && output != null) {
                     String fenced = extractJavaCodeBlock(output);
                     if (fenced != null && !fenced.isBlank()) {
                         try {
                             Files.writeString(tempFile.toPath(), fenced, StandardCharsets.UTF_8);
+                            refactoredContent = Files.readString(tempFile.toPath(), StandardCharsets.UTF_8);
                         } catch (IOException ioe) {
-                            notify(project, "Failed to write refactored content to temp file: " + ioe.getMessage());
+                            notify(project, "Failed to write extracted refactored content to temp file: " + ioe.getMessage());
                         }
                     }
                 }
 
-                String originalContent = Files.readString(originalFile.toPath());
-                String refactoredContent = Files.readString(tempFile.toPath());
+                // `refactoredContent` may have been reassigned above, so it is not effectively-final.
+                // Capture stable values for use in lambdas below.
+                final String finalRefactoredContent = refactoredContent;
+                final String finalOriginalContent = originalContent;
 
-                if (!originalContent.equals(refactoredContent)) {
+                if (!finalOriginalContent.equals(finalRefactoredContent)) {
                     ApplicationManager.getApplication().invokeLater(() -> {
                         // Show diff window
                         DiffContentFactory contentFactory = DiffContentFactory.getInstance();
                         SimpleDiffRequest diffRequest = new SimpleDiffRequest(
                                 "Refactor Preview: Compare Original and Refactored Code",
-                                contentFactory.create(originalContent),
-                                contentFactory.create(refactoredContent),
+                                contentFactory.create(finalOriginalContent),
+                                contentFactory.create(finalRefactoredContent),
                                 "Original",
                                 "Refactored"
                         );
@@ -583,7 +649,7 @@ public class AiderHelper {
                             evoSuiteJarPath = resolveBundledEvoSuiteJarPath();
                         } catch (Exception ex) {
                             notify(project, "EvoSuite skipped: failed to load bundled EvoSuite jar from resources: " + ex.getMessage());
-                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), finalRefactoredContent);
                             return;
                         }
 
@@ -610,7 +676,7 @@ public class AiderHelper {
                                 }
                             } catch (Throwable t) {
                                 notify(project, "EvoSuite skipped: classpath is empty and Java-8 fallback compilation failed: " + t.getMessage());
-                                promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                                promptApplyRefactoring(project, fileName, originalFile.toPath(), finalRefactoredContent);
                                 return;
                             }
                         } else {
@@ -621,7 +687,7 @@ public class AiderHelper {
 
                         if (classpath == null || classpath.isBlank()) {
                             notify(project, "EvoSuite skipped: classpath is still empty. Make sure the project is imported and compiled.");
-                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), finalRefactoredContent);
                             return;
                         }
 
@@ -638,7 +704,7 @@ public class AiderHelper {
 
                         if (classFqn == null || classFqn.isBlank()) {
                             notify(project, "EvoSuite skipped: failed to resolve class FQN for " + fileName + ". Ensure it is a Java file with a package/class declaration.");
-                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), finalRefactoredContent);
                             return;
                         }
 
@@ -649,14 +715,14 @@ public class AiderHelper {
                         // 5) Run EvoSuite while previewing (and run generated JUnit4 against the REFACTORED preview before applying)
                         boolean refactoredPass = false;
                         try {
-                            refactoredPass = runEvoSuiteOnClass(project, javaExe, evoSuiteJarPath, classpath, classFqn, filePath, refactoredContent);
+                            refactoredPass = runEvoSuiteOnClass(project, javaExe, evoSuiteJarPath, classpath, classFqn, filePath, finalRefactoredContent);
                         } catch (Throwable t) {
                             notify(project, "EvoSuite failed during preview: " + t.getMessage());
                             refactoredPass = false;
                         }
 
                         if (refactoredPass) {
-                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), finalRefactoredContent);
                         } else {
                             notify(project, "Refactored preview tests FAILED. Not applying changes to " + fileName + ".");
                         }
@@ -1177,10 +1243,9 @@ public class AiderHelper {
         return sb.toString();
     }
     /**
-     * Extracts the first fenced code block from {@code text} whose language is either empty or starts with "java".
-     *
-     * @param text full Aider response text, possibly containing fenced code blocks
-     * @return the inner content of the first matching fenced block, or {@code null} if none is found
+     * Best-effort fallback: extracts the first fenced code block from {@code text} whose language is either empty
+     * or starts with "java". Normally Aider applies edits directly to the file, so this is only used when the
+     * temp file remained unchanged but stdout contains a full-file output.
      */
     private static String extractJavaCodeBlock(String text) {
         if (text == null) return null;
@@ -1200,6 +1265,54 @@ public class AiderHelper {
             i = lineEnd + 1;
         }
         return null;
+    }
+
+    /**
+     * Prevent Aider from auto-scraping URLs found in source comments/headers by neutralizing http(s) links.
+     * This keeps the comparison fair (no external web context) and avoids pandoc/scrape errors.
+     */
+    private static String neutralizeHttpUrls(String s) {
+        if (s == null || s.isEmpty()) return s;
+        // Replace schemes only (keep the rest readable)
+        return s.replace("https://", "hxxps://").replace("http://", "hxxp://");
+    }
+
+    private static String safeTruncate(String s, int maxChars) {
+        if (s == null) return "";
+        String t = s.trim();
+        if (maxChars <= 0) return t;
+        if (t.length() <= maxChars) return t;
+        return t.substring(0, maxChars) + "\n...<truncated>...";
+    }
+
+    /**
+     * A fair-comparison refactor prompt that mirrors the multi-agent baseline in agents/refactor.java.
+     * We include the full file source (or empty if unreadable) and optionally attach a few-shot RAG bundle.
+     */
+    private static String buildAiderRefactorPrompt(String fileName, String fileSource, String ragExamples) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("You are a Java refactor agent.\n");
+        sb.append("You have a single file to modify: ").append(fileName).append("\n");
+        sb.append("The file source is below:\n");
+        sb.append("```\n").append(fileSource == null ? "" : fileSource).append("\n```\n\n");
+
+        if (ragExamples != null && !ragExamples.trim().isEmpty()) {
+            sb.append("Here are some few-shot RAG examples to guide you:\n");
+            sb.append(ragExamples).append("\n\n");
+        }
+
+        sb.append("Instructions:\n");
+        sb.append("- Use ONLY Extract Method (and creating private helper methods) to remove clones.\n");
+        sb.append("- Do NOT use any other refactoring type (e.g., Rename, Move Method, Introduce Parameter Object, etc.).\n");
+        sb.append("- Restrict modifications only to this file.\n");
+        sb.append("- Preserve package and import statements exactly.\n");
+        sb.append("- Keep public API signatures unchanged where possible.\n");
+        sb.append("- Minimize edits outside the clone regions.\n");
+        sb.append("- Apply edits directly to the file.\n");
+        sb.append("- If you output anything, keep it short and do not include SEARCH/REPLACE blocks unless necessary.\n");
+        sb.append("- Do not include explanations.\n");
+
+        return sb.toString();
     }
 
     /**

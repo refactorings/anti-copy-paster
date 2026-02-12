@@ -208,8 +208,7 @@ public class refactor {
         sb.append("- Preserve package and import statements exactly.\n");
         sb.append("- Keep public API signatures unchanged where possible.\n");
         sb.append("- Minimize edits outside the clone regions.\n");
-        sb.append("- Output ONLY ONE Java code block with the full updated file if possible.\n");
-        sb.append("- If you cannot output the full file, you may respond with a JSON object containing a 'new_source' field with the full updated source.\n");
+        sb.append("- Output ONLY ONE Java code block with the full updated file.\n");
         sb.append("- Do not include any explanations or text outside the code block or JSON.\n");
 
         return sb.toString();
