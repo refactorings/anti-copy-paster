@@ -1250,6 +1250,21 @@ public final class CloneRefactorWorkflow {
                 String outClass = simpleName + "_EvoSuiteJUnit4Test";
                 String converted = convertEvoSuiteToPureJUnit4(rawTest, outClass);
 
+                try {
+                    if (simpleName != null && !simpleName.isBlank()) {
+                        String var = Character.toLowerCase(simpleName.charAt(0)) + (simpleName.length() > 1 ? simpleName.substring(1) : "");
+                        if (var.length() >= 2) {
+                            String missingFirst = var.substring(1);
+                            if (converted.contains(missingFirst + "0") && !converted.contains(var + "0")) {
+                                converted = converted.replaceAll("\\b" + java.util.regex.Pattern.quote(missingFirst) + "(\\d+)\\b", var + "$1");
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
+                    // best-effort
+                }
+
+
                 // Write converted file next to the original under the same package-relative structure.
                 java.nio.file.Path rel = testDir.toPath().relativize(estestPath);
                 java.nio.file.Path outRel = rel;
@@ -1995,48 +2010,247 @@ public final class CloneRefactorWorkflow {
     /**
      * Compiles a single Java file to a temp directory.
      * Required because the new test file is not yet known to the IDE's build system.
+     *
+     * Hardening: EvoSuite-generated tests can reference members not present in the current
+     * compile classpath (classpath mismatch, flaky generation, etc.). We do a best-effort
+     * sanitization loop to keep the file syntactically valid by replacing uncompilable statements
+     * with no-op placeholders (rather than deleting whole lines).
      */
     private static File compileFile(Project project, File sourceFile, String classpath) throws Exception {
         File outputDir = java.nio.file.Files.createTempDirectory("temp_test_classes").toFile();
         outputDir.deleteOnExit();
 
+        if (sourceFile == null || !sourceFile.exists()) {
+            throw new RuntimeException("Compilation failed: sourceFile missing");
+        }
+
         // Resolve javac (assume it's next to java)
         String javaExe = resolveJavaExecutable(project);
-        String javacExe = javaExe.replace("java.exe", "javac.exe").replace("bin" + File.separator + "java", "bin" + File.separator + "javac");
+        String javacExe = javaExe.replace("java.exe", "javac.exe")
+                .replace("bin" + File.separator + "java", "bin" + File.separator + "javac");
 
         // Use system javac if inferred path doesn't exist
         if (!new File(javacExe).exists()) javacExe = "javac";
 
-        List<String> cmd = new java.util.ArrayList<>();
-        cmd.add(javacExe);
-        cmd.add("-cp");
-        cmd.add(classpath);
-        cmd.add("-d");
-        cmd.add(outputDir.getAbsolutePath());
-        cmd.add(sourceFile.getAbsolutePath());
+        String currentSource = safeReadString(sourceFile.toPath());
 
-        // Run compilation
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.redirectErrorStream(true);
-        Process p = pb.start();
-        String out = readProcessOutput(p);
+        final int MAX_TRIES = 8;
+        for (int attempt = 1; attempt <= MAX_TRIES; attempt++) {
+            // Write current source
+            java.nio.file.Files.writeString(sourceFile.toPath(), currentSource, java.nio.charset.StandardCharsets.UTF_8);
 
-        if (p.exitValue() != 0) {
-            throw new RuntimeException("Compilation failed:\n" + out);
+            java.util.List<String> cmd = new java.util.ArrayList<>();
+            cmd.add(javacExe);
+            cmd.add("-cp");
+            cmd.add(classpath == null ? "" : classpath);
+            cmd.add("-d");
+            cmd.add(outputDir.getAbsolutePath());
+            cmd.add(sourceFile.getAbsolutePath());
+
+            ProcessBuilder pb = new ProcessBuilder(cmd);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            String out = readProcessOutput(p);
+
+            int code;
+            try {
+                code = p.exitValue();
+            } catch (Throwable t) {
+                code = -1;
+            }
+
+            if (code == 0) {
+                return outputDir;
+            }
+
+            // Best-effort sanitize the source based on javac output
+            String sanitized = sanitizeTestSourceForCompilation(currentSource, out);
+
+            // If no change, stop early
+            if (sanitized.equals(currentSource)) {
+                throw new RuntimeException("Compilation failed:\n" + out);
+            }
+
+            currentSource = sanitized;
         }
-        return outputDir;
+
+        throw new RuntimeException("Compilation failed after sanitization retries.");
+    }
+
+    /**
+     * Best-effort sanitization of a generated JUnit test source to make it compile.
+     * Replaces statements that reference missing symbols (methods/variables/classes) reported by javac
+     * with no-op placeholders, to avoid breaking surrounding syntax/blocks.
+     */
+    private static String sanitizeTestSourceForCompilation(String javaSource, String javacOut) {
+        if (javaSource == null) javaSource = "";
+        if (javacOut == null || javacOut.isBlank()) return javaSource;
+
+        java.util.Set<String> missingMethods = new java.util.LinkedHashSet<>();
+        java.util.Set<String> missingVars = new java.util.LinkedHashSet<>();
+        java.util.Set<String> missingClasses = new java.util.LinkedHashSet<>();
+
+        // Parse javac output for cannot find symbol blocks.
+        // Example:
+        //   symbol:   method drawClone(Graphics,NullDrawingView)
+        //   symbol:   variable odeFigure0
+        //   symbol:   class Something
+        try {
+            String[] lines = javacOut.replace("\r\n", "\n").replace("\r", "\n").split("\n", -1);
+            for (String l : lines) {
+                if (l == null) continue;
+                String t = l.trim();
+                if (!t.startsWith("symbol:")) continue;
+
+                java.util.regex.Matcher mm = java.util.regex.Pattern
+                        .compile("symbol:\\s+method\\s+([A-Za-z_][\\w$]*)\\s*\\(")
+                        .matcher(t);
+                if (mm.find()) {
+                    missingMethods.add(mm.group(1));
+                    continue;
+                }
+
+                java.util.regex.Matcher mv = java.util.regex.Pattern
+                        .compile("symbol:\\s+variable\\s+([A-Za-z_][\\w$]*)\\b")
+                        .matcher(t);
+                if (mv.find()) {
+                    missingVars.add(mv.group(1));
+                    continue;
+                }
+
+                java.util.regex.Matcher mc = java.util.regex.Pattern
+                        .compile("symbol:\\s+class\\s+([A-Za-z_][\\w$]*)\\b")
+                        .matcher(t);
+                if (mc.find()) {
+                    missingClasses.add(mc.group(1));
+                }
+            }
+        } catch (Throwable ignored) {
+            // ignore
+        }
+
+        if (missingMethods.isEmpty() && missingVars.isEmpty() && missingClasses.isEmpty()) return javaSource;
+
+        String[] srcLines = javaSource.replace("\r\n", "\n").replace("\r", "\n").split("\n", -1);
+        StringBuilder sb = new StringBuilder();
+
+        for (String line : srcLines) {
+            if (line == null) line = "";
+            String trimmed = line.trim();
+
+            // Never touch package/import/class header lines
+            if (trimmed.startsWith("package ") || trimmed.startsWith("import ")) {
+                sb.append(line).append('\n');
+                continue;
+            }
+            if (trimmed.contains(" class ") || trimmed.startsWith("public class") || trimmed.startsWith("class ")) {
+                sb.append(line).append('\n');
+                continue;
+            }
+
+            boolean needsReplace = false;
+
+            // Replace lines containing calls to missing methods
+            for (String m : missingMethods) {
+                if (m == null || m.isBlank()) continue;
+                if (line.contains("." + m + "(") || trimmed.startsWith(m + "(") || trimmed.contains(" " + m + "(")) {
+                    needsReplace = true;
+                    break;
+                }
+            }
+
+            // Replace lines referencing missing vars
+            if (!needsReplace) {
+                for (String v : missingVars) {
+                    if (v == null || v.isBlank()) continue;
+                    if (line.contains(v)) {
+                        needsReplace = true;
+                        break;
+                    }
+                }
+            }
+
+            // Replace lines referencing missing classes
+            if (!needsReplace) {
+                for (String c : missingClasses) {
+                    if (c == null || c.isBlank()) continue;
+                    if (line.contains(c)) {
+                        needsReplace = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!needsReplace) {
+                sb.append(line).append('\n');
+                continue;
+            }
+
+            // Preserve indentation
+            String indent = "";
+            try {
+                int j = 0;
+                while (j < line.length()) {
+                    char ch = line.charAt(j);
+                    if (ch == ' ' || ch == '\t') j++; else break;
+                }
+                indent = line.substring(0, j);
+            } catch (Throwable ignored) {
+                indent = "";
+            }
+
+            // No-op replacement that keeps syntax stable:
+            // - If the line ends with a comma, we're likely inside an argument list: use `null,`.
+            // - Otherwise, emit an empty statement `;`.
+            // Add a comment so we can debug what got replaced.
+            String repl;
+            if (trimmed.endsWith(",")) {
+                repl = indent + "null, // ACP: removed uncompilable line";
+            } else {
+                repl = indent + "; // ACP: removed uncompilable line";
+            }
+            sb.append(repl).append('\n');
+        }
+
+        String sanitized = sb.toString();
+        if (!sanitized.endsWith("\n")) sanitized += "\n";
+        return sanitized;
+    }
+
+    /** Small helper to avoid returning null strings from Files.readString in older JDKs. */
+    private static String safeReadString(java.nio.file.Path p) {
+        try {
+            String s = java.nio.file.Files.readString(p, java.nio.charset.StandardCharsets.UTF_8);
+            return s == null ? "" : s;
+        } catch (Throwable t) {
+            return "";
+        }
     }
 
     private static String repairLiteralNNewlineCorruption(String code) {
         if (code == null) return "";
-        // Best-effort: replace standalone 'n' that appears where a newline should be.
-        String out = code;
-        out = out.replace("npackage ", "\npackage ");
-        out = out.replace(";n", ";\n");
-        out = out.replace("{n", "{\n");
-        out = out.replace("}n", "}\n");
-        out = out.replace(")n", ")\n");
-        return out;
+
+        // IMPORTANT: Only repair *very specific* patterns that strongly indicate newline corruption.
+
+        String s = code;
+
+        // High-confidence boundary patterns where a newline became 'n'
+        s = s.replace(";n", ";\n");
+        s = s.replace(")n", ")\n");
+        s = s.replace("{n", "{\n");
+        s = s.replace("}n", "}\n");
+
+        // Keyword boundaries at start-of-line only (avoid touching identifiers like nodeFigure0)
+        s = s.replaceAll("(?m)^[\\t ]*n(?=package\\s)", "");
+        s = s.replaceAll("(?m)^[\\t ]*n(?=import\\s)", "");
+        s = s.replaceAll("(?m)^[\\t ]*n(?=(public|private|protected)\\b)", "");
+        s = s.replaceAll("(?m)^[\\t ]*n(?=(class|interface|enum|record)\\b)", "");
+
+        // Also handle common inline corruption
+        s = s.replace("npackage ", "\npackage ");
+        s = s.replace("nimport ", "\nimport ");
+
+        return s;
     }
 
     private static String normalizeBrokenNewlines(String code) {
@@ -2052,82 +2266,127 @@ public final class CloneRefactorWorkflow {
 
     /**
      * Converts EvoSuite-generated test code to pure JUnit4 code.
-     * Critical Fix: expanded filter list to include MockJFileChooser and other UI/IO mocks.
+     * Strategy:
+     *  - Keep package + normal imports + test methods intact.
+     *  - Remove EvoSuite-specific imports/annotations.
+     *  - Remove @BeforeClass/@AfterClass blocks entirely (these typically reference EvoSuite runtime).
+     *  - Remove `extends *_ESTest_scaffolding`.
+     *  - Rename the test class to `outputClassName`.
+     *  - Ensure JUnit imports exist and appear AFTER the package declaration.
      */
     private static String convertEvoSuiteToPureJUnit4(String code, String outputClassName) {
         if (code == null) return "";
 
-        // 1. Normalize line endings
+        // Normalize line endings
         String s = code.replace("\r\n", "\n").replace("\r", "\n");
+        String[] lines = s.split("\n", -1);
 
-        // 2. Line-based cleanup
-        StringBuilder sb = new StringBuilder();
-        String[] lines = s.split("\n");
+        StringBuilder out = new StringBuilder();
+
+        boolean skippingLifecycleBlock = false;
+        boolean lifecycleBraceStarted = false;
+        int lifecycleBraceDepth = 0;
 
         for (String line : lines) {
             String trimmed = line.trim();
 
-            // Remove specific imports
+            // Skip @BeforeClass/@AfterClass method bodies entirely (they usually contain EvoSuite runtime setup)
+            if (skippingLifecycleBlock) {
+                for (int k = 0; k < line.length(); k++) {
+                    char c = line.charAt(k);
+                    if (c == '{') {
+                        lifecycleBraceStarted = true;
+                        lifecycleBraceDepth++;
+                    } else if (c == '}') {
+                        if (lifecycleBraceStarted) lifecycleBraceDepth--;
+                    }
+                }
+                if (lifecycleBraceStarted && lifecycleBraceDepth <= 0) {
+                    skippingLifecycleBlock = false;
+                    lifecycleBraceStarted = false;
+                    lifecycleBraceDepth = 0;
+                }
+                continue;
+            }
+
+            // Drop EvoSuite imports
             if (trimmed.startsWith("import org.evosuite.")) continue;
+            if (trimmed.startsWith("import org.evosuite.runtime")) continue;
             if (trimmed.startsWith("import org.junit.runner.RunWith")) continue;
 
-            // Remove class annotations
-            if (trimmed.startsWith("@RunWith(EvoRunner.class)")) continue;
+            // Drop EvoSuite annotations
+            if (trimmed.startsWith("@RunWith(")) continue;
             if (trimmed.startsWith("@EvoRunnerParameters")) continue;
+            if (trimmed.startsWith("@EvoRunnerParameter")) continue;
 
-            // Remove @BeforeClass / @AfterClass and their method bodies
+            // Drop lifecycle annotations AND begin skipping the next method block
             if (trimmed.startsWith("@BeforeClass") || trimmed.startsWith("@AfterClass")) {
+                skippingLifecycleBlock = true;
+                lifecycleBraceStarted = false;
+                lifecycleBraceDepth = 0;
                 continue;
             }
 
-            // [Critical Fix]: Comprehensive filter list for EvoSuite runtime symbols
-            if (line.contains("org.evosuite.") ||
-                    line.contains("RuntimeSettings.") ||
-                    line.contains("MockFramework.") ||
-                    line.contains("EvoRunner") ||
-                    line.contains("EvoSuite") ||
-                    line.contains("verifyException") ||
-                    // Date/Time mocks
-                    line.contains("MockDateFormat") ||
-                    line.contains("MockDate") ||
-                    line.contains("MockCalendar") ||
-                    line.contains("MockRandom") ||
-                    // IO/File mocks
-                    line.contains("MockFile") ||
-                    line.contains("MockFileSystemView") ||
-                    line.contains("MockFileInputStream") ||
-                    line.contains("MockFileOutputStream") ||
-                    line.contains("FileSystemHandling") ||
-                    // UI/AWT/Swing mocks (This fixes your current error)
-                    line.contains("MockJFileChooser") ||  // <--- Added
-                    line.contains("MockToolkit") ||
-                    line.contains("MockGraphics") ||
-                    line.contains("MockResources") ||
-                    line.contains("MockComponent")) {
-                continue;
-            }
-
-            // Remove extends ..._ESTest_scaffolding
+            // Remove extends *_ESTest_scaffolding
             if (line.contains("class ") && line.contains("extends") && line.contains("_ESTest_scaffolding")) {
                 line = line.replaceAll("extends\\s+[A-Za-z0-9_]+_ESTest_scaffolding", "");
             }
 
-            // Rename class
+            // Rename class Foo_ESTest -> outputClassName (ensure exactly one 'public')
             if (line.contains("class ") && line.contains("_ESTest")) {
-                line = line.replaceAll("class\\s+[A-Za-z0-9_]+_ESTest", "class " + outputClassName);
+                // Replace the original EvoSuite class name with the desired output class name
+                line = line.replaceAll("\\bclass\\s+[A-Za-z0-9_]+_ESTest\\b", "class " + outputClassName);
+
+                // Normalize modifiers so we never end up with 'public public'
+                line = line.replaceAll("\\bpublic\\s+public\\b", "public");
+
+                // Ensure the class is public exactly once
+                if (!line.matches(".*\\bpublic\\s+class\\b.*")) {
+                    // Insert 'public' right before 'class'
+                    line = line.replaceFirst("\\bclass\\b", "public class");
+                }
             }
 
-            sb.append(line).append("\n");
+            // Hard filter: drop lines that still reference EvoSuite runtime symbols (but DO NOT drop generic 'Mock*' lines)
+            if (line.contains("org.evosuite.") ||
+                    line.contains("RuntimeSettings") ||
+                    line.contains("MockFramework") ||
+                    line.contains("EvoRunner") ||
+                    line.contains("verifyException") ||
+                    line.contains("FileSystemHandling")) {
+                continue;
+            }
+
+            out.append(line).append('\n');
         }
 
-        String result = sb.toString();
+        String result = out.toString();
 
-        // 3. Ensure necessary JUnit imports exist
-        if (!result.contains("import org.junit.Test;")) {
-            result = "import org.junit.Test;\n" + result;
-        }
-        if (!result.contains("import static org.junit.Assert")) {
-            result = "import static org.junit.Assert.*;\n" + result;
+        // Ensure JUnit imports exist and are placed after the package decl (if any).
+        boolean hasJUnitTestImport = result.contains("import org.junit.Test;");
+        boolean hasAssertImport = result.contains("import static org.junit.Assert");
+
+        if (!hasJUnitTestImport || !hasAssertImport) {
+            String[] outLines = result.split("\n", -1);
+            StringBuilder rebuilt = new StringBuilder();
+
+            int i = 0;
+            // Keep package if present
+            if (outLines.length > 0 && outLines[0].trim().startsWith("package ")) {
+                rebuilt.append(outLines[0]).append('\n');
+                i = 1;
+                while (i < outLines.length && outLines[i].trim().isEmpty()) {
+                    rebuilt.append(outLines[i]).append('\n');
+                    i++;
+                }
+            }
+
+            if (!hasAssertImport) rebuilt.append("import static org.junit.Assert.*;\n");
+            if (!hasJUnitTestImport) rebuilt.append("import org.junit.Test;\n");
+            rebuilt.append('\n');
+
+            for (; i < outLines.length; i++) rebuilt.append(outLines[i]).append('\n');
+            result = rebuilt.toString();
         }
 
         return result;
