@@ -1210,10 +1210,9 @@ public final class CloneRefactorWorkflow {
                 // ignore
             }
 
-            // If tests were generated, convert the primary *_ESTest.java into a pure JUnit4 test
-            // (removing EvoSuite runtime/scaffolding) and copy ONLY the converted test into src/test/java.
-            // This avoids requiring EvoSuite runtime to execute tests.
-            String convertedTestFqn = "";
+            // If tests were generated, run them in *native EvoSuite form* (keep *_ESTest.java + scaffolding + EvoRunner).
+            // We DO NOT convert to "pure" JUnit, because that loses EvoSuite runtime semantics and often causes flaky/invalid exception expectations.
+            String nativeTestFqn = "";
             if (hasGeneratedTests) {
                 String simpleName;
                 try {
@@ -1226,12 +1225,10 @@ public final class CloneRefactorWorkflow {
 
                 String estestName = simpleName + "_ESTest.java";
                 java.nio.file.Path estestPath = findFileRecursivelyByName(testDir.toPath(), estestName);
-
                 if (estestPath == null) {
                     // Fallback: first *_ESTest.java under testDir
                     estestPath = findFirstFileBySuffix(testDir.toPath(), "_ESTest.java");
                 }
-
                 if (estestPath == null) {
                     return "[EVOSUITE]\n" +
                             "exitCode=" + exit + "\n" +
@@ -1239,53 +1236,31 @@ public final class CloneRefactorWorkflow {
                             "reason=generated tests folder exists, but no *_ESTest.java found\n";
                 }
 
+                // Determine scaffolding file next to *_ESTest.java
+                java.nio.file.Path scaffPath = null;
+                try {
+                    String scaffName = simpleName + "_ESTest_scaffolding.java";
+                    java.nio.file.Path candidate = estestPath.getParent().resolve(scaffName);
+                    if (java.nio.file.Files.exists(candidate)) scaffPath = candidate;
+                } catch (Throwable ignored) {
+                    // ignore
+                }
+                if (scaffPath == null) {
+                    // Fallback: find any *_ESTest_scaffolding.java
+                    scaffPath = findFirstFileBySuffix(testDir.toPath(), "_ESTest_scaffolding.java");
+                }
+
                 String rawTest = java.nio.file.Files.readString(estestPath, java.nio.charset.StandardCharsets.UTF_8);
                 if (rawTest == null) rawTest = "";
-
                 if (looksLikeLiteralNNewlineCorruption(rawTest)) {
                     rawTest = repairLiteralNNewlineCorruption(rawTest);
                 }
                 rawTest = normalizeBrokenNewlines(rawTest);
 
-                String outClass = simpleName + "_EvoSuiteJUnit4Test";
-                String converted = convertEvoSuiteToPureJUnit4(rawTest, outClass);
+                nativeTestFqn = resolvePrimaryClassFqn(rawTest, estestName);
+                _LAST_CONVERTED_TEST_FQN = nativeTestFqn; // reuse existing field as "last generated test to run"
 
-                try {
-                    if (simpleName != null && !simpleName.isBlank()) {
-                        String var = Character.toLowerCase(simpleName.charAt(0)) + (simpleName.length() > 1 ? simpleName.substring(1) : "");
-                        if (var.length() >= 2) {
-                            String missingFirst = var.substring(1);
-                            if (converted.contains(missingFirst + "0") && !converted.contains(var + "0")) {
-                                converted = converted.replaceAll("\\b" + java.util.regex.Pattern.quote(missingFirst) + "(\\d+)\\b", var + "$1");
-                            }
-                        }
-                    }
-                } catch (Throwable ignored) {
-                    // best-effort
-                }
-
-
-                // Write converted file next to the original under the same package-relative structure.
-                java.nio.file.Path rel = testDir.toPath().relativize(estestPath);
-                java.nio.file.Path outRel = rel;
-                try {
-                    String relStr = rel.toString();
-                    if (relStr.endsWith(estestName)) {
-                        outRel = java.nio.file.Paths.get(relStr.substring(0, relStr.length() - estestName.length()) + outClass + ".java");
-                    }
-                } catch (Throwable ignored) {
-                    // keep outRel as rel
-                }
-
-                java.nio.file.Path convertedPath = testDir.toPath().resolve(outRel);
-                java.nio.file.Files.createDirectories(convertedPath.getParent());
-                java.nio.file.Files.writeString(convertedPath, converted, java.nio.charset.StandardCharsets.UTF_8);
-
-                convertedTestFqn = extractFqnFromJavaSource(converted, outClass);
-                _LAST_CONVERTED_TEST_FQN = convertedTestFqn;
-
-                // Copy ONLY the converted test into src/test/java (preserve package dirs).
-                // Also proactively delete any previously-copied EvoSuite originals/scaffolding to avoid lingering compile errors.
+                // Copy native EvoSuite tests into src/test/java (preserve package dirs).
                 File projectBase = new File(projectDir);
                 File srcTestJava = new File(projectBase, "src/test/java");
                 if (!srcTestJava.exists() && !srcTestJava.mkdirs()) {
@@ -1295,37 +1270,45 @@ public final class CloneRefactorWorkflow {
                             "reason=failed to create src/test/java\n";
                 }
 
-                java.nio.file.Path target = srcTestJava.toPath().resolve(outRel);
-                java.nio.file.Files.createDirectories(target.getParent());
+                // Preserve package-relative structure
+                java.nio.file.Path rel = testDir.toPath().relativize(estestPath);
+                java.nio.file.Path targetEst = srcTestJava.toPath().resolve(rel);
+                java.nio.file.Files.createDirectories(targetEst.getParent());
 
-                // Delete old originals if they exist in the destination folder (from earlier runs)
+                // Clean up any previously-copied converted version for this class
                 try {
-                    String est = estestName; // e.g., Foo_ESTest.java
-                    String scaff = simpleName + "_ESTest_scaffolding.java";
-                    java.nio.file.Path oldEst = target.getParent().resolve(est);
-                    java.nio.file.Path oldScaff = target.getParent().resolve(scaff);
-                    if (java.nio.file.Files.exists(oldEst)) {
-                        java.nio.file.Files.delete(oldEst);
-                    }
-                    if (java.nio.file.Files.exists(oldScaff)) {
-                        java.nio.file.Files.delete(oldScaff);
+                    String convertedName = simpleName + "_EvoSuiteJUnit4Test.java";
+                    java.nio.file.Path oldConverted = targetEst.getParent().resolve(convertedName);
+                    if (java.nio.file.Files.exists(oldConverted)) {
+                        java.nio.file.Files.delete(oldConverted);
                     }
                 } catch (Throwable ignored) {
-                    // best-effort cleanup
+                    // best-effort
                 }
 
-                java.nio.file.Files.copy(convertedPath, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                // Copy *_ESTest.java
+                java.nio.file.Files.copy(estestPath, targetEst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+                // Copy scaffolding if present
+                if (scaffPath != null && java.nio.file.Files.exists(scaffPath)) {
+                    java.nio.file.Path scaffRel = testDir.toPath().relativize(scaffPath);
+                    java.nio.file.Path targetScaff = srcTestJava.toPath().resolve(scaffRel);
+                    java.nio.file.Files.createDirectories(targetScaff.getParent());
+                    java.nio.file.Files.copy(scaffPath, targetScaff, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
 
                 if (viewer != null) {
-                    viewer.accept("[EvoSuite] Converted test written: " + target);
-                    if (convertedTestFqn != null && !convertedTestFqn.isBlank()) {
-                        viewer.accept("[EvoSuite] Converted test FQN: " + convertedTestFqn);
+                    viewer.accept("[EvoSuite] Native test written: " + targetEst);
+                    if (scaffPath != null) viewer.accept("[EvoSuite] Native scaffolding written: " + srcTestJava.toPath().resolve(testDir.toPath().relativize(scaffPath)));
+                    if (nativeTestFqn != null && !nativeTestFqn.isBlank()) {
+                        viewer.accept("[EvoSuite] Native test FQN: " + nativeTestFqn);
                     }
                 }
             }
 
-            // Now actually run tests using Maven or Gradle
-            String testOutput = runProjectTests(base, viewer);
+            // Now actually run tests. For native EvoSuite tests we must run via JUnitCore with EvoSuite runtime on the classpath.
+            // (Build tools usually won't have EvoSuite runtime configured.)
+            String testOutput = runProjectTests(base, viewer, evosuiteJar);
 
             boolean testSuccess =
                     testOutput != null &&
@@ -1350,14 +1333,16 @@ public final class CloneRefactorWorkflow {
     }
 
     // Helper to run Maven/Gradle tests, or fallback to JUnitCore
-    private static String runProjectTests(File baseDir, Consumer<String> viewer) {
+    private static String runProjectTests(File baseDir, Consumer<String> viewer, File evosuiteJar) {
         try {
             File pom = new File(baseDir, "pom.xml");
             File gradle = new File(baseDir, "build.gradle");
             File gradleKts = new File(baseDir, "build.gradle.kts");
 
             // 1. Maven/Gradle: Delegate to build tool
-            if (pom.exists() || gradle.exists() || gradleKts.exists()) {
+            // NOTE: Native EvoSuite tests require EvoSuite runtime on the classpath. Build tools typically don't include it.
+            // So if we have a generated EvoSuite test to run, prefer the JUnitCore path below.
+            if ((pom.exists() || gradle.exists() || gradleKts.exists()) && (_LAST_CONVERTED_TEST_FQN == null || _LAST_CONVERTED_TEST_FQN.isBlank())) {
                 ProcessBuilder pb;
                 if (pom.exists()) {
                     pb = new ProcessBuilder("mvn", "-q", "test");
@@ -1412,6 +1397,9 @@ public final class CloneRefactorWorkflow {
             File junit = materializeResourceToTempFile("tools/junit-4.12.jar", "junit", ".jar");
             File hamcrest = materializeResourceToTempFile("tools/hamcrest-core-1.3.jar", "hamcrest", ".jar");
 
+            // Ensure EvoSuite runtime is on CP for native *_ESTest tests (EvoRunner, RuntimeSettings, mocks, etc.)
+            File evoRuntime = evosuiteJar;
+
             // Fallbacks: try project libs/ and local Maven repo if the resource is missing
             if (hamcrest == null || !hamcrest.exists()) {
                 File libHamcrest = new File(baseDir, "libs" + File.separator + "hamcrest-core-1.3.jar");
@@ -1437,12 +1425,29 @@ public final class CloneRefactorWorkflow {
             String runCp = cp;
             if (junit != null && junit.exists()) runCp += File.pathSeparator + junit.getAbsolutePath();
             if (hamcrest != null && hamcrest.exists()) runCp += File.pathSeparator + hamcrest.getAbsolutePath();
+            if (evoRuntime != null && evoRuntime.exists()) runCp += File.pathSeparator + evoRuntime.getAbsolutePath();
 
-            // STEP 3 (NEW): Compile the test file manually
-            if (viewer != null) viewer.accept("[TEST] Compiling generated test...");
+            // STEP 3: Compile the generated test file(s) manually.
+            // Native EvoSuite tests require compiling both *_ESTest.java and *_ESTest_scaffolding.java.
+            if (viewer != null) viewer.accept("[TEST] Compiling generated test (native EvoSuite)...");
             File compiledClassesDir;
             try {
-                compiledClassesDir = compileFile(ideProject, testFile, runCp);
+                java.util.List<File> sources = new java.util.ArrayList<>();
+                sources.add(testFile);
+
+                // Add scaffolding if it exists next to the test
+                try {
+                    String tf = testFile.getName();
+                    if (tf.endsWith("_ESTest.java")) {
+                        String base = tf.substring(0, tf.length() - "_ESTest.java".length());
+                        File scaff = new File(testFile.getParentFile(), base + "_ESTest_scaffolding.java");
+                        if (scaff.exists()) sources.add(scaff);
+                    }
+                } catch (Throwable ignored) {
+                    // ignore
+                }
+
+                compiledClassesDir = compileFiles(ideProject, sources, runCp);
             } catch (Exception e) {
                 return "Compilation Error: " + e.getMessage();
             }
@@ -1462,6 +1467,9 @@ public final class CloneRefactorWorkflow {
             if (viewer != null) viewer.accept("[TEST] Executing: " + String.join(" ", cmd));
             if (viewer != null && (hamcrest == null || !hamcrest.exists())) {
                 viewer.accept("[TEST] WARN: hamcrest-core-1.3.jar not found; JUnit 4.12 will fail with NoClassDefFoundError.");
+            }
+            if (viewer != null && (evoRuntime == null || !evoRuntime.exists())) {
+                viewer.accept("[TEST] WARN: EvoSuite runtime jar not found; native *_ESTest tests will fail to compile/run (missing EvoRunner/runtime).");
             }
 
             ProcessBuilder jpb = new ProcessBuilder(cmd);
@@ -2661,5 +2669,49 @@ public final class CloneRefactorWorkflow {
             return null;
         }
     }
-}
 
+    /**
+     * Compile multiple Java source files into a temp output directory.
+     * Used for native EvoSuite tests where both *_ESTest.java and *_ESTest_scaffolding.java must be compiled together.
+     */
+    private static File compileFiles(Project project, java.util.List<File> sourceFiles, String classpath) throws Exception {
+        File outputDir = java.nio.file.Files.createTempDirectory("temp_test_classes").toFile();
+        outputDir.deleteOnExit();
+
+        if (sourceFiles == null || sourceFiles.isEmpty()) {
+            throw new RuntimeException("Compilation failed: no source files provided");
+        }
+        for (File f : sourceFiles) {
+            if (f == null || !f.exists()) {
+                throw new RuntimeException("Compilation failed: missing source file: " + (f == null ? "null" : f.getAbsolutePath()));
+            }
+        }
+
+        // Resolve javac (assume it's next to java)
+        String javaExe = resolveJavaExecutable(project);
+        String javacExe = javaExe.replace("java.exe", "javac.exe")
+                .replace("bin" + File.separator + "java", "bin" + File.separator + "javac");
+        if (!new File(javacExe).exists()) javacExe = "javac";
+
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        cmd.add(javacExe);
+        cmd.add("-cp");
+        cmd.add(classpath == null ? "" : classpath);
+        cmd.add("-d");
+        cmd.add(outputDir.getAbsolutePath());
+        for (File f : sourceFiles) {
+            cmd.add(f.getAbsolutePath());
+        }
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+        String out = readProcessOutput(p);
+        int code;
+        try { code = p.exitValue(); } catch (Throwable t) { code = -1; }
+        if (code != 0) {
+            throw new RuntimeException("Compilation failed:\n" + out);
+        }
+        return outputDir;
+    }
+}
