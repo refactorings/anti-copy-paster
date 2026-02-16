@@ -23,7 +23,7 @@ public final class AnthropicMessagesClient implements LlmClient {
     public String complete(String prompt) throws Exception {
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
-        body.addProperty("max_tokens", 2048);
+        body.addProperty("max_tokens", 8192);
 
         JsonArray messages = new JsonArray();
         JsonObject user = new JsonObject();
