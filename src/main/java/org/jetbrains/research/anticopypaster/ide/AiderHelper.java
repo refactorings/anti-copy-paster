@@ -1382,9 +1382,7 @@ public class AiderHelper {
 
     /**
      * Runs EvoSuite on a given fully-qualified class name using an external EvoSuite jar.
-     * Uses a dedicated process runner (no LLM/Aider env handling).
-     * Runs synchronously (blocking) in the calling pooled thread.
-     * After EvoSuite completes, post-processes the generated *_ESTest.java into a pure JUnit4 test file.
+     * Simplified workflow-aligned implementation.
      */
     private static boolean runEvoSuiteOnClass(Project project,
                                               String javaExe,
@@ -1393,338 +1391,209 @@ public class AiderHelper {
                                               String targetClass,
                                               String sourceFilePath,
                                               String refactoredSourceText) throws IOException, InterruptedException {
-        // Use separate consoles so test execution output does not overwrite generation logs
-        Consumer<String> evoViewer = openStreamingViewer(project, "EvoSuite Generation Output");
-        // Build mark + code source: print to BOTH stderr and the EvoSuite viewer so it is visible in the tool window.
 
-        Consumer<String> junitViewer = openLazyStreamingViewer(project, "JUnit Test Output");
-        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        Consumer<String> viewer = openStreamingViewer(project, "EvoSuite Output");
 
-        // Force a deterministic EvoSuite output location so we can reliably find *_ESTest.java
-        // EvoSuite will create <output_directory>/evosuite-tests and write tests there.
-        File evoOutputBaseDir = Files.createTempDirectory("evosuite-out-").toFile();
-        evoOutputBaseDir.deleteOnExit();
+        // --- Print actual java -version output ---
+        ProcessBuilder versionPb = new ProcessBuilder(javaExe, "-version");
+        versionPb.redirectErrorStream(true);
+        Process versionProcess = versionPb.start();
 
-        // Minimal usable arguments: pick a generation mode + criterion + classpath + CUT
-        java.util.List<String> cmd = new java.util.ArrayList<>();
-        cmd.add(javaExe);
-        evoViewer.accept("[EvoSuite] Using java executable: " + javaExe);
-
-        cmd.add("-Xmx2048m");
-
-        boolean isMac = System.getProperty("os.name").toLowerCase().contains("mac");
-
-
-        // --- Windows hang mitigation: add JVM flag BEFORE -jar ---
-        if (isWindows) {
-            // Limit CPU parallelism to reduce sporadic EvoSuite hangs on Windows.
-            cmd.add("-XX:ActiveProcessorCount=1");
-            evoViewer.accept("[EvoSuite] Windows hang mitigation: -XX:ActiveProcessorCount=1");
-            // --- Windows hard constraints (prevent hangs by shrinking EvoSuite's internal search/refinement space) ---
-            // IMPORTANT: we set these as JVM system properties (BEFORE -jar) so even if EvoSuite ignores them,
-            // the JVM still accepts them and the process will not crash due to EvoSuite parsing.
-
-            // 0) Hard cap from outside: keep global timeout SMALL on Windows so we can always kill/escape.
-            //    (The process watchdog in runProcessStreaming also enforces an absolute wall-clock cap.)
-            cmd.add("-Dglobal_timeout=60");
-
-            // 1) Shrink search space aggressively.
-            cmd.add("-Dsearch_algorithm=GA");
-            cmd.add("-Dpopulation=6");
-            cmd.add("-Dmax_test_length=12");
-
-            // 2) Reduce additional work.
-            //    For EvoSuite 1.0.6, the most stable way is to disable assertion generation.
-            cmd.add("-Dassertions=false");
-
-            // 3) Keep the budget short and stop based on time.
-            cmd.add("-Dsearch_budget=15");
-            cmd.add("-Dstopping_condition=MaxTime");
-
-            evoViewer.accept("[EvoSuite] Windows hard constraints (JVM): search_algorithm=GA, population=6, max_test_length=12, assertions=false, search_budget=15, global_timeout=60, stopping_condition=MaxTime");
-        }
-
-        // Keep runs headless to reduce GUI/Swing initialization inside the SUT/tests.
-        // NOTE: Even in headless mode, some code paths may touch fonts; hence we disable sandbox on Windows.
-        cmd.add("-Djava.awt.headless=true");
-
-        // Block external entity / schema access in XML parsing (best-effort) to avoid network permission issues
-        cmd.add("-Djavax.xml.accessExternalDTD=");
-        cmd.add("-Djavax.xml.accessExternalSchema=");
-        cmd.add("-Djavax.xml.accessExternalStylesheet=");
-        // Reduce font/native surprises on Windows; safe elsewhere
-        cmd.add("-Dsun.java2d.noddraw=true");
-        cmd.add("-Djava.awt.fonts=");
-
-        // IMPORTANT: Do NOT force java.awt.graphicsenv/toolkit. Those overrides can break Swing initialization
-        // (e.g., RepaintManager init failures) and behave differently across OS/JDKs.
-        // cmd.add("-Djava.awt.graphicsenv=...");
-        // cmd.add("-Djava.awt.toolkit=...");
-
-        // Only relevant on macOS; harmless elsewhere, but keep it OS-gated to avoid surprising behavior.
-        if (isMac) {
-            cmd.add("-Dapple.awt.UIElement=true");
-        }
-
-        // Let EvoSuite decide whether to mock AWT based on its defaults/settings.
-        // Forcing mock_awt=false can re-enable Swing paths that crash in headless environments.
-        // cmd.add("-Dmock_awt=false");
-
-        cmd.add("-Dinstrumentation_skip_packages=java.*,javax.*,sun.*,com.sun.*,jdk.*");
-        // IMPORTANT: avoid EvoSuite's internal "compile & run" step during generation.
-        // On Windows, that step runs the generated scaffolding under EvoSuite's sandbox and can crash
-        // with SunFontManager/freetype permission issues. We will generate tests only, then post-process
-        // and run them ourselves.
-        cmd.add("-Djunit_check=false");
-        evoViewer.accept("[EvoSuite] junit_check=false (JVM) added before -jar (best-effort)");
-
-        // Allow EvoSuite to attach to itself when needed
-        cmd.add("-Djdk.attach.allowAttachSelf=true");
-        // EvoSuite 1.0.6 expects tools.jar (JDK 8). If we can't find it, running under JDK 9+ will crash.
-        String toolsJar = findToolsJarForJavaExe(javaExe);
-        if (toolsJar != null) {
-            cmd.add("-Dtools_jar_location=" + toolsJar);
-        } else {
-            evoViewer.accept("[EvoSuite] tools.jar not found for Java executable: " + javaExe);
-            evoViewer.accept("[EvoSuite] EvoSuite 1.0.6 typically requires JDK 8 (tools.jar).");
-            evoViewer.accept("[EvoSuite] Set JAVA_8_HOME to a JDK 8 installation and restart the IDE, or upgrade the bundled EvoSuite to a Java 9+ compatible version.");
-            notify(project, "EvoSuite skipped: tools.jar not found. Please set JAVA_8_HOME to a JDK 8 path (EvoSuite 1.0.6 requires tools.jar).");
-            return false;
-        }
-
-        // Insert -Djava.security.policy==... as JVM arg BEFORE -jar for EvoSuite 1.0.6 compatibility.
-        if (isWindows) {
-            try {
-                String policy = createPermissiveJavaPolicyFile();
-                if (policy != null && !policy.isBlank()) {
-                    cmd.add("-Djava.security.policy==" + policy);
-                }
-            } catch (Throwable t) {
-                evoViewer.accept("[EvoSuite] Windows: failed to create permissive security policy: " + t.getMessage());
+        StringBuilder versionOut = new StringBuilder();
+        try (BufferedReader r = new BufferedReader(
+                new InputStreamReader(versionProcess.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                versionOut.append(line).append("\n");
             }
         }
+        versionProcess.waitFor();
 
+        String versionText = versionOut.toString();
+        viewer.accept("[EvoSuite] java -version:\n" + versionText);
+
+        int javaMajor = parseJavaMajorVersion(versionText);
+        viewer.accept("[EvoSuite] Parsed major version: " + javaMajor);
+
+        File outDir = Files.createTempDirectory("evosuite-tests-").toFile();
+        outDir.deleteOnExit();
+
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        cmd.add(javaExe);
+
+        // Add module opens if Java 9+
+        if (javaMajor >= 9) {
+            cmd.add("--add-opens=java.base/java.lang=ALL-UNNAMED");
+            cmd.add("--add-opens=java.base/java.util=ALL-UNNAMED");
+            cmd.add("--add-opens=java.base/java.io=ALL-UNNAMED");
+            cmd.add("--add-opens=java.desktop/java.awt=ALL-UNNAMED");
+        }
+
+        cmd.add("-Xmx2048m");
         cmd.add("-jar");
         cmd.add(evoSuiteJarPath);
-
-        if (isWindows) {
-            // Also try to fully disable EvoSuite sandbox/security manager (best-effort; harmless if ignored)
-            cmd.add("-Dsandbox=false");
-            cmd.add("-Dsandbox_mode=OFF");
-            evoViewer.accept("[EvoSuite] Windows: sandbox disable flags set (sandbox=false, sandbox_mode=OFF)." );
-            evoViewer.accept("[EvoSuite] Windows: not passing -Duse_security_manager=false (unsupported by EvoSuite 1.0.6)." );
-        }
-
-        // EvoSuite reads most "-D" properties as its own CLI arguments (after -jar), not only as JVM system properties.
-        // Passing this here ensures EvoSuite actually disables its internal JUnitAnalyzer compile/run phase.
-        cmd.add("-Djunit_check=false");
-        evoViewer.accept("[EvoSuite] junit_check=false (CLI) added after -jar to ensure EvoSuite disables JUnitAnalyzer phase");
-
-        // Generation mode
+        cmd.add("-Dsandbox=false");
         cmd.add("-generateSuite");
-        if (isWindows) {
-            evoViewer.accept("[EvoSuite] Windows: using -generateSuite (stable mode for EvoSuite 1.0.6).");
-        } else {
-            evoViewer.accept("[EvoSuite] Non-Windows: using -generateSuite.");
-        }
-
-        // IMPORTANT: Do not force client_on_thread.
-        // EvoSuite 1.0.6 can become unstable (client thread never terminates / master cannot access client state)
-        // when client_on_thread is toggled. Leaving it unset is the most portable behavior.
-        evoViewer.accept("[EvoSuite] client_on_thread: not forced (using EvoSuite default).");
-
-        // IMPORTANT (EvoSuite version compatibility):
-        // EvoSuite 1.0.6 will CRASH on unknown CLI properties (e.g., "-Doutput_directory=...").
-        // To keep output deterministic without relying on version-specific properties, we instead:
-        //   1) set the subprocess working directory to `evoOutputBaseDir` (via runProcessStreaming)
-        //   2) look for generated tests under <workingDir>/evosuite-tests/**
-        // This avoids hardcoding EvoSuite-specific flags that may differ across versions.
-        evoViewer.accept("[EvoSuite] Working directory (deterministic output base): " + evoOutputBaseDir.getAbsolutePath());
-
-        // Target class and classpath
         cmd.add("-class");
         cmd.add(targetClass);
         cmd.add("-projectCP");
         cmd.add(classpath);
 
-        // Windows hang mitigation: limit JVM to a single core.
-        // EvoSuite 1.0.6 does not recognize "-Dnum_cores"; use a JVM flag instead.
-        // NOTE: This flag must be placed BEFORE "-jar". We already added JVM args above, so we add it there.
-        // (We do NOT add any EvoSuite CLI property here to avoid "Unknown property" crashes.)
-
-        // Keep budgets conservative on Windows to avoid long hangs.
-        // NOTE: EvoSuite treats these -D... as its own CLI properties (after -jar).
-        if (isWindows) {
-            cmd.add("-Dsearch_budget=30");
-            cmd.add("-Dglobal_timeout=90");
-            cmd.add("-Dstopping_condition=MaxTime");
-        } else {
-            cmd.add("-Dsearch_budget=60");
-            cmd.add("-Dglobal_timeout=120");
-        }
-        evoViewer.accept("[EvoSuite] Budgets: search_budget=" + (isWindows ? "30" : "60") + ", global_timeout=" + (isWindows ? "90" : "120") + (isWindows ? ", stopping_condition=MaxTime" : ""));
-
-        // Coverage goals (avoid duplicates like LINE:LINE)
+        cmd.add("-Dsearch_budget=60");
+        cmd.add("-Dglobal_timeout=120");
         cmd.add("-Dcriterion=LINE");
+        cmd.add("-Dtest_dir=" + outDir.getAbsolutePath());
 
-        cmd.add("-Dminimize=false");
+        viewer.accept("[EvoSuite] Command: " + String.join(" ", cmd));
 
-        evoViewer.accept("[EvoSuite] Running EvoSuite for class: " + targetClass);
-        evoViewer.accept("[EvoSuite] Command: " + String.join(" ", cmd));
+        java.util.Map<String, String> env = new java.util.HashMap<>();
 
-        // Run EvoSuite with `evoOutputBaseDir` as the working directory so outputs land there.
-        int exit = -1;
-        int attempt = 0;
-        int maxAttempts = 5;
+        String forcedJavaHome = deriveJavaHomeFromJavaExe(javaExe);
+        if (forcedJavaHome != null && !forcedJavaHome.isBlank()) {
+            env.put("JAVA_HOME", forcedJavaHome);
 
-        while (attempt < maxAttempts) {
-            attempt++;
-            evoViewer.accept("[EvoSuite] Attempt " + attempt + " / " + maxAttempts + " starting...");
-
-            exit = runProcessStreaming(project, cmd, evoViewer, evoOutputBaseDir);
-
-            // exit == -1 indicates the process was force-killed due to hang/timeout
-            if (exit == -1) {
-                evoViewer.accept("[EvoSuite] Attempt " + attempt + " was killed due to hang. Retrying...");
-                continue;
-            }
-
-            // Non-hang exit (success or normal failure): stop retrying
-            break;
-        }
-
-        if (exit == -1) {
-            evoViewer.accept("[EvoSuite] All " + maxAttempts + " attempts were killed due to hangs. Giving up.");
-        }
-
-        if (exit != 0 && isWindows) {
-            evoViewer.accept("[EvoSuite] Windows: initial run failed (exit=" + exit + "). Retrying once with harder limits...");
-
-            java.util.List<String> retry = new java.util.ArrayList<>(cmd);
-
-            // Tighten knobs by removing previous values (best-effort).
-            retry.removeIf(s -> s != null && (
-                    s.startsWith("-Dsearch_budget=") ||
-                            s.startsWith("-Dglobal_timeout=") ||
-                            s.startsWith("-Dpopulation=") ||
-                            s.startsWith("-Dmax_test_length=") ||
-                            s.startsWith("-Xmx")
-            ));
-
-            // Add the harder caps.
-            retry.add(1, "-Xmx1024m");
-            retry.add("-Dsearch_budget=8");
-            retry.add("-Dglobal_timeout=30");
-            retry.add("-Dpopulation=4");
-            retry.add("-Dmax_test_length=8");
-            retry.add("-Dstopping_condition=MaxTime");
-
-            evoViewer.accept("[EvoSuite] Windows: retry command: " + String.join(" ", retry));
-            // Retry with the same deterministic working directory.
-            exit = runProcessStreaming(project, retry, evoViewer, evoOutputBaseDir);
-        }
-
-        boolean refactoredPass = false;
-
-        // Convert EvoSuite tests to a pure JUnit4 test (no EvoRunner/scaffolding) for plain projects,
-        // then compile + run it and report PASS/FAIL.
-        try {
-            JUnitConversionResult conv = null;
-            try {
-                conv = postProcessEvoSuiteTestsToPureJUnit4(project, evoOutputBaseDir, targetClass, sourceFilePath, evoViewer);
-            } catch (Throwable tConv) {
-                evoViewer.accept("[EvoSuite] Conversion failed: " + tConv.getMessage());
-                conv = null;
-            }
-
-            if (conv == null) {
-                // Fallback: use cached last-known-good test if available
-                CachedJUnitTest cached = LAST_GOOD_TEST_BY_CUT.get(targetClass);
-                if (cached != null && cached.testJavaSource != null && !cached.testJavaSource.isBlank()) {
-                    evoViewer.accept("[EvoSuite] Using cached last-known-good test for: " + targetClass);
-
-                    // Materialize cached test into evoOutputBaseDir/evosuite-tests to reuse existing pipeline
-                    File evoDir = new File(evoOutputBaseDir, "evosuite-tests");
-                    if (!evoDir.exists()) evoDir.mkdirs();
-
-                    String simple = cached.testClassFqn;
-                    String pkg = "";
-                    int lastDot = cached.testClassFqn.lastIndexOf('.');
-                    if (lastDot >= 0) {
-                        pkg = cached.testClassFqn.substring(0, lastDot);
-                        simple = cached.testClassFqn.substring(lastDot + 1);
-                    }
-                    File pkgDir = evoDir;
-                    if (!pkg.isBlank()) {
-                        pkgDir = new File(evoDir, pkg.replace('.', File.separatorChar));
-                        if (!pkgDir.exists()) pkgDir.mkdirs();
-                    }
-
-                    File outFile = new File(pkgDir, simple + ".java");
-                    Files.writeString(outFile.toPath(), cached.testJavaSource, StandardCharsets.UTF_8);
-
-                    conv = new JUnitConversionResult(outFile, cached.testClassFqn);
-                    evoViewer.accept("[EvoSuite] Cached test materialized at: " + outFile.getAbsolutePath());
-                } else {
-                    evoViewer.accept("[EvoSuite] Cached test fallback unavailable for: " + targetClass);
-                }
-            }
-
-            if (conv != null) {
-                if (isPlainProject(project)) {
-                    // Plain/simple projects: run via external JUnitCore against compiled preview
-                    runJUnit4ForGeneratedTest(project, javaExe, classpath, null, conv.testFile.getAbsolutePath(), conv.testClassFqn, junitViewer);
-
-                    // Also write the generated test into the project so the user can see it under src/test/java
-                    try {
-                        String testSource = Files.readString(conv.testFile.toPath(), StandardCharsets.UTF_8);
-                        writeTestIntoProjectTestSources(project, testSource, conv.testClassFqn, junitViewer);
-                    } catch (Throwable t) {
-                        if (evoViewer != null) evoViewer.accept("[JUnit/IDE] Warning: failed to write generated test into project: " + t.getMessage());
-                    }
-
-                    // Compile the REFACTORED preview source and run the SAME tests against it
-                    if (refactoredSourceText != null && !refactoredSourceText.isBlank()) {
-                        String refactoredOut = compileJavaSourceTextToTempOutput(project, targetClass, refactoredSourceText, classpath);
-// Put refactored preview output FIRST so it overrides the project's original bytecode
-                        refactoredPass = runJUnit4ForGeneratedTest(project, javaExe, classpath, refactoredOut, conv.testFile.getAbsolutePath(), conv.testClassFqn, junitViewer);
-                    } else {
-                        evoViewer.accept("[EvoSuite] Refactored source text is empty; skipping refactored preview test run.");
-                        refactoredPass = false;
-                    }
-                } else {
-                    // Maven/Gradle projects: write test into src/test/java and run via IntelliJ JUnit runner.
-                    evoViewer.accept("[EvoSuite] Maven/Gradle project detected: running generated JUnit4 test via IntelliJ runner.");
-
-                    try {
-                        String testSource = Files.readString(conv.testFile.toPath(), StandardCharsets.UTF_8);
-                        writeTestIntoProjectTestSources(project, testSource, conv.testClassFqn, junitViewer);
-                        runJUnit4ViaIdeaRunner(project, conv.testClassFqn, junitViewer);
-                        evoViewer.accept("[EvoSuite] Note: IntelliJ runner execution is async; not gating apply on PASS/FAIL for Maven/Gradle." );
-                        // Allow apply; gating would require test run listeners.
-                        refactoredPass = true;
-                    } catch (Throwable t) {
-                        junitViewer.accept("[JUnit/IDE] Failed to write/run tests via IntelliJ runner: " + t.getMessage());
-                        refactoredPass = true; // don't block apply due to runner integration issues
-                    }
-                }
+            // Ensure forked processes that call plain "java" also use this JDK
+            String oldPath = System.getenv("PATH");
+            String javaBin = forcedJavaHome + File.separator + "bin";
+            if (oldPath == null || oldPath.isBlank()) {
+                env.put("PATH", javaBin);
             } else {
-                evoViewer.accept("[EvoSuite] No converted JUnit4 test to run.");
-                refactoredPass = false;
+                env.put("PATH", javaBin + File.pathSeparator + oldPath);
             }
+
+            viewer.accept("[EvoSuite] Enforce JAVA_HOME=" + forcedJavaHome);
+            viewer.accept("[EvoSuite] Prepend PATH with " + javaBin);
+        }
+
+        // Defensive fallback: ONLY if Java 9+ is actually used, open required modules for XStream/Reflection.
+        // On Java 8, "--add-opens" is an unrecognized option and will crash the JVM.
+        if (javaMajor >= 9) {
+            String oldJto = System.getenv("JAVA_TOOL_OPTIONS");
+            String opens = " --add-opens=java.base/java.util=ALL-UNNAMED"
+                    + " --add-opens=java.base/java.lang=ALL-UNNAMED"
+                    + " --add-opens=java.base/java.io=ALL-UNNAMED"
+                    + " --add-opens=java.desktop/java.awt=ALL-UNNAMED";
+            env.put("JAVA_TOOL_OPTIONS", (oldJto == null ? "" : oldJto) + opens);
+        }
+
+        int exit = runProcessStreaming(project, cmd, viewer, null, env);
+
+        if (exit != 0) {
+            viewer.accept("[EvoSuite] Generation failed (exit=" + exit + ")");
+            return false;
+        }
+
+        viewer.accept("[EvoSuite] Generation finished successfully.");
+
+        // --- After generation: locate native ESTest and run it against the refactored preview ---
+        NativeEvoSuiteTest nativeTest;
+        try {
+            nativeTest = locateNativeEvoSuiteTests(project, outDir, targetClass, sourceFilePath, viewer);
         } catch (Throwable t) {
-            evoViewer.accept("[EvoSuite] Post-process/run warning: " + t.getMessage());
-            refactoredPass = false;
+            viewer.accept("[EvoSuite] Failed to locate native ESTest: " + t.getMessage());
+            return false;
         }
 
-        if (refactoredPass) {
-            notify(project, "EvoSuite finished for " + targetClass + " (refactored preview PASS)");
+        if (nativeTest == null) {
+            viewer.accept("[EvoSuite] No native ESTest found to execute.");
+            return false;
+        }
+
+        // Compile the refactored preview source so it overrides the project's compiled class
+        String refactoredOut;
+        try {
+            refactoredOut = compileJavaSourceTextToTempOutput(project, targetClass, refactoredSourceText, classpath);
+        } catch (Throwable t) {
+            viewer.accept("[EvoSuite] Failed to compile refactored preview for test run: " + t.getMessage());
+            return false;
+        }
+
+        Consumer<String> junitViewer = openStreamingViewer(project, "EvoSuite Test Run");
+        boolean ok;
+        try {
+            ok = runNativeEvoSuiteJUnit4(project, javaExe, classpath, refactoredOut, nativeTest, junitViewer, evoSuiteJarPath);
+        } catch (Throwable t) {
+            if (junitViewer != null) junitViewer.accept("[TEST] Failed to run native ESTest: " + t.getMessage());
+            ok = false;
+        }
+
+        if (ok) {
+            if (junitViewer != null) junitViewer.accept("[TEST] Native EvoSuite tests PASSED.");
         } else {
-            notify(project, "EvoSuite finished for " + targetClass + " (refactored preview FAIL)");
+            if (junitViewer != null) junitViewer.accept("[TEST] Native EvoSuite tests FAILED.");
         }
 
-        return refactoredPass;
+        return ok;
     }
+
+    private static String deriveJavaHomeFromJavaExe(String javaExe) {
+        if (javaExe == null || javaExe.isBlank()) return null;
+        try {
+            java.io.File f = new java.io.File(javaExe);
+            // .../Contents/Home/bin/java  -> .../Contents/Home
+            java.io.File bin = f.getParentFile();
+            if (bin == null) return null;
+            java.io.File home = bin.getParentFile();
+            if (home == null) return null;
+            if (new java.io.File(home, "bin").exists()) return home.getAbsolutePath();
+            return home.getAbsolutePath();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * Parse major Java version from `java -version` output.
+     * Supports Java 8 style:  java version "1.8.0_XXX"
+     * and Java 9+ style:      java version "11.0.X" / openjdk version "17.0.X"
+     */
+    private static int parseJavaMajorVersion(String javaVersionOutput) {
+        if (javaVersionOutput == null) return -1;
+        String s = javaVersionOutput;
+
+        // Common forms include lines like:
+        //   java version "1.8.0_452"
+        //   openjdk version "11.0.22" 2024-01-16
+        //   openjdk version "17" 2021-09-14
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?m)\\b(?:openjdk|java)\\s+version\\s+\\\"([^\\\"]+)\\\"")
+                .matcher(s);
+        String ver = null;
+        if (m.find()) {
+            ver = m.group(1);
+        } else {
+            // Fallback: sometimes the first quoted token is the version
+            java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("\\\"(\\d+(?:\\.\\d+){0,2}(?:_\\d+)?)\\\"").matcher(s);
+            if (m2.find()) ver = m2.group(1);
+        }
+        if (ver == null || ver.isBlank()) return -1;
+
+        ver = ver.trim();
+        // Java 8: 1.8.x -> major 8
+        if (ver.startsWith("1.")) {
+            String[] parts = ver.split("\\.");
+            if (parts.length >= 2) {
+                try {
+                    return Integer.parseInt(parts[1]);
+                } catch (NumberFormatException ignored) {
+                    return -1;
+                }
+            }
+            return -1;
+        }
+
+        // Java 9+: starts with major
+        java.util.regex.Matcher m3 = java.util.regex.Pattern.compile("^(\\d+)").matcher(ver);
+        if (m3.find()) {
+            try {
+                return Integer.parseInt(m3.group(1));
+            } catch (NumberFormatException ignored) {
+                return -1;
+            }
+        }
+        return -1;
+    }
+    // Create a permissive Java security policy file for EvoSuite runs.
     /**
      * Create a permissive Java security policy file for EvoSuite runs.
      *
@@ -1743,6 +1612,190 @@ public class AiderHelper {
         p.toFile().deleteOnExit();
         java.nio.file.Files.writeString(p, policyText, StandardCharsets.UTF_8);
         return p.toAbsolutePath().toString();
+    }
+
+    private static final class NativeEvoSuiteTest {
+        final File estestFile;
+        final String estestFqn;
+        final File scaffoldingFile;
+        final String scaffoldingFqn;
+
+        private NativeEvoSuiteTest(File estestFile, String estestFqn, File scaffoldingFile, String scaffoldingFqn) {
+            this.estestFile = estestFile;
+            this.estestFqn = estestFqn;
+            this.scaffoldingFile = scaffoldingFile;
+            this.scaffoldingFqn = scaffoldingFqn;
+        }
+    }
+
+    /**
+     * Locate native EvoSuite tests (<CUT>_ESTest.java and <CUT>_ESTest_scaffolding.java) under evosuite-tests.
+     */
+    private static NativeEvoSuiteTest locateNativeEvoSuiteTests(Project project,
+                                                                File evoOutputBaseDir,
+                                                                String targetClassFqn,
+                                                                String sourceFilePath,
+                                                                Consumer<String> viewer) throws IOException {
+        String simpleName = targetClassFqn;
+        if (simpleName != null && simpleName.contains(".")) {
+            simpleName = simpleName.substring(simpleName.lastIndexOf('.') + 1);
+        }
+        if (simpleName == null || simpleName.isBlank()) {
+            throw new IllegalArgumentException("targetClassFqn is empty");
+        }
+
+        File evoDir = null;
+        File estest = null;
+        File scaffolding = null;
+
+        String estestName = simpleName + "_ESTest.java";
+        String scaffName = simpleName + "_ESTest_scaffolding.java";
+
+        if (evoOutputBaseDir != null) {
+            // Newer flow: when we pass -Dtest_dir=<dir>, EvoSuite writes directly into that directory
+            // (possibly with package subfolders). So first search the base dir itself.
+            evoDir = evoOutputBaseDir;
+            estest = findFileRecursivelyByName(evoDir, estestName);
+            scaffolding = findFileRecursivelyByName(evoDir, scaffName);
+
+            // Legacy/alternate layout: <base>/evosuite-tests/**
+            if ((estest == null || !estest.exists())) {
+                File legacy = new File(evoOutputBaseDir, "evosuite-tests");
+                File e2 = findFileRecursivelyByName(legacy, estestName);
+                File s2 = findFileRecursivelyByName(legacy, scaffName);
+                if (e2 != null && e2.exists()) {
+                    evoDir = legacy;
+                    estest = e2;
+                    scaffolding = s2;
+                }
+            }
+        }
+
+        if ((estest == null || !estest.exists()) && project.getBasePath() != null) {
+            File base = new File(project.getBasePath());
+            evoDir = new File(base, "evosuite-tests");
+            estest = findFileRecursivelyByName(evoDir, estestName);
+            scaffolding = findFileRecursivelyByName(evoDir, scaffName);
+        }
+
+        if ((estest == null || !estest.exists()) && sourceFilePath != null && !sourceFilePath.isBlank()) {
+            File src = new File(sourceFilePath);
+            File parent = src.getParentFile();
+            if (parent != null) {
+                evoDir = new File(parent, "evosuite-tests");
+                estest = findFileRecursivelyByName(evoDir, estestName);
+                scaffolding = findFileRecursivelyByName(evoDir, scaffName);
+            }
+        }
+
+        if (estest == null || !estest.exists()) {
+            if (viewer != null) {
+                viewer.accept("[EvoSuite] No *_ESTest.java found. Expected: " + estestName
+                        + (evoDir != null ? (" under: " + evoDir.getAbsolutePath()) : ""));
+            }
+            return null;
+        }
+        if (scaffolding == null || !scaffolding.exists()) {
+            if (viewer != null) {
+                viewer.accept("[EvoSuite] Warning: scaffolding file not found. Expected: " + scaffName
+                        + ". Running ESTest only may fail.");
+            }
+        }
+
+        String estCode = Files.readString(estest.toPath(), StandardCharsets.UTF_8);
+        String estPkg = extractPackageName(estCode);
+        String estFqn = (estPkg == null || estPkg.isBlank()) ? (simpleName + "_ESTest") : (estPkg + "." + simpleName + "_ESTest");
+
+        String scFqn = null;
+        if (scaffolding != null && scaffolding.exists()) {
+            String scCode = Files.readString(scaffolding.toPath(), StandardCharsets.UTF_8);
+            String scPkg = extractPackageName(scCode);
+            scFqn = (scPkg == null || scPkg.isBlank()) ? (simpleName + "_ESTest_scaffolding") : (scPkg + "." + simpleName + "_ESTest_scaffolding");
+        }
+
+        if (viewer != null) {
+            viewer.accept("[EvoSuite] Native test found: " + estest.getAbsolutePath());
+            if (scaffolding != null && scaffolding.exists()) {
+                viewer.accept("[EvoSuite] Native scaffolding found: " + scaffolding.getAbsolutePath());
+            }
+            viewer.accept("[EvoSuite] Native test FQN: " + estFqn);
+        }
+
+        return new NativeEvoSuiteTest(estest, estFqn, scaffolding, scFqn);
+    }
+
+    private static String buildRunClasspath(String extraFirstCp, String tempOut, String projectCp, String evoSuiteJarPath) {
+        String sep = File.pathSeparator;
+        StringBuilder sb = new StringBuilder();
+        if (extraFirstCp != null && !extraFirstCp.isBlank()) sb.append(extraFirstCp).append(sep);
+        if (tempOut != null && !tempOut.isBlank()) sb.append(tempOut).append(sep);
+        if (projectCp != null && !projectCp.isBlank()) sb.append(projectCp);
+        if (evoSuiteJarPath != null && !evoSuiteJarPath.isBlank()) {
+            if (sb.length() > 0) sb.append(sep);
+            sb.append(evoSuiteJarPath);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Compile and run native EvoSuite tests via JUnitCore.
+     * Adds EvoSuite jar to the classpath so the generated tests compile/run.
+     */
+    private static boolean runNativeEvoSuiteJUnit4(Project project,
+                                                   String javaExe,
+                                                   String projectCp,
+                                                   String extraFirstCp,
+                                                   NativeEvoSuiteTest nativeTest,
+                                                   Consumer<String> junitViewer,
+                                                   String evoSuiteJarPath) throws IOException, InterruptedException {
+        if (nativeTest == null) return false;
+
+        java.nio.file.Path outDir = java.nio.file.Files.createTempDirectory("temp_test_classes");
+        outDir.toFile().deleteOnExit();
+
+        String javac = resolveJavacExecutable();
+
+        String cpForCompile = buildRunClasspath(extraFirstCp, outDir.toAbsolutePath().toString(), projectCp, evoSuiteJarPath);
+
+        java.util.List<String> javacCmd = new java.util.ArrayList<>();
+        javacCmd.add(javac);
+        javacCmd.add("-encoding");
+        javacCmd.add("UTF-8");
+        javacCmd.add("-cp");
+        javacCmd.add(cpForCompile);
+        javacCmd.add("-d");
+        javacCmd.add(outDir.toAbsolutePath().toString());
+        if (nativeTest.scaffoldingFile != null && nativeTest.scaffoldingFile.exists()) {
+            javacCmd.add(nativeTest.scaffoldingFile.getAbsolutePath());
+        }
+        javacCmd.add(nativeTest.estestFile.getAbsolutePath());
+
+        if (junitViewer != null) {
+            junitViewer.accept("[TEST] Compiling generated test (native EvoSuite)...");
+            junitViewer.accept("[TEST] Executing: " + String.join(" ", javacCmd));
+        }
+        int cExit = runProcessStreaming(project, javacCmd, junitViewer);
+        if (cExit != 0) {
+            if (junitViewer != null) junitViewer.accept("[TEST] Compilation failed (exit=" + cExit + ")");
+            return false;
+        }
+
+        String cpForRun = buildRunClasspath(extraFirstCp, outDir.toAbsolutePath().toString(), projectCp, evoSuiteJarPath);
+
+        java.util.List<String> runCmd = new java.util.ArrayList<>();
+        runCmd.add(javaExe);
+        runCmd.add("-cp");
+        runCmd.add(cpForRun);
+        runCmd.add("org.junit.runner.JUnitCore");
+        runCmd.add(nativeTest.estestFqn);
+
+        if (junitViewer != null) {
+            junitViewer.accept("[TEST] Running native EvoSuite tests via JUnitCore...");
+            junitViewer.accept("[TEST] Executing: " + String.join(" ", runCmd));
+        }
+
+        int exit = runProcessStreaming(project, runCmd, junitViewer);
+        return exit == 0;
     }
 
     private static final class JUnitConversionResult {
@@ -2052,6 +2105,13 @@ public class AiderHelper {
     }
 
     private static int countOccurrences(String s, String needle) {
+    /**
+     * Best-effort detection of the major Java version for the given java executable.
+     *
+     * We parse `java -version` output.
+     * - Java 8 prints:  java version "1.8.0_..."
+     * - Java 9+ prints: java version "11.0. ..." / "17.0. ..." etc.
+     */
         if (s == null || needle == null || needle.isEmpty()) return 0;
         int count = 0;
         int idx = 0;
@@ -2080,7 +2140,7 @@ public class AiderHelper {
                                            File workingDirOverride)
             throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.redirectErrorStream(true); // 合并 stdout 和 stderr
+        pb.redirectErrorStream(true); // combine stdout and stderr
 
         if (workingDirOverride != null) {
             pb.directory(workingDirOverride);
@@ -2130,13 +2190,9 @@ public class AiderHelper {
         outputGobbler.setDaemon(true);
         outputGobbler.start();
 
-        // === Replace the fixed waitFor with a polling loop that honors -Dglobal_timeout and prints heartbeats ===
-        // Default hard cap (seconds) if EvoSuite doesn't exit (Windows sometimes hangs during teardown).
         int maxWaitSeconds = 240;
         int globalTimeoutSeconds = -1;
 
-        // If caller provided -Dglobal_timeout=NN, cap the overall wait.
-        // On Windows we keep the buffer SMALL so we can always escape hard hangs (startup + teardown are often the hang point).
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
         try {
             for (String a : cmd) {
@@ -2152,16 +2208,14 @@ public class AiderHelper {
             // keep defaults
         }
 
-        // Extra safety net: regardless of output/heartbeats, never let Windows runs exceed 150s.
         if (isWindows) {
             maxWaitSeconds = Math.min(maxWaitSeconds, 150);
         }
 
         long start = System.currentTimeMillis();
         long lastBeat = start;
-        boolean finished = false;
         while (true) {
-            finished = process.waitFor(1, java.util.concurrent.TimeUnit.SECONDS);
+            boolean finished = process.waitFor(1, java.util.concurrent.TimeUnit.SECONDS);
             if (finished) break;
 
             long now = System.currentTimeMillis();
@@ -2172,8 +2226,6 @@ public class AiderHelper {
                 lastBeat = now;
             }
 
-            // If we have seen no output for a long time, assume the process is hung.
-            // Windows tends to hang earlier (often during client teardown), so use a shorter threshold.
             long silentMs = now - lastOutputAt.get();
             long silentThresholdMs = isWindows ? 45_000 : 90_000;
             if (silentMs >= silentThresholdMs) {
@@ -2191,7 +2243,133 @@ public class AiderHelper {
             }
         }
 
-        // Wait briefly for output thread to flush
+        outputGobbler.join(2000);
+        return process.exitValue();
+    }
+
+    private static int runProcessStreaming(Project project,
+                                           java.util.List<String> cmd,
+                                           Consumer<String> viewer,
+                                           File workingDirOverride,
+                                           java.util.Map<String, String> envOverrides)
+            throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true); // combine stdout and stderr
+
+        if (workingDirOverride != null) {
+            pb.directory(workingDirOverride);
+        } else {
+            String basePath = project.getBasePath();
+            if (basePath != null && !basePath.isEmpty()) {
+                pb.directory(new File(basePath));
+            }
+        }
+
+        if (envOverrides != null && !envOverrides.isEmpty()) {
+            pb.environment().putAll(envOverrides);
+        }
+
+        // Prevent a parent-shell JAVA_TOOL_OPTIONS (eg, --add-opens) from breaking Java 8.
+        // We only add module opens explicitly when running on Java 9+ in the command line.
+        if (pb.environment().containsKey("JAVA_TOOL_OPTIONS")) {
+            String jto = pb.environment().get("JAVA_TOOL_OPTIONS");
+            if (jto != null && jto.contains("--add-opens")) {
+                pb.environment().remove("JAVA_TOOL_OPTIONS");
+            }
+        }
+
+        Process process = pb.start();
+
+        // Track last time we saw output; if output stops for too long, treat as hang.
+        final java.util.concurrent.atomic.AtomicLong lastOutputAt = new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
+        Thread outputGobbler = new Thread(() -> {
+            try (InputStream is = process.getInputStream()) {
+                StringBuilder buf = new StringBuilder();
+                int b;
+                while ((b = is.read()) != -1) {
+                    char ch = (char) b;
+                    // EvoSuite often prints progress using carriage returns (\r) without newlines.
+                    if (ch == '\n' || ch == '\r') {
+                        if (buf.length() > 0) {
+                            String cleaned = stripNonPrintable(stripAnsi(buf.toString()));
+                            if (cleaned != null && !cleaned.trim().isEmpty()) {
+                                lastOutputAt.set(System.currentTimeMillis());
+                                if (viewer != null) viewer.accept(cleaned);
+                            }
+                            buf.setLength(0);
+                        }
+                    } else {
+                        buf.append(ch);
+                    }
+                }
+                // flush any remaining partial line
+                if (buf.length() > 0) {
+                    String cleaned = stripNonPrintable(stripAnsi(buf.toString()));
+                    if (cleaned != null && !cleaned.trim().isEmpty()) {
+                        lastOutputAt.set(System.currentTimeMillis());
+                        if (viewer != null) viewer.accept(cleaned);
+                    }
+                }
+            } catch (IOException e) {
+                // stream closes when process exits; ignore
+            }
+        });
+        outputGobbler.setDaemon(true);
+        outputGobbler.start();
+
+        int maxWaitSeconds = 240;
+        int globalTimeoutSeconds = -1;
+
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        try {
+            for (String a : cmd) {
+                if (a != null && a.startsWith("-Dglobal_timeout=")) {
+                    String v = a.substring("-Dglobal_timeout=".length()).trim();
+                    globalTimeoutSeconds = Integer.parseInt(v);
+                    int buffer = isWindows ? 30 : 90;
+                    maxWaitSeconds = Math.max(45, globalTimeoutSeconds + buffer);
+                    break;
+                }
+            }
+        } catch (Throwable ignored) {
+            // keep defaults
+        }
+
+        if (isWindows) {
+            maxWaitSeconds = Math.min(maxWaitSeconds, 150);
+        }
+
+        long start = System.currentTimeMillis();
+        long lastBeat = start;
+        while (true) {
+            boolean finished = process.waitFor(1, java.util.concurrent.TimeUnit.SECONDS);
+            if (finished) break;
+
+            long now = System.currentTimeMillis();
+            long elapsedSec = (now - start) / 1000;
+
+            if (viewer != null && (now - lastBeat) >= 15_000) {
+                viewer.accept("[INFO] Process still running... elapsed=" + elapsedSec + "s (max=" + maxWaitSeconds + "s)");
+                lastBeat = now;
+            }
+
+            long silentMs = now - lastOutputAt.get();
+            long silentThresholdMs = isWindows ? 45_000 : 90_000;
+            if (silentMs >= silentThresholdMs) {
+                if (viewer != null) viewer.accept("[ERROR] Process appears hang (no output for " + (silentMs / 1000) + "s). Killing it forcefully...");
+                process.destroyForcibly();
+                process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                return -1;
+            }
+
+            if (elapsedSec >= maxWaitSeconds) {
+                if (viewer != null) viewer.accept("[ERROR] Process timed out (elapsed=" + elapsedSec + "s). Killing it forcefully...");
+                process.destroyForcibly();
+                process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                return -1;
+            }
+        }
+
         outputGobbler.join(2000);
         return process.exitValue();
     }
@@ -2325,17 +2503,17 @@ public class AiderHelper {
      * This method extracts it to a temp file and returns the absolute path.
      *
      * Expected resource path (inside plugin jar):
-     *   /tools/evosuite.jar
+     *   /tools/evosuite-1.2.0.jar
      *
-     * Put the jar at: src/main/resources/tools/evosuite.jar
+     * Put the jar at: src/main/resources/tools/evosuite-1.2.0.jar
      */
     private static String resolveBundledEvoSuiteJarPath() throws IOException {
         // Resource inside the plugin jar
-        String resourcePath = "/tools/evosuite.jar";
+        String resourcePath = "/tools/evosuite-1.2.0.jar";
 
         InputStream in = AiderHelper.class.getResourceAsStream(resourcePath);
         if (in == null) {
-            throw new FileNotFoundException("Resource not found: " + resourcePath + " (ensure src/main/resources/tools/evosuite.jar exists)");
+            throw new FileNotFoundException("Resource not found: " + resourcePath + " (ensure src/main/resources/tools/evosuite-1.2.0.jar exists)");
         }
 
         java.nio.file.Path tmp = java.nio.file.Files.createTempFile("evosuite-", ".jar");
@@ -2489,5 +2667,44 @@ public class AiderHelper {
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    private static int detectJavaMajorVersion(String javaExe) {
+        if (javaExe == null || javaExe.isBlank()) return 8;
+        try {
+            ProcessBuilder pb = new ProcessBuilder(javaExe, "-version");
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+
+            StringBuilder out = new StringBuilder();
+            try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    out.append(line).append("\n");
+                }
+            }
+            // wait briefly; even if it times out, we can still parse what we got
+            p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+
+            String s = out.toString();
+            if (s == null) return 8;
+
+            // Try to match the first quoted version string
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("\\\"(\\d+)(?:\\.(\\d+))?.*?\\\"")
+                    .matcher(s);
+            if (m.find()) {
+                String first = m.group(1);
+                String second = m.group(2);
+                // Java 8 style: "1.8..."
+                if ("1".equals(first) && second != null) {
+                    return Integer.parseInt(second);
+                }
+                return Integer.parseInt(first);
+            }
+        } catch (Throwable ignored) {
+            // best-effort only
+        }
+        return 8;
     }
 }
