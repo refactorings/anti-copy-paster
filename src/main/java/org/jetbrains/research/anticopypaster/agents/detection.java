@@ -233,24 +233,24 @@ public class detection {
 
         // Inject few-shot examples (RAG) when we have an IntelliJ Project context.
         // RagService will try classpath first, then fall back to project-relative filesystem paths.
-        if (project != null) {
-            try {
-                String fewShot = RagService.buildDetectionPromptWithFewShot(
-                        project,
-                        CLONE_DB_PATH,
-                        DETECTION_FEWSHOT_K,
-                        DETECTION_MAX_CHARS
-                );
-                if (fewShot != null && !fewShot.isBlank()) {
-                    prompt.append("\n");
-                    prompt.append("=== Few-shot examples (from clone database) ===\n");
-                    prompt.append(fewShot).append("\n");
-                    prompt.append("=== End few-shot examples ===\n\n");
-                }
-            } catch (Throwable t) {
-                // If RAG fails, continue with the base prompt.
-            }
-        }
+//        if (project != null) {
+//            try {
+//                String fewShot = RagService.buildDetectionPromptWithFewShot(
+//                        project,
+//                        CLONE_DB_PATH,
+//                        DETECTION_FEWSHOT_K,
+//                        DETECTION_MAX_CHARS
+//                );
+//                if (fewShot != null && !fewShot.isBlank()) {
+//                    prompt.append("\n");
+//                    prompt.append("=== Few-shot examples (from clone database) ===\n");
+//                    prompt.append(fewShot).append("\n");
+//                    prompt.append("=== End few-shot examples ===\n\n");
+//                }
+//            } catch (Throwable t) {
+//                // If RAG fails, continue with the base prompt.
+//            }
+//        }
 
         prompt.append("File source:\n");
         prompt.append("'''\n");
