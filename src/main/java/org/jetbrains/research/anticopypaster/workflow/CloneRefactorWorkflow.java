@@ -1032,12 +1032,6 @@ public final class CloneRefactorWorkflow {
             cmd.add("-Dtest_dir=" + testDir.getAbsolutePath());
             cmd.add("-Dreport_dir=" + reportDir.getAbsolutePath());
             cmd.add("-Dsandbox=false");
-            // Disable EvoSuite testability transformation: it can rewrite the SUT bytecode and
-            // generate calls to synthetic "*Clone" methods (eg, getDataClone) that don't exist
-            // in the original sources, causing generated tests to fail compilation.
-            cmd.add("-Dtestability_transformation=false");
-            // Some EvoSuite versions also expose this toggle as "TT".
-            cmd.add("-DTT=false");
 
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.directory(base);
@@ -1262,10 +1256,6 @@ public final class CloneRefactorWorkflow {
 
             // Prepare Classpath
             String cp = buildProjectClasspathFromIde(ideProject);
-            // Ensure tests compile/run against the same (possibly patched) classes that EvoSuite used.
-            if (_LAST_PATCHED_CLASSES_DIR != null && !_LAST_PATCHED_CLASSES_DIR.isBlank()) {
-                cp = _LAST_PATCHED_CLASSES_DIR + File.pathSeparator + (cp == null ? "" : cp);
-            }
 
             // Ensure JUnit/Hamcrest are on CP (JUnit 4.12 needs hamcrest at runtime)
             File junit = materializeResourceToTempFile("tools/junit-4.12.jar", "junit", ".jar");

@@ -170,10 +170,6 @@ public class detection {
         int snippetEndLine = (snippetRange == null) ? -1 : snippetRange[1];
 
         String prompt = buildDetectionPrompt(project, fileSource, selectedSnippet, fileName, snippetStartLine, snippetEndLine);
-        // DEBUG: print detection prompt for inspection
-        System.out.println("[DETECTION_PROMPT_START]");
-        System.out.println(prompt);
-        System.out.println("[DETECTION_PROMPT_END]");
         String rawOutput = llmCaller.apply(prompt);
         DetectionResult result = parseDetectionResult(rawOutput, fileName);
         if (result == null || result.clones == null || result.clones.isEmpty()) {
@@ -232,25 +228,25 @@ public class detection {
         }
 
         // Inject few-shot examples (RAG) when we have an IntelliJ Project context.
-        // RagService will try classpath first, then fall back to project-relative filesystem paths.
-//        if (project != null) {
-//            try {
-//                String fewShot = RagService.buildDetectionPromptWithFewShot(
-//                        project,
-//                        CLONE_DB_PATH,
-//                        DETECTION_FEWSHOT_K,
-//                        DETECTION_MAX_CHARS
-//                );
-//                if (fewShot != null && !fewShot.isBlank()) {
-//                    prompt.append("\n");
-//                    prompt.append("=== Few-shot examples (from clone database) ===\n");
-//                    prompt.append(fewShot).append("\n");
-//                    prompt.append("=== End few-shot examples ===\n\n");
-//                }
-//            } catch (Throwable t) {
-//                // If RAG fails, continue with the base prompt.
-//            }
-//        }
+//         RagService will try classpath first, then fall back to project-relative filesystem paths.
+        if (project != null) {
+            try {
+                String fewShot = RagService.buildDetectionPromptWithFewShot(
+                        project,
+                        CLONE_DB_PATH,
+                        DETECTION_FEWSHOT_K,
+                        DETECTION_MAX_CHARS
+                );
+                if (fewShot != null && !fewShot.isBlank()) {
+                    prompt.append("\n");
+                    prompt.append("=== Few-shot examples (from clone database) ===\n");
+                    prompt.append(fewShot).append("\n");
+                    prompt.append("=== End few-shot examples ===\n\n");
+                }
+            } catch (Throwable t) {
+                // If RAG fails, continue with the base prompt.
+            }
+        }
 
         prompt.append("File source:\n");
         prompt.append("'''\n");
