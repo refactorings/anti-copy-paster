@@ -31,8 +31,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 import org.jetbrains.research.anticopypaster.agents.detection;
-import org.jetbrains.research.anticopypaster.agents.refactor;
-import org.jetbrains.research.anticopypaster.agents.compile;
+import org.jetbrains.research.anticopypaster.agents.refactoring;
+import org.jetbrains.research.anticopypaster.agents.compilation;
 import org.jetbrains.research.anticopypaster.agents.testing;
 import org.jetbrains.research.anticopypaster.agents.ExtractMethodUsefulnessAnalyzer;
 import org.jetbrains.research.anticopypaster.agents.FragmentUsefulnessAnalyzer;
@@ -45,11 +45,6 @@ import java.util.Locale;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import com.intellij.openapi.compiler.CompilerManager;
-import com.intellij.openapi.compiler.CompileContext;
-import com.intellij.openapi.compiler.CompileStatusNotification;
-import com.intellij.openapi.compiler.CompilerMessageCategory;
 
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
@@ -325,8 +320,8 @@ public final class CloneRefactorWorkflow {
                 }
 
                 detection detectionAgent = new detection();
-                refactor refactorAgent = new refactor();
-                compile compileAgent = new compile();
+                refactoring refactorAgent = new refactoring();
+                compilation compileAgent = new compilation();
                 testing testAgent = new testing();
 
                 Function<String, String> llmCaller = prompt -> {
@@ -427,7 +422,7 @@ public final class CloneRefactorWorkflow {
                         String feedbackForRefactor = combinedFeedback.isBlank() ? null : combinedFeedback;
 
 
-                        refactor.RefactorResult rr =
+                        refactoring.RefactorResult rr =
                                 refactorAgent.refactorFile(
                                         fileName,
                                         currentSource,
@@ -610,7 +605,7 @@ public final class CloneRefactorWorkflow {
                             viewer.accept("[COMPILE] raw output:\n" + cl);
                         }
 
-                        compile.CompileResult cr = compileAgent.analyze(fileName, compileLog);
+                        compilation.CompileResult cr = compileAgent.analyze(fileName, compileLog);
 
                         if (cr == null || !"compile_ok".equals(cr.status)) {
                             feedback = cr == null ? "Compilation failed." : cr.summary;
@@ -1037,6 +1032,12 @@ public final class CloneRefactorWorkflow {
             cmd.add("-Dtest_dir=" + testDir.getAbsolutePath());
             cmd.add("-Dreport_dir=" + reportDir.getAbsolutePath());
             cmd.add("-Dsandbox=false");
+            // Disable EvoSuite testability transformation: it can rewrite the SUT bytecode and
+            // generate calls to synthetic "*Clone" methods (eg, getDataClone) that don't exist
+            // in the original sources, causing generated tests to fail compilation.
+            cmd.add("-Dtestability_transformation=false");
+            // Some EvoSuite versions also expose this toggle as "TT".
+            cmd.add("-DTT=false");
 
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.directory(base);
@@ -1261,6 +1262,10 @@ public final class CloneRefactorWorkflow {
 
             // Prepare Classpath
             String cp = buildProjectClasspathFromIde(ideProject);
+            // Ensure tests compile/run against the same (possibly patched) classes that EvoSuite used.
+            if (_LAST_PATCHED_CLASSES_DIR != null && !_LAST_PATCHED_CLASSES_DIR.isBlank()) {
+                cp = _LAST_PATCHED_CLASSES_DIR + File.pathSeparator + (cp == null ? "" : cp);
+            }
 
             // Ensure JUnit/Hamcrest are on CP (JUnit 4.12 needs hamcrest at runtime)
             File junit = materializeResourceToTempFile("tools/junit-4.12.jar", "junit", ".jar");
@@ -1676,11 +1681,11 @@ public final class CloneRefactorWorkflow {
     }
 
     // NOTE: RAG retrieval uses clone code (via buildRefactorRagQueryText) when available; ranges here are only for agent context.
-    private static refactor.DetectedClone convertClone(detection.DetectedClone c) {
-        return new refactor.DetectedClone(
+    private static refactoring.DetectedClone convertClone(detection.DetectedClone c) {
+        return new refactoring.DetectedClone(
                 c.id,
                 c.ranges.stream()
-                        .map(r -> new refactor.CloneRange(r.startLine, r.endLine))
+                        .map(r -> new refactoring.CloneRange(r.startLine, r.endLine))
                         .toList(),
                 c.refactorType,
                 c.reason

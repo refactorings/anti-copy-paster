@@ -1,11 +1,10 @@
 package org.jetbrains.research.anticopypaster.agents;
 
-import com.google.gson.*;
 import java.util.*;
 import java.util.function.Function;
 import java.util.regex.*;
 
-public class compile {
+public class compilation {
 
     public static class CompileError {
         public String file;

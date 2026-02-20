@@ -6,7 +6,7 @@ import java.util.function.Function;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 
-public class refactor {
+public class refactoring {
 
     // RAG defaults (can be overridden by passing a pre-built ragExamples string)
     private static final String DEFAULT_REFACTOR_DB_PATH = "refactor_database.csv";
@@ -125,6 +125,7 @@ public class refactor {
         } catch (Exception e) {
             return fail(fileName, "LLM caller threw exception: " + e.getMessage());
         }
+
         // DEBUG: log raw LLM output length and a short preview
         try {
             System.out.println("[DEBUG][REFACTOR] raw LLM output length = " + rawOutput.length());
@@ -134,6 +135,7 @@ public class refactor {
         } catch (Throwable t) {
             System.out.println("[DEBUG][REFACTOR] failed to log raw LLM output: " + t.getMessage());
         }
+
         if (rawOutput == null || rawOutput.isEmpty()) {
             return fail(fileName, "LLM caller returned empty output");
         }
@@ -167,49 +169,93 @@ public class refactor {
         return new RefactorResult("refactored", fileName, newSource, "Refactoring successful");
     }
 
+    /**
+     * Improved refactor prompt (combined ideas from:
+     * - RefAgent (structured task, strong constraints, clear output contract)
+     * - ChatGPT for Code Refactoring paper (role + working set + context + steps + output format)
+     */
     private String buildRefactorPrompt(String fileName, String fileSource, DetectedClone clone, String ragExamples) {
         StringBuilder sb = new StringBuilder();
-        sb.append("You are a Java refactor agent.\n");
-        sb.append("You have a single file to modify: ").append(fileName).append("\n");
-        sb.append("The file source is below:\n");
+
+        // ===== Role (inspired by both papers) =====
+        sb.append("You are an expert Java refactoring agent.\n");
+        sb.append("You specialize in clone removal via Extract Method and improving software quality ");
+        sb.append("(readability, maintainability, cohesion, and low coupling).\n");
+        sb.append("Follow the constraints and output format EXACTLY.\n");
+        sb.append("If anything is unclear, ask at most ONE concise clarification question; otherwise proceed.\n\n");
+
+        // ===== Working Set =====
+        sb.append("=== WORKING SET (Single File Only) ===\n");
+        sb.append("File name: ").append(fileName).append("\n");
+        sb.append("You are given the FULL file source below. You may ONLY modify this file.\n");
         sb.append("```\n").append(fileSource).append("\n```\n\n");
 
-        sb.append("Detected clone id: ").append(clone.id).append("\n");
+        // ===== Context =====
+        sb.append("=== CONTEXT ===\n");
+        sb.append("- Language: Java\n");
+        sb.append("- Goal: Remove duplicated code (clone) with minimal behavior change.\n");
+        sb.append("- Constraints: Preserve public API, preserve package/imports, keep semantics.\n\n");
 
-        // Prefer clone code for grounding (line ranges are optional and may be unstable).
+        // ===== Clone Context =====
+        sb.append("=== CLONE CONTEXT ===\n");
+        sb.append("Clone ID: ").append(clone.id).append("\n");
         if (clone.cloneCode != null && !clone.cloneCode.trim().isEmpty()) {
-            sb.append("Representative clone code (use this as the main target to de-duplicate):\n");
+            sb.append("Representative clone snippet (PRIMARY ground truth):\n");
             sb.append("```\n").append(clone.cloneCode).append("\n```\n\n");
         }
-
         if (clone.ranges != null && !clone.ranges.isEmpty()) {
-            sb.append("Approximate clone ranges (may be imprecise):\n");
+            sb.append("Approximate clone line ranges (SECONDARY, may be imprecise):\n");
             for (CloneRange range : clone.ranges) {
-                sb.append("- from line ").append(range.startLine).append(" to line ").append(range.endLine).append("\n");
+                sb.append("- from line ").append(range.startLine)
+                  .append(" to line ").append(range.endLine).append("\n");
             }
+            sb.append("\n");
         }
-
-        // Force a single refactoring strategy to keep the workflow stable and reproducible.
-        // We only allow Extract Method (and helper method extraction) as the clone-removal technique.
-        sb.append("Refactor type: Extract Method\n");
         if (clone.reason != null && !clone.reason.trim().isEmpty()) {
-            sb.append("Reason: ").append(clone.reason).append("\n");
+            sb.append("Reason for refactoring: ").append(clone.reason).append("\n\n");
         }
 
+        // ===== Optional RAG few-shot guidance =====
         if (ragExamples != null && !ragExamples.trim().isEmpty()) {
-            sb.append("\nHere are some few-shot RAG examples to guide you:\n");
-            sb.append(ragExamples).append("\n");
+            sb.append("=== FEW-SHOT GUIDANCE (RAG) ===\n");
+            sb.append("Use these examples only as guidance for structure and style. Do NOT copy verbatim.\n");
+            sb.append(ragExamples).append("\n\n");
         }
 
-        sb.append("\nInstructions:\n");
-        sb.append("- Use ONLY Extract Method (and creating private helper methods) to remove clones.\n");
-        sb.append("- Do NOT use any other refactoring type (e.g., Rename, Move Method, Introduce Parameter Object, etc.).\n");
-        sb.append("- Restrict modifications only to this file.\n");
-        sb.append("- Preserve package and import statements exactly.\n");
-        sb.append("- Keep public API signatures unchanged where possible.\n");
+        // ===== Refactoring Task (pattern + intent) =====
+        sb.append("=== REFACTORING TASK ===\n");
+        sb.append("Refactoring Pattern: Extract Method (ONLY)\n");
+        sb.append("Intent: To improve maintainability and reduce duplication while preserving behavior.\n");
+        sb.append("Requirements:\n");
+        sb.append("1) Identify duplicated logic corresponding to the representative clone snippet.\n");
+        sb.append("2) Extract the duplicated logic into one private helper method.\n");
+        sb.append("3) Replace ALL duplicated occurrences with calls to the extracted method.\n");
+        sb.append("4) Choose the smallest safe extraction boundary (minimal code movement).\n");
+        sb.append("5) Ensure the result compiles as valid Java.\n\n");
+
+        // ===== Steps (structured, but must not be printed) =====
+        sb.append("=== STEPS TO FOLLOW (DO NOT OUTPUT THESE STEPS) ===\n");
+        sb.append("Step 1: Locate all occurrences of the duplicated logic (use snippet first, ranges second).\n");
+        sb.append("Step 2: Create private helper method(s) with clear names.\n");
+        sb.append("Step 3: Replace duplicated blocks with helper call.\n");
+        sb.append("Step 4: Re-check for compilation issues (imports, generics, visibility, checked exceptions).\n\n");
+
+        // ===== Strict Constraints (hard rules) =====
+        sb.append("=== STRICT CONSTRAINTS (HARD RULES) ===\n");
+        sb.append("- Modify ONLY this file. Do NOT reference or require changes in other files.\n");
+        sb.append("- Preserve the package line and ALL import statements EXACTLY (do not add/remove/reorder).\n");
+        sb.append("- Do NOT change public/protected method signatures or class public API.\n");
+        sb.append("- Do NOT introduce new classes or new files.\n");
+        sb.append("- Do NOT change external behavior; keep outputs and side effects the same.\n");
         sb.append("- Minimize edits outside the clone regions.\n");
-        sb.append("- Output ONLY ONE Java code block with the full updated file.\n");
-        sb.append("- Do not include any explanations or text outside the code block or JSON.\n");
+        sb.append("- Do NOT add explanatory prose outside code.\n\n");
+
+        // ===== Output Format (compatible with your extractor) =====
+        sb.append("=== OUTPUT FORMAT ===\n");
+        sb.append("- Output ONLY ONE Java code block containing the full updated file.\n");
+        sb.append("- Do NOT output JSON.\n");
+        sb.append("- Do NOT output multiple alternatives.\n");
+        sb.append("- Do NOT output any text before or after the code block.\n");
 
         return sb.toString();
     }
