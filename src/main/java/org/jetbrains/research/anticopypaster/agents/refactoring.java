@@ -211,12 +211,12 @@ public class refactoring {
         sb.append("Do not copy code directly from them.\n");
         sb.append("Always follow the Extract Method pattern.\n\n");
 
-//        // RAG block (keep placeholder even if empty so the prompt matches the paper listing)
-//        sb.append("[RAG_EXAMPLES]\n");
-//        if (ragExamples != null && !ragExamples.trim().isEmpty()) {
-//            sb.append(ragExamples.trim()).append("\n");
-//        }
-//        sb.append("\n");
+        // RAG block (keep placeholder even if empty so the prompt matches the paper listing)
+        sb.append("[RAG_EXAMPLES]\n");
+        if (ragExamples != null && !ragExamples.trim().isEmpty()) {
+            sb.append(ragExamples.trim()).append("\n");
+        }
+        sb.append("\n");
 
         sb.append("Instructions:\n");
         sb.append("- Use Extract Method to remove clones.\n");
