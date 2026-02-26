@@ -56,7 +56,12 @@ public final class OpenAICompatibleChatClient implements LlmClient {
 
             // Most OpenAI-compatible providers support max_tokens on /v1/chat/completions.
             // This helps for long Java files.
-            body.addProperty("max_tokens", maxTokens);
+            if (model.startsWith("gpt-5")) {
+                // Newer OpenAI models require max_completion_tokens instead of max_tokens
+                body.addProperty("max_completion_tokens", maxTokens);
+            } else {
+                body.addProperty("max_tokens", maxTokens);
+            }
 
             JsonObject choice = sendOnce(body);
             String chunk = choice.getAsJsonObject("message").get("content").getAsString();
