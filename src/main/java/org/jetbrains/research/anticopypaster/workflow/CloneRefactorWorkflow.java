@@ -36,6 +36,7 @@ import org.jetbrains.research.anticopypaster.agents.compilation;
 import org.jetbrains.research.anticopypaster.agents.testing;
 import org.jetbrains.research.anticopypaster.agents.ExtractMethodUsefulnessAnalyzer;
 import org.jetbrains.research.anticopypaster.agents.FragmentUsefulnessAnalyzer;
+import org.jetbrains.research.anticopypaster.agents.PsiFallbackCloneDetector;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -61,11 +62,6 @@ import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
-/**
- * Central workflow entry for multi-agent clone refactoring.
- *
- * Detection → Refactor → Compile → Test
- */
 public final class CloneRefactorWorkflow {
 
 
@@ -351,9 +347,53 @@ public final class CloneRefactorWorkflow {
                 logStage(viewer, "DETECTION", "raw result: " + (det == null ? "null" : ("clones=" + (det.clones == null ? "null" : det.clones.size()))));
 
                 if (det == null || det.clones == null || det.clones.isEmpty()) {
-                    logStage(viewer, "DETECTION", "no clones");
-                    notify(project, "[Clone] No clones detected in: " + fileName, NotificationType.INFORMATION);
-                    return;
+                    logStage(viewer, "DETECTION", "no clones from LLM; trying PSI fallback (same-file)");
+
+                    // PSI fallback only makes sense when we have a snippet to anchor the search.
+                    if (pastedSnippet != null && !pastedSnippet.isBlank()) {
+                        try {
+                            java.util.List<?> cands = PsiFallbackCloneDetector.detectInSameFile(project, vf, pastedSnippet);
+                            logStage(viewer, "DETECTION", "PSI fallback candidates=" + (cands == null ? 0 : cands.size()));
+
+                            if (cands != null && cands.size() >= 2) {
+                                // Convert PSI candidates into the same DTO shape as the LLM detector output.
+                                detection.DetectedClone psiClone = new detection.DetectedClone();
+                                psiClone.id = "psi_fallback_same_file";
+                                psiClone.ranges = new java.util.ArrayList<>();
+
+                                for (Object cc : cands) {
+                                    if (cc == null) continue;
+
+                                    int sLine = getIntField(cc, "startLine", "start", "fromLine", "start_line", "startline");
+                                    int eLine = getIntField(cc, "endLine", "end", "toLine", "end_line", "endline");
+                                    if (sLine <= 0) sLine = 1;
+                                    if (eLine <= 0) eLine = sLine;
+
+                                    detection.CloneRange range = new detection.CloneRange();
+                                    setIntField(range, sLine, "startLine", "start", "fromLine", "start_line", "startline");
+                                    setIntField(range, eLine, "endLine", "end", "toLine", "end_line", "endline");
+                                    psiClone.ranges.add(range);
+                                }
+
+                                det = new detection.DetectionResult();
+                                det.clones = new java.util.ArrayList<>();
+                                det.clones.add(psiClone);
+
+                                logStage(viewer, "DETECTION", "PSI fallback accepted: ranges=" + psiClone.ranges.size());
+                            }
+                        } catch (Throwable t) {
+                            logStage(viewer, "DETECTION", "PSI fallback failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+                        }
+                    } else {
+                        logStage(viewer, "DETECTION", "PSI fallback skipped: pastedSnippet is empty");
+                    }
+
+                    // If still no clones after fallback, stop.
+                    if (det == null || det.clones == null || det.clones.isEmpty()) {
+                        logStage(viewer, "DETECTION", "no clones (after PSI fallback)");
+                        notify(project, "[Clone] No clones detected in: " + fileName, NotificationType.INFORMATION);
+                        return;
+                    }
                 }
 
                 detection.DetectedClone clone = det.clones.get(0);
@@ -497,9 +537,9 @@ public final class CloneRefactorWorkflow {
 
                                 if (!overridden) {
                                     isUseful = false;
-//                                    String msg = "Not useful refactoring proposal (before compile): score=" + urBeforeCompile.score + ", reasons=" + urBeforeCompile.reasons +
-//                                            (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes));
-                                    logStage(viewer, "USEFUL", "Not useful refactoring proposal");
+                                    String msg = "Not useful refactoring proposal (before compile): score=" + urBeforeCompile.score + ", reasons=" + urBeforeCompile.reasons +
+                                            (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes));
+                                    logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
                                     notify(project,
                                             "[Clone] Refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n",
                                             NotificationType.WARNING);
@@ -551,10 +591,10 @@ public final class CloneRefactorWorkflow {
 
                                 if (frBeforeCompile != null && !frBeforeCompile.isUseful) {
                                     isUseful = false;
-//                                    String msg = "Not useful FRAGMENT refactoring proposal (before compile): strategy=" + frBeforeCompile.strategy +
-//                                            ", score=" + frBeforeCompile.score + ", reasons=" + frBeforeCompile.reasons +
-//                                            (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes));
-                                    logStage(viewer, "USEFUL", "Not useful refactoring proposal");
+                                    String msg = "Not useful refactoring proposal (before compile): strategy=" + frBeforeCompile.strategy +
+                                            ", score=" + frBeforeCompile.score + ", reasons=" + frBeforeCompile.reasons +
+                                            (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes));
+                                    logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
                                     notify(project,
                                             "[Clone] Refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n",
                                             NotificationType.WARNING);
@@ -795,6 +835,73 @@ public final class CloneRefactorWorkflow {
             return new int[]{startLine, endLine};
         } catch (Throwable t) {
             return null;
+        }
+    }
+
+    private static int getIntField(Object obj, String... names) {
+        if (obj == null || names == null) return -1;
+        Class<?> cls = obj.getClass();
+        for (String n : names) {
+            if (n == null || n.isBlank()) continue;
+            // public field
+            try {
+                java.lang.reflect.Field f = cls.getField(n);
+                Object v = f.get(obj);
+                if (v instanceof Number) return ((Number) v).intValue();
+            } catch (Throwable ignored) {}
+            // declared field
+            try {
+                java.lang.reflect.Field f = cls.getDeclaredField(n);
+                f.setAccessible(true);
+                Object v = f.get(obj);
+                if (v instanceof Number) return ((Number) v).intValue();
+            } catch (Throwable ignored) {}
+            // getter
+            try {
+                String mname = "get" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
+                java.lang.reflect.Method m = cls.getMethod(mname);
+                Object v = m.invoke(obj);
+                if (v instanceof Number) return ((Number) v).intValue();
+            } catch (Throwable ignored) {}
+        }
+        return -1;
+    }
+
+    private static void setIntField(Object obj, int value, String... names) {
+        if (obj == null || names == null) return;
+        Class<?> cls = obj.getClass();
+        for (String n : names) {
+            if (n == null || n.isBlank()) continue;
+            // public field
+            try {
+                java.lang.reflect.Field f = cls.getField(n);
+                if (f.getType() == int.class || f.getType() == Integer.class) {
+                    f.set(obj, value);
+                    return;
+                }
+            } catch (Throwable ignored) {}
+            // declared field
+            try {
+                java.lang.reflect.Field f = cls.getDeclaredField(n);
+                f.setAccessible(true);
+                if (f.getType() == int.class || f.getType() == Integer.class) {
+                    f.set(obj, value);
+                    return;
+                }
+            } catch (Throwable ignored) {}
+            // setter
+            try {
+                String mname = "set" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
+                java.lang.reflect.Method m = cls.getMethod(mname, int.class);
+                m.invoke(obj, value);
+                return;
+            } catch (Throwable ignored) {}
+            try {
+                String mname = "set" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
+                java.lang.reflect.Method m = cls.getMethod(mname, Integer.class);
+                m.invoke(obj, value);
+                return;
+            } catch (Throwable ignored) {}
         }
     }
 
