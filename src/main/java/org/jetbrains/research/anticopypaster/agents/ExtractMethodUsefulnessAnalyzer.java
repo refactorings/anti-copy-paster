@@ -5,7 +5,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.tree.IElementType;
-import com.intellij.psi.util.PsiUtilCore;
 
 import java.util.*;
 import java.util.stream.Collectors;

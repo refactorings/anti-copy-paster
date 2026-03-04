@@ -41,6 +41,10 @@ import org.jetbrains.research.anticopypaster.agents.PsiFallbackCloneDetector;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
@@ -63,6 +67,62 @@ import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
 public final class CloneRefactorWorkflow {
+    // ===== Log persistence helpers =====
+    private static final DateTimeFormatter LOG_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+
+    private static String sanitizeForFilename(String s) {
+        if (s == null) return "unknown";
+        String t = s.trim();
+        if (t.isEmpty()) return "unknown";
+        // Replace anything unsafe for filenames
+        t = t.replaceAll("[^a-zA-Z0-9._-]+", "_");
+        // Avoid overly-long filenames
+        if (t.length() > 80) t = t.substring(0, 80);
+        return t;
+    }
+
+    private static BufferedWriter openLogWriter(Project project, String targetFileName, String modelName) {
+        try {
+            String basePath = project == null ? null : project.getBasePath();
+            if (basePath == null || basePath.isBlank()) return null;
+
+            File dir = new File(basePath, ".anticopypaster" + File.separator + "logs");
+            if (!dir.exists()) dir.mkdirs();
+
+            String ts = LocalDateTime.now().format(LOG_TS_FMT);
+            String safeFile = sanitizeForFilename(targetFileName);
+            String safeModel = sanitizeForFilename(modelName);
+            File out = new File(dir, safeFile + "." + safeModel + "." + ts + ".log");
+
+            return Files.newBufferedWriter(out.toPath(), StandardCharsets.UTF_8);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static void closeQuietly(Closeable c) {
+        try {
+            if (c != null) c.close();
+        } catch (Throwable ignored) {}
+    }
+
+    private static Consumer<String> teeViewer(Consumer<String> viewer, BufferedWriter logWriter) {
+        return (line) -> {
+            if (line == null) return;
+            // 1) Viewer
+            try {
+                if (viewer != null) viewer.accept(line);
+            } catch (Throwable ignored) {}
+            // 2) Log file
+            try {
+                if (logWriter != null) {
+                    logWriter.write(line);
+                    if (!line.endsWith("\n")) logWriter.write("\n");
+                    logWriter.flush();
+                }
+            } catch (Throwable ignored) {}
+        };
+    }
 
 
     private static final String REFACTOR_RAG_DB_RESOURCE = "rag/refactor_database.csv";
@@ -261,6 +321,19 @@ public final class CloneRefactorWorkflow {
         }
     }
 
+    private static String readCurrentSource(VirtualFile vf, File ioFile) throws IOException {
+        // Prefer in-memory content (includes unsaved edits) if available.
+        try {
+            Document doc = FileDocumentManager.getInstance().getDocument(vf);
+            if (doc != null) {
+                return doc.getText();
+            }
+        } catch (Throwable ignored) {}
+
+        // Fallback: read from disk.
+        return Files.readString(ioFile.toPath(), StandardCharsets.UTF_8);
+    }
+
     /* ============================================================
      * Core Workflow
      * ============================================================ */
@@ -268,15 +341,42 @@ public final class CloneRefactorWorkflow {
     private static void runOnSingleFile(Project project, VirtualFile vf, String pastedSnippet) {
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            BufferedWriter logWriter = null;
             try {
                 resetCancelFlag();
                 String fileName = vf.getName();
                 File ioFile = new File(vf.getPath());
-                String originalSource = Files.readString(ioFile.toPath(), StandardCharsets.UTF_8);
+                String originalSource = readCurrentSource(vf, ioFile);
 
-                Consumer<String> viewer = cancelAwareViewer(openViewer(project, "Clone Workflow Output"));
+                // Resolve model name for log naming (best-effort)
+                String modelNameForLog = "unknown_model";
+                try {
+                    ProjectSettingsState st0 = ProjectSettingsState.getInstance(project);
+                    if (st0 != null) {
+                        // Most common in this plugin: Aider model
+                        String m = st0.getAiderModel();
+                        if (m != null && !m.isBlank()) modelNameForLog = m;
+                        // If Ollama is selected, prefer its model name
+                        try {
+                            String provider0 = st0.getLlmprovider();
+                            if ("Ollama".equals(provider0)) {
+                                String om = st0.getOllamaModelName();
+                                if (om != null && !om.isBlank()) modelNameForLog = om;
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                } catch (Throwable ignored) {}
+
+                logWriter = openLogWriter(project, fileName, modelNameForLog);
+                Consumer<String> baseViewer = cancelAwareViewer(openViewer(project, "Clone Workflow Output"));
+                Consumer<String> viewer = teeViewer(baseViewer, logWriter);
+
                 _LAST_PROJECT_FOR_TESTS = project;
                 _LAST_TEST_VIEWER = viewer;
+
+                if (logWriter != null) {
+                    viewer.accept("[LOG] writing to .anticopypaster/logs for file=" + fileName + ", model=" + modelNameForLog);
+                }
 
                 viewer.accept("[START] " + fileName);
                 if (isCancelled()) return;
@@ -398,7 +498,7 @@ public final class CloneRefactorWorkflow {
 
                 detection.DetectedClone clone = det.clones.get(0);
                 logStage(viewer, "DETECTION", "clone found: " + clone.id);
-                notify(project, "[Clone] Clones detected in: " + fileName + " (id=" + clone.id + ")", NotificationType.INFORMATION);
+                notify(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
 
                 // Build the RAG query text for refactoring few-shot retrieval.
                 // Prefer clone code if the detection agent already includes it; otherwise fall back to best-effort extraction.
@@ -473,9 +573,32 @@ public final class CloneRefactorWorkflow {
 
 
                         if (rr == null || rr.newSource == null || rr.newSource.isBlank()) {
-                            feedback = "Refactor produced empty or invalid output.";
-                            logStage(viewer, "REFACTOR", "failed");
-                            notify(project, "[Clone] Refactor failed on attempt " + attempt + " for: " + fileName, NotificationType.WARNING);
+                            String failReason;
+                            if (rr == null) {
+                                failReason = "Refactor agent returned null result.";
+                            } else if (rr.newSource == null) {
+                                failReason = "Refactor agent returned null newSource.";
+                            } else {
+                                failReason = "Refactor agent returned empty newSource.";
+                            }
+
+                            feedback = "Refactor produced empty or invalid output. " + failReason;
+                            logStage(viewer, "REFACTOR", "failed: " + failReason);
+
+                            // Try to give a helpful hint for the most common cause: LLM returned empty due to misconfiguration.
+                            String llmHint = "";
+                            try {
+                                if (LLM instanceof NoopLlmClient) {
+                                    llmHint = "\nHint: LLM is not configured (check provider/model/API key in Settings).";
+                                }
+                            } catch (Throwable ignored) {}
+
+                            notify(project,
+                                    "[Clone] Refactor failed (attempt " + attempt + "/" + maxAttempts + ") for: " + fileName +
+                                            "\nReason: " + failReason +
+                                            llmHint +
+                                            "\nCheck the workflow console/log for details.",
+                                    NotificationType.WARNING);
                             continue;
                         }
 
@@ -535,22 +658,25 @@ public final class CloneRefactorWorkflow {
                                     // fall through
                                 }
 
-                                if (!overridden) {
-                                    isUseful = false;
-                                    String msg = "Not useful refactoring proposal (before compile): score=" + urBeforeCompile.score + ", reasons=" + urBeforeCompile.reasons +
-                                            (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes));
-                                    logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
-                                    notify(project,
-                                            "[Clone] Refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n",
-                                            NotificationType.WARNING);
+                            if (!overridden) {
+                                isUseful = false;
+                                String msg = "Not useful refactoring proposal: reasons=" + urBeforeCompile.reasons;
+                                logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
+                                notify(project,
+                                        "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+                                                "for: " + fileName + "\n \n" +
+                                                "Reason:\n" +
+                                                urBeforeCompile.reasons + "\n" +
+                                                definitionForReason(urBeforeCompile.reasons),
+                                        NotificationType.WARNING);
 
-                                    feedback = "Your Extract Method refactoring is not useful. " +
-                                            "Please do a real Extract Method that removes duplication in BOTH places. " +
-                                            "Extract the entire duplicated code into a new helper method.\n" +
-                                            "The extracted method must include all statements in the clone region,\n" +
-                                            "including method calls, control flow, and calls to super methods.\n" +
-                                            "Do not leave any duplicated statements in the original methods. avoid deleting one side, and avoid delegating to unrelated existing methods.";
-                                }
+                                feedback = "Your Extract Method refactoring is not useful. " +
+                                        "Please do a real Extract Method that removes duplication in BOTH places. " +
+                                        "Extract the entire duplicated code into a new helper method.\n" +
+                                        "The extracted method must include all statements in the clone region,\n" +
+                                        "including method calls, control flow, and calls to super methods.\n" +
+                                        "Do not leave any duplicated statements in the original methods. avoid deleting one side, and avoid delegating to unrelated existing methods.";
+                            }
                             } else if (urBeforeCompile != null) {
                                 logStage(viewer, "USEFUL", "ok (before compile): score=" + urBeforeCompile.score +
                                         (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes)));
@@ -591,12 +717,15 @@ public final class CloneRefactorWorkflow {
 
                                 if (frBeforeCompile != null && !frBeforeCompile.isUseful) {
                                     isUseful = false;
-                                    String msg = "Not useful refactoring proposal (before compile): strategy=" + frBeforeCompile.strategy +
-                                            ", score=" + frBeforeCompile.score + ", reasons=" + frBeforeCompile.reasons +
-                                            (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes));
+                                    String msg = "Not useful refactoring proposal: strategy=" + frBeforeCompile.strategy +
+                                             ", reasons=" + frBeforeCompile.reasons;
                                     logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
                                     notify(project,
-                                            "[Clone] Refactor is NOT useful (attempt " + attempt + ") for: " + fileName + "\n",
+                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+                                                    "for: " + fileName + "\n \n" +
+                                                    "Reason:\n" +
+                                                    frBeforeCompile.strategy + "\n" +
+                                                    definitionForReason(frBeforeCompile.strategy),
                                             NotificationType.WARNING);
 
                                     feedback = "Your refactoring is not useful. " +
@@ -650,12 +779,12 @@ public final class CloneRefactorWorkflow {
                         if (cr == null || !"compile_ok".equals(cr.status)) {
                             feedback = cr == null ? "Compilation failed." : cr.summary;
                             logStage(viewer, "COMPILE", "failed: " + feedback);
-                            notify(project, "[Clone] Compile failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
+                            notify(project, "[Clone] Compilation failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
                             continue;
                         }
 
                         logStage(viewer, "COMPILE", "ok (isolated)");
-                        notify(project, "[Clone] Compile OK (attempt " + attempt + ") for: " + fileName, NotificationType.INFORMATION);
+                        notify(project, "Compilation successful: Ready to run (attempt " + attempt + ") for: " + fileName, NotificationType.INFORMATION);
 
                         /* ===== Test ===== */
                         // Resolve target FQN from the proposed source (PSI still reflects the original file until we apply).
@@ -761,13 +890,45 @@ public final class CloneRefactorWorkflow {
 
             } catch (Exception e) {
                 if (isCancelled() || (e.getMessage() != null && e.getMessage().contains("CANCELLED"))) {
-                    notify(project, "[Clone] Cancelled by user.", NotificationType.WARNING);
+                    notify(project, "Operation cancelled by user.", NotificationType.WARNING);
                     return;
                 }
                 e.printStackTrace();
                 notify(project, "[Clone] Workflow crashed: " + e.getMessage(), NotificationType.ERROR);
+            } finally {
+                closeQuietly(logWriter);
             }
         });
+    }
+
+    // ---- Notification helpers ----
+
+    /**
+     * Escapes HTML special characters for safe notification rendering.
+     */
+    private static String escapeHtml(String s) {
+        if (s == null) return "";
+        String t = s;
+        t = t.replace("&", "&amp;");
+        t = t.replace("<", "&lt;");
+        t = t.replace(">", "&gt;");
+        t = t.replace("\"", "&quot;");
+        return t;
+    }
+
+    /**
+     * Helper for sending notifications (with HTML line break support for multi-line messages).
+     */
+    private static void notify(Project project, String message, NotificationType type) {
+        String content = message == null ? "" : message;
+        // IntelliJ notifications often collapse consecutive newlines in plain text.
+        // Use HTML with <br/> to preserve line breaks (including blank lines).
+        if (content.contains("\n")) {
+            content = escapeHtml(content).replace("\n", "<br/>");
+            content = "<html>" + content + "</html>";
+        }
+        Notification n = new Notification("AntiCopyPaster", "AntiCopyPaster", content, type);
+        Notifications.Bus.notify(n, project);
     }
 
     // ---- Snippet classification helpers (whole method vs fragment) ----
@@ -1074,8 +1235,8 @@ public final class CloneRefactorWorkflow {
                 return "Test error: targetClass (FQN) is empty. Cannot run EvoSuite without a class name.";
             }
 
-            // 1) Materialize EvoSuite jar from plugin resources (src/main/resources/tools/...)
-            File evosuiteJar = materializeResourceToTempFile("tools/evosuite-1.2.0.jar", "evosuite-1.2.0", ".jar");
+            // 1) Materialize EvoSuite jar to a stable per-project path (avoid broken IntelliJ library roots)
+            File evosuiteJar = materializeResourceToProjectLib(new File(projectDir), "tools/evosuite-1.2.0.jar", "evosuite-1.2.0.jar");
             if (evosuiteJar == null || !evosuiteJar.exists()) {
                 return "Test error: EvoSuite jar not found in resources at tools/evosuite-1.2.0.jar";
             }
@@ -1100,6 +1261,8 @@ public final class CloneRefactorWorkflow {
             File reportDir = new File(outRoot, "reports");
             testDir.mkdirs();
             reportDir.mkdirs();
+            // Ensure IntelliJ resolves native EvoSuite tests (EvoRunner/runtime) in the editor and build.
+            ensureTestDependencies(_LAST_PROJECT_FOR_TESTS, base, evosuiteJar);
 
             // 4) Run EvoSuite (generation only; does not execute the generated tests here)
             // Common EvoSuite properties: -Dtest_dir / -Dreport_dir
@@ -1107,6 +1270,7 @@ public final class CloneRefactorWorkflow {
 
             String javaExe = resolveJavaExecutable(_LAST_PROJECT_FOR_TESTS);
             cmd.add(javaExe);
+            String forcedJavaHome = deriveJavaHome(javaExe);
 
             String jv = readJavaVersion(javaExe);
             int major = parseJavaMajorVersion(jv);
@@ -1130,8 +1294,35 @@ public final class CloneRefactorWorkflow {
                 cmd.add("-Djava.awt.headless=true");
             }
 
-            cmd.add("-jar");
-            cmd.add(evosuiteJar.getAbsolutePath());
+            // IMPORTANT: On Java 8, EvoSuite/ByteBuddy agent attachment relies on the Attach API provider from tools.jar.
+            // When running with `-jar`, tools.jar is NOT on the system classpath, and AttachProvider.providers() may return empty.
+            // So for Java 8 we launch via `-cp tools.jar;evosuite.jar org.evosuite.EvoSuite`.
+            if (major == 8) {
+                String toolsJar = null;
+                try {
+                    if (forcedJavaHome != null && !forcedJavaHome.isBlank()) {
+                        File tj = new File(forcedJavaHome, "lib" + File.separator + "tools.jar");
+                        if (tj.exists()) toolsJar = tj.getAbsolutePath();
+                    }
+                } catch (Throwable ignored) {}
+
+                String cpLaunch;
+                if (toolsJar != null && !toolsJar.isBlank()) {
+                    cpLaunch = toolsJar + File.pathSeparator + evosuiteJar.getAbsolutePath();
+                } else {
+                    // Fallback: still run with EvoSuite jar only (best-effort).
+                    cpLaunch = evosuiteJar.getAbsolutePath();
+                    if (viewer != null) viewer.accept("[EvoSuite] WARN: tools.jar not found under JAVA_HOME; agent attach may fail on Java 8.");
+                }
+
+                cmd.add("-cp");
+                cmd.add(cpLaunch);
+                cmd.add("org.evosuite.EvoSuite");
+            } else {
+                cmd.add("-jar");
+                cmd.add(evosuiteJar.getAbsolutePath());
+            }
+
             cmd.add("-class");
             cmd.add(targetClass);
             cmd.add("-projectCP");
@@ -1150,7 +1341,6 @@ public final class CloneRefactorWorkflow {
             pb.directory(base);
             pb.redirectErrorStream(true);
 
-            String forcedJavaHome = deriveJavaHome(javaExe);
             if (forcedJavaHome != null) {
                 if (viewer != null) viewer.accept("[EvoSuite] Enforcing JAVA_HOME=" + forcedJavaHome);
                 pb.environment().put("JAVA_HOME", forcedJavaHome);
@@ -1237,14 +1427,15 @@ public final class CloneRefactorWorkflow {
                 nativeTestFqn = resolvePrimaryClassFqn(rawTest, estestName);
                 _LAST_CONVERTED_TEST_FQN = nativeTestFqn; // reuse existing field as "last generated test to run"
 
-                // Copy native EvoSuite tests into src/test/java (preserve package dirs).
+                // Copy native EvoSuite tests into test (preserve package dirs).
                 File projectBase = new File(projectDir);
-                File srcTestJava = new File(projectBase, "src/test/java");
+                // Use a standalone test directory instead of src/test/java to avoid IntelliJ package mismatch
+                File srcTestJava = new File(projectBase, "test");
                 if (!srcTestJava.exists() && !srcTestJava.mkdirs()) {
                     return "[EVOSUITE]\n" +
                             "exitCode=" + exit + "\n" +
                             "status=tests_failed\n" +
-                            "reason=failed to create src/test/java\n";
+                            "reason=failed to create test\n";
                 }
 
                 // Preserve package-relative structure
@@ -1309,6 +1500,171 @@ public final class CloneRefactorWorkflow {
         }
     }
 
+    /**
+     * Best-effort: add JUnit4 + Hamcrest + EvoSuite runtime jars as a TEST-scoped module library so that
+     * IntelliJ can resolve native EvoSuite tests (EvoRunner/runtime) and the editor does not show red.
+     *
+     * This avoids modifying pom.xml / build.gradle and works for plain Java projects.
+     */
+    private static void ensureTestDependencies(Project project, File baseDir, File evosuiteJar) {
+        try {
+            if (project == null || project.isDisposed()) return;
+
+            // Materialize JUnit/Hamcrest to a stable on-disk location under the project so IDE libraries don't break.
+            File junit = materializeResourceToProjectLib(baseDir, "tools/junit-4.12.jar", "junit-4.12.jar");
+            File hamcrest = materializeResourceToProjectLib(baseDir, "tools/hamcrest-core-1.3.jar", "hamcrest-core-1.3.jar");
+
+            // Also accept user-provided libs/ if resource extraction failed.
+            if ((junit == null || !junit.exists()) && baseDir != null) {
+                File libJunit = new File(baseDir, "libs" + File.separator + "junit-4.12.jar");
+                if (libJunit.exists()) junit = libJunit;
+            }
+            if ((hamcrest == null || !hamcrest.exists()) && baseDir != null) {
+                File libHam = new File(baseDir, "libs" + File.separator + "hamcrest-core-1.3.jar");
+                if (libHam.exists()) hamcrest = libHam;
+            }
+
+            final File finalJunit = junit;
+            final File finalHamcrest = hamcrest;
+            final File finalEvo = evosuiteJar;
+
+            // Add dependencies + mark project/test as test sources root.
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                try {
+                    com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction(() -> {
+                        try {
+                            com.intellij.openapi.module.Module[] modules = com.intellij.openapi.module.ModuleManager.getInstance(project).getModules();
+                            if (modules == null || modules.length == 0) return;
+                            com.intellij.openapi.module.Module module = modules[0];
+
+                            com.intellij.openapi.roots.ModifiableRootModel model = com.intellij.openapi.roots.ModuleRootManager.getInstance(module).getModifiableModel();
+
+                            // 1) Mark project/test as Test Sources Root (best-effort)
+                            try {
+                                if (baseDir != null) {
+                                    File srcTestJava = new File(baseDir, "test");
+                                    if (srcTestJava.exists()) {
+                                        String url = com.intellij.openapi.vfs.VfsUtil.pathToUrl(srcTestJava.getAbsolutePath());
+                                        for (com.intellij.openapi.roots.ContentEntry ce : model.getContentEntries()) {
+                                            if (ce == null) continue;
+                                            // Avoid duplicates
+                                            boolean already = false;
+                                            for (com.intellij.openapi.roots.SourceFolder sf : ce.getSourceFolders()) {
+                                                if (sf != null && url.equals(sf.getUrl()) && sf.isTestSource()) {
+                                                    already = true;
+                                                    break;
+                                                }
+                                            }
+                                            if (!already) {
+                                                // Only add if this content entry contains the folder
+                                                try {
+                                                    com.intellij.openapi.vfs.VirtualFile vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(srcTestJava);
+                                                    if (vf != null) {
+                                                        com.intellij.openapi.vfs.VirtualFile root = ce.getFile();
+                                                        if (root != null && com.intellij.openapi.vfs.VfsUtilCore.isAncestor(root, vf, true)) {
+                                                            ce.addSourceFolder(url, true);
+                                                            break;
+                                                        }
+                                                    }
+                                                } catch (Throwable ignored) {
+                                                    // ignore
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (Throwable ignored) {
+                                // ignore
+                            }
+
+                            // 2) Add TEST-scoped module library if missing
+                            final String libName = "AntiCopyPaster-TestLib";
+                            com.intellij.openapi.roots.libraries.LibraryTable lt = model.getModuleLibraryTable();
+                            com.intellij.openapi.roots.libraries.Library existing = lt.getLibraryByName(libName);
+
+                            if (existing == null) {
+                                com.intellij.openapi.roots.libraries.Library lib = lt.createLibrary(libName);
+                                com.intellij.openapi.roots.libraries.Library.ModifiableModel lm = lib.getModifiableModel();
+
+                                try {
+                                    if (finalJunit != null && finalJunit.exists()) {
+                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalJunit), com.intellij.openapi.roots.OrderRootType.CLASSES);
+                                    }
+                                    if (finalHamcrest != null && finalHamcrest.exists()) {
+                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalHamcrest), com.intellij.openapi.roots.OrderRootType.CLASSES);
+                                    }
+                                    if (finalEvo != null && finalEvo.exists()) {
+                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalEvo), com.intellij.openapi.roots.OrderRootType.CLASSES);
+                                    }
+                                } catch (Throwable ignored) {
+                                    // ignore
+                                }
+
+                                lm.commit();
+
+                                com.intellij.openapi.roots.LibraryOrderEntry entry = model.addLibraryEntry(lib);
+                                entry.setScope(com.intellij.openapi.roots.DependencyScope.TEST);
+                            } else {
+                                // Ensure scope is TEST (best-effort)
+                                try {
+                                    for (com.intellij.openapi.roots.OrderEntry oe : model.getOrderEntries()) {
+                                        if (oe instanceof com.intellij.openapi.roots.LibraryOrderEntry) {
+                                            com.intellij.openapi.roots.LibraryOrderEntry loe = (com.intellij.openapi.roots.LibraryOrderEntry) oe;
+                                            if (loe.getLibraryName() != null && libName.equals(loe.getLibraryName())) {
+                                                loe.setScope(com.intellij.openapi.roots.DependencyScope.TEST);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                } catch (Throwable ignored) {
+                                    // ignore
+                                }
+
+                                // Repair broken roots if they point to deleted temp files.
+                                try {
+                                    com.intellij.openapi.roots.libraries.Library.ModifiableModel lm = existing.getModifiableModel();
+                                    // Remove any missing roots
+                                    for (String url : lm.getUrls(com.intellij.openapi.roots.OrderRootType.CLASSES)) {
+                                        try {
+                                            com.intellij.openapi.vfs.VirtualFile vf = com.intellij.openapi.vfs.VirtualFileManager.getInstance().findFileByUrl(url);
+                                            if (vf == null || !vf.exists()) {
+                                                lm.removeRoot(url, com.intellij.openapi.roots.OrderRootType.CLASSES);
+                                            }
+                                        } catch (Throwable ignored) {
+                                            // ignore
+                                        }
+                                    }
+                                    // Re-add expected roots from stable locations
+                                    if (finalJunit != null && finalJunit.exists()) {
+                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalJunit), com.intellij.openapi.roots.OrderRootType.CLASSES);
+                                    }
+                                    if (finalHamcrest != null && finalHamcrest.exists()) {
+                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalHamcrest), com.intellij.openapi.roots.OrderRootType.CLASSES);
+                                    }
+                                    if (finalEvo != null && finalEvo.exists()) {
+                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalEvo), com.intellij.openapi.roots.OrderRootType.CLASSES);
+                                    }
+                                    lm.commit();
+                                } catch (Throwable ignored) {
+                                    // ignore
+                                }
+                            }
+
+                            model.commit();
+                        } catch (Throwable t) {
+                            // best-effort: do not fail workflow on IDE config issues
+                        }
+                    });
+                } catch (Throwable ignored) {
+                    // ignore
+                }
+            }, com.intellij.openapi.application.ModalityState.any());
+
+        } catch (Throwable ignored) {
+            // ignore
+        }
+    }
+
     // Helper to run Maven/Gradle tests, or fallback to JUnitCore
     private static String runProjectTests(File baseDir, Consumer<String> viewer, File evosuiteJar) {
         try {
@@ -1354,7 +1710,7 @@ public final class CloneRefactorWorkflow {
             // Try resolving file from FQN if possible, or search dir
             if (testFqn != null) {
                 // Heuristic search for the file we just wrote
-                File srcTest = new File(baseDir, "src/test/java");
+                File srcTest = new File(baseDir, "test");
                 String path = testFqn.replace('.', File.separatorChar) + ".java";
                 testFile = new File(srcTest, path);
                 if (!testFile.exists()) {
@@ -1376,8 +1732,8 @@ public final class CloneRefactorWorkflow {
             }
 
             // Ensure JUnit/Hamcrest are on CP (JUnit 4.12 needs hamcrest at runtime)
-            File junit = materializeResourceToTempFile("tools/junit-4.12.jar", "junit", ".jar");
-            File hamcrest = materializeResourceToTempFile("tools/hamcrest-core-1.3.jar", "hamcrest", ".jar");
+            File junit = materializeResourceToProjectLib(baseDir, "tools/junit-4.12.jar", "junit-4.12.jar");
+            File hamcrest = materializeResourceToProjectLib(baseDir, "tools/hamcrest-core-1.3.jar", "hamcrest-core-1.3.jar");
 
             // Ensure EvoSuite runtime is on CP for native *_ESTest tests (EvoRunner, RuntimeSettings, mocks, etc.)
             File evoRuntime = evosuiteJar;
@@ -1888,30 +2244,6 @@ public final class CloneRefactorWorkflow {
         }
     }
 
-    private static void notify(Project project, String message, NotificationType type) {
-        if (project == null || project.isDisposed()) return;
-
-        Runnable r = () -> {
-            try {
-                Notification n = new Notification(
-                        "AntiCopyPaster",
-                        "AntiCopyPaster",
-                        message == null ? "" : message,
-                        type == null ? NotificationType.INFORMATION : type
-                );
-                Notifications.Bus.notify(n, project);
-            } catch (Throwable ignored) {
-                // best-effort notification
-            }
-        };
-
-        if (ApplicationManager.getApplication().isDispatchThread()) {
-            r.run();
-        } else {
-            ApplicationManager.getApplication().invokeLater(r, ModalityState.any());
-        }
-    }
-
     /** Run `java -version` and return output for debugging (stdout+stderr). */
     private static String readJavaVersion(String javaExe) {
         if (javaExe == null || javaExe.isBlank()) return "";
@@ -2118,14 +2450,31 @@ public final class CloneRefactorWorkflow {
         java.nio.file.Files.writeString(tempJava.toPath(), proposedSource, java.nio.charset.StandardCharsets.UTF_8);
         tempJava.deleteOnExit();
 
-        // Compile with javac using the provided classpath and output directory
-        String javaExe = resolveJavaExecutable(project);
-        String javacExe = javaExe.replace("java.exe", "javac.exe")
-                .replace("bin" + File.separator + "java", "bin" + File.separator + "javac");
-        if (!new File(javacExe).exists()) javacExe = "javac";
+        // Resolve javac strictly from Project SDK (DO NOT fall back to PATH)
+        if (project == null || project.isDisposed()) {
+            throw new RuntimeException("Cannot compile: project is null or disposed");
+        }
+
+        com.intellij.openapi.projectRoots.Sdk sdk =
+                com.intellij.openapi.roots.ProjectRootManager.getInstance(project).getProjectSdk();
+        if (sdk == null || sdk.getHomePath() == null || sdk.getHomePath().isBlank()) {
+            throw new RuntimeException("Cannot resolve Project SDK for compilation");
+        }
+
+        File javacFile = new File(sdk.getHomePath(),
+                "bin" + File.separator + (System.getProperty("os.name").toLowerCase().contains("win") ? "javac.exe" : "javac"));
+
+        if (!javacFile.exists()) {
+            throw new RuntimeException("javac not found under Project SDK: " + javacFile.getAbsolutePath());
+        }
+
+        String javacExe = javacFile.getAbsolutePath();
 
         java.util.List<String> cmd = new java.util.ArrayList<>();
         cmd.add(javacExe);
+        cmd.add("-encoding");
+        cmd.add("UTF-8");
+        addJavacTargetFlags(cmd, sdk.getHomePath(), resolveProjectTargetMajor(project));
         cmd.add("-cp");
         cmd.add(classpath == null ? "" : classpath);
         cmd.add("-d");
@@ -2136,7 +2485,9 @@ public final class CloneRefactorWorkflow {
         pb.redirectErrorStream(true);
         Process p = pb.start();
         String out = readProcessOutput(p);
-        if (p.exitValue() != 0) {
+        int exitCode;
+        try { exitCode = p.exitValue(); } catch (Throwable t) { exitCode = -1; }
+        if (exitCode != 0) {
             throw new RuntimeException("Compilation failed:\n" + out);
         }
 
@@ -2287,14 +2638,30 @@ public final class CloneRefactorWorkflow {
             }
         }
 
-        // Resolve javac (assume it's next to java)
-        String javaExe = resolveJavaExecutable(project);
-        String javacExe = javaExe.replace("java.exe", "javac.exe")
-                .replace("bin" + File.separator + "java", "bin" + File.separator + "javac");
-        if (!new File(javacExe).exists()) javacExe = "javac";
+        if (project == null || project.isDisposed()) {
+            throw new RuntimeException("Cannot compile tests: project is null or disposed");
+        }
+
+        com.intellij.openapi.projectRoots.Sdk sdk =
+                com.intellij.openapi.roots.ProjectRootManager.getInstance(project).getProjectSdk();
+        if (sdk == null || sdk.getHomePath() == null || sdk.getHomePath().isBlank()) {
+            throw new RuntimeException("Cannot resolve Project SDK for test compilation");
+        }
+
+        File javacFile = new File(sdk.getHomePath(),
+                "bin" + File.separator + (System.getProperty("os.name").toLowerCase().contains("win") ? "javac.exe" : "javac"));
+
+        if (!javacFile.exists()) {
+            throw new RuntimeException("javac not found under Project SDK: " + javacFile.getAbsolutePath());
+        }
+
+        String javacExe = javacFile.getAbsolutePath();
 
         java.util.List<String> cmd = new java.util.ArrayList<>();
         cmd.add(javacExe);
+        cmd.add("-encoding");
+        cmd.add("UTF-8");
+        addJavacTargetFlags(cmd, sdk.getHomePath(), resolveProjectTargetMajor(project));
         cmd.add("-cp");
         cmd.add(classpath == null ? "" : classpath);
         cmd.add("-d");
@@ -2313,5 +2680,175 @@ public final class CloneRefactorWorkflow {
             throw new RuntimeException("Compilation failed:\n" + out);
         }
         return outputDir;
+    }
+
+    /**
+     * Resolve the desired target bytecode major version for compilation.
+     * Best-effort: prefer Project SDK version; fall back to parsing `java -version` from the SDK; default to 8.
+     */
+    private static int resolveProjectTargetMajor(Project project) {
+        try {
+            if (project == null || project.isDisposed()) return 8;
+            com.intellij.openapi.projectRoots.Sdk sdk = com.intellij.openapi.roots.ProjectRootManager.getInstance(project).getProjectSdk();
+            if (sdk != null) {
+                // 1) Try SDK version string
+                try {
+                    String vs = sdk.getVersionString();
+                    int m = parseMajorFromText(vs);
+                    if (m > 0) return m;
+                } catch (Throwable ignored) {}
+
+                // 2) Try SDK java -version
+                try {
+                    String home = sdk.getHomePath();
+                    String javaExe = javaExecutableFromSdkHome(home);
+                    if (javaExe != null && !javaExe.isBlank()) {
+                        String out = readJavaVersion(javaExe);
+                        int m = parseJavaMajorVersion(out);
+                        if (m > 0) return m;
+                    }
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+        return 8;
+    }
+
+    /** Best-effort parse a Java major version from a text like "JavaSDK 1.8", "17", "corretto-11", etc. */
+    private static int parseMajorFromText(String s) {
+        if (s == null || s.isBlank()) return -1;
+        String t = s.toLowerCase(java.util.Locale.ROOT);
+        if (t.contains("1.8")) return 8;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d{1,2})").matcher(t);
+        if (m.find()) {
+            try {
+                int v = Integer.parseInt(m.group(1));
+                if (v >= 8 && v <= 99) return v;
+            } catch (Throwable ignored) {}
+        }
+        return -1;
+    }
+
+    /** Build an absolute java executable path from an SDK home. */
+    private static String javaExecutableFromSdkHome(String home) {
+        try {
+            if (home == null || home.isBlank()) return "";
+            boolean isWin = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
+            File f = new File(home, "bin" + File.separator + (isWin ? "java.exe" : "java"));
+            return f.exists() ? f.getAbsolutePath() : "";
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    /**
+     * Add appropriate target flags to a javac command.
+     * - If javac is 9+, prefer `--release <target>`.
+     * - If javac is 8, use `-source/-target` (with 1.8 spelling for Java 8).
+     */
+    private static void addJavacTargetFlags(java.util.List<String> cmd, String sdkHome, int targetMajor) {
+        if (cmd == null) return;
+        int target = (targetMajor > 0 ? targetMajor : 8);
+
+        int javacMajor = -1;
+        try {
+            String javaExe = javaExecutableFromSdkHome(sdkHome);
+            if (javaExe != null && !javaExe.isBlank()) {
+                String out = readJavaVersion(javaExe);
+                javacMajor = parseJavaMajorVersion(out);
+            }
+        } catch (Throwable ignored) {}
+        if (javacMajor <= 0) javacMajor = target; // best-effort
+
+        if (javacMajor >= 9) {
+            cmd.add("--release");
+            cmd.add(String.valueOf(target));
+        } else {
+            // JDK 8
+            cmd.add("-source");
+            cmd.add(target == 8 ? "1.8" : String.valueOf(target));
+            cmd.add("-target");
+            cmd.add(target == 8 ? "1.8" : String.valueOf(target));
+        }
+    }
+
+    private static String definitionForReason(Object reasonObj) {
+        if (reasonObj == null) return "No definition available.";
+
+        // Normalize different reason types into a single string.
+        String reason;
+        try {
+            if (reasonObj instanceof java.util.List) {
+                java.util.List<?> lst = (java.util.List<?>) reasonObj;
+                StringBuilder sb = new StringBuilder();
+                for (Object it : lst) {
+                    if (it == null) continue;
+                    if (sb.length() > 0) sb.append(", ");
+                    sb.append(String.valueOf(it));
+                }
+                reason = sb.toString();
+            } else {
+                reason = String.valueOf(reasonObj);
+            }
+        } catch (Throwable t) {
+            reason = String.valueOf(reasonObj);
+        }
+
+        if (reason == null || reason.isBlank()) return "No definition available.";
+        String r = reason.toLowerCase(java.util.Locale.ROOT);
+
+        if (r.contains("incomplete")) {
+            return "The refactoring modifies the code, but most of the duplicated logic still remains in the original methods.";
+        }
+        if (r.contains("excessive")) {
+            return "The extracted method includes statements beyond the intended cloned fragment.";
+        }
+        if ((r.contains("post") && r.contains("deletion")) || r.contains("post-extraction") || r.contains("post_extraction")) {
+            return "A helper method is introduced, but only one clone is replaced by a call, while the other clone is deleted.";
+        }
+        if ((r.contains("direct") && r.contains("removal")) || r.contains("delete_clone") || r.contains("delete clone")) {
+            return "One clone instance is deleted without introducing a shared abstraction.";
+        }
+        if ((r.contains("call") && r.contains("substitution")) || r.contains("existing method") || r.contains("reuse")) {
+            return "One clone is replaced by a call to an existing method instead of extracting a new shared abstraction.";
+        }
+        if (r.contains("fragment")) {
+            return "The duplicated logic is split into several small methods without consolidating it into one shared abstraction.";
+        }
+        if (r.contains("delegation") || r.contains("delegate")) {
+            return "The original method is modified to delegate behavior, and the clone calls this modified method instead of a new abstraction.";
+        }
+
+        return "The refactoring does not properly remove duplication or introduce a correct shared abstraction. Please ensure both clones delegate to a newly extracted helper method.";
+    }
+
+    /**
+     * Copy a bundled JAR resource to a stable per-project location so IntelliJ libraries do not break
+     * when OS temp directories are cleaned.
+     */
+    private static File materializeResourceToProjectLib(File baseDir, String resourcePath, String fileName) {
+        try {
+            if (baseDir == null) {
+                // Fallback to temp if we do not know the project directory.
+                return materializeResourceToTempFile(resourcePath, "acp-lib", ".jar");
+            }
+            File libDir = new File(baseDir, ".anticopypaster" + File.separator + "ide-libs");
+            if (!libDir.exists()) libDir.mkdirs();
+            File out = new File(libDir, fileName);
+            if (out.exists() && out.length() > 0) return out;
+
+            try (java.io.InputStream in = CloneRefactorWorkflow.class.getClassLoader().getResourceAsStream(resourcePath)) {
+                if (in == null) return null;
+                try (java.io.OutputStream os = new java.io.FileOutputStream(out)) {
+                    byte[] buf = new byte[8192];
+                    int r;
+                    while ((r = in.read(buf)) >= 0) {
+                        os.write(buf, 0, r);
+                    }
+                }
+            }
+            return out.exists() ? out : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 }

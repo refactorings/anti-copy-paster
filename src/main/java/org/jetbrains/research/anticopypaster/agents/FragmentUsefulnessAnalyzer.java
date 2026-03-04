@@ -408,63 +408,6 @@ public final class FragmentUsefulnessAnalyzer {
         }
     }
 
-    private static OccEvidence evidenceForRange(PsiJavaFile afterPsi, String afterSource, LineRange r, UsefulnessConfig cfg) {
-        try {
-            if (afterPsi == null || afterSource == null || r == null) return new OccEvidence(true, false, false, Set.of());
-            int startOffset = offsetAtLine(afterSource, r.startLine);
-            int endOffset = offsetAtLine(afterSource, r.endLine + 1);
-            if (startOffset < 0 || endOffset < 0 || startOffset >= afterSource.length()) {
-                return new OccEvidence(true, false, false, Set.of());
-            }
-            endOffset = Math.min(afterSource.length(), Math.max(startOffset, endOffset));
-
-            PsiElement startEl = afterPsi.findElementAt(Math.min(startOffset, Math.max(0, afterPsi.getTextLength() - 1)));
-            PsiMethod host = PsiTreeUtil.getParentOfType(startEl, PsiMethod.class, false);
-            if (host == null) {
-                // Can't resolve; treat as present but unknown
-                return new OccEvidence(false, false, false, Set.of());
-            }
-
-            // Collect calls inside the covered text range within the host body.
-            PsiCodeBlock body = host.getBody();
-            if (body == null) return new OccEvidence(false, false, false, Set.of());
-
-            TextRange frag = new TextRange(startOffset, Math.min(endOffset, afterSource.length()));
-
-            Collection<PsiMethodCallExpression> calls = PsiTreeUtil.findChildrenOfType(body, PsiMethodCallExpression.class);
-            Set<String> calleeKeys = new HashSet<>();
-            boolean hasAnyCall = false;
-
-            for (PsiMethodCallExpression call : calls) {
-                PsiElement el = call;
-                TextRange tr = el.getTextRange();
-                if (tr == null) continue;
-                if (!tr.intersects(frag)) continue;
-
-                hasAnyCall = true;
-
-                PsiMethod resolved = null;
-                try { resolved = call.resolveMethod(); } catch (Throwable ignored) {}
-                if (resolved == null) continue;
-
-                PsiClass owner = resolved.getContainingClass();
-                if (owner == null) continue;
-
-                String key = methodKey(owner, resolved);
-                if (key != null && !key.isBlank()) calleeKeys.add(key);
-            }
-
-            // Detect delegate-like replacement of the fragment: if the fragment itself now looks like a single call statement.
-            // Best-effort: if the fragment text trimmed is exactly a call or return call, treat as delegate.
-            String fragText = safeSubstring(afterSource, frag.getStartOffset(), frag.getEndOffset()).trim();
-            boolean isDelegate = looksLikeSingleCall(fragText, cfg.maxDelegateArgs);
-
-            return new OccEvidence(false, isDelegate, hasAnyCall, calleeKeys);
-        } catch (Throwable t) {
-            return new OccEvidence(false, false, false, Set.of());
-        }
-    }
-
     private static boolean looksLikeSingleCall(String text, int maxArgs) {
         try {
             if (text == null) return false;
@@ -549,17 +492,6 @@ public final class FragmentUsefulnessAnalyzer {
         }
         // If asking for line past the last line, return EOF
         return text.length();
-    }
-
-    private static String safeSubstring(String s, int start, int end) {
-        try {
-            if (s == null) return "";
-            int a = Math.max(0, Math.min(start, s.length()));
-            int b = Math.max(a, Math.min(end, s.length()));
-            return s.substring(a, b);
-        } catch (Throwable t) {
-            return "";
-        }
     }
 
     private static String nonBlankOr(String a, String b) {
@@ -719,7 +651,6 @@ public final class FragmentUsefulnessAnalyzer {
         String tok = cur.toString();
         cur.setLength(0);
 
-        // number?
         boolean isNum = true;
         for (int i = 0; i < tok.length(); i++) {
             char c = tok.charAt(i);

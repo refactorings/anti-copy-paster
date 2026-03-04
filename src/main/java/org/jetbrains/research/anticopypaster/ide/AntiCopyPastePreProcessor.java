@@ -15,7 +15,8 @@ import com.intellij.openapi.editor.RawText;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.PsiDirectory;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
 import org.jetbrains.annotations.NotNull;
@@ -29,6 +30,9 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Timer;
 import java.util.List;
+import java.util.Map;
+import java.util.TimerTask;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOffset;
 
@@ -38,6 +42,7 @@ import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOf
 public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     private final Timer timer = new Timer(true);
     private final ArrayList<RefactoringNotificationTask> refactoringNotificationTask = new ArrayList<>();
+    private final Map<Project, TimerTask> pendingAiderTaskByProject = new ConcurrentHashMap<>();
 
     private static final Logger LOG = Logger.getInstance(AntiCopyPastePreProcessor.class);
 
@@ -141,48 +146,26 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 targets = List.of(file.getVirtualFile());
             }
 
-            if (cloneMode == ProjectSettingsState.CloneMode.SINGLE_AGENT) {
-                // ===== SINGLE-AGENT CLONE PIPELINE (original behavior) =====
-                String model = state.getAiderModel();
-                String apiKey = state.getAiderApiKey();
-                String provider = state.getLlmprovider();
-                String aiderPath = state.getAiderPath();
-                String apiBase = "";
-                String apiVersion = "";
+            // ===== DELAYED AIDER WORKFLOW (debounced by timeBuffer) =====
+            String model = state.getAiderModel();
+            String apiKey = state.getAiderApiKey();
+            String provider = state.getLlmprovider();
+            String aiderPath = state.getAiderPath();
+            String apiBase = "";
+            String apiVersion = "";
 
-                if ("Azure".equals(provider)) {
-                    apiBase = state.getApiBase();
-                    apiVersion = state.getApiVersion();
-                }
-                if ("Ollama".equals(provider)) {
-                    apiBase = state.getApiBase();
-                    model = state.getOllamaModelName();
-                }
-
-                if (targets != null && !targets.isEmpty()) {
-                    for (VirtualFile vf : targets) {
-                        AiderHelper.checkAndSuggestRefactor(
-                                project, vf, provider, model, apiKey, aiderPath, apiBase, apiVersion
-                        );
-                    }
-                }
-                return text;
+            if ("Azure".equals(provider)) {
+                apiBase = state.getApiBase();
+                apiVersion = state.getApiVersion();
+            }
+            if ("Ollama".equals(provider)) {
+                apiBase = state.getApiBase();
+                model = state.getOllamaModelName();
             }
 
-            // ===== MULTI-AGENT CLONE PIPELINE =====
             List<VirtualFile> finalTargets = targets;
-            ApplicationManager.getApplication().executeOnPooledThread(() -> {
-                try {
-                    org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.run(
-                            project,
-                            finalTargets,
-                            text
-                    );
-                } catch (Throwable t) {
-                    ApplicationManager.getApplication().invokeLater(() ->
-                            notify(project, "Multi-agent refactoring workflow failed: " + t.getMessage()));
-                }
-            });
+            // Schedule after timeBuffer seconds; repeated pastes within the buffer window will reset the timer.
+            scheduleAiderWorkflow(project, finalTargets, text, cloneMode, provider, model, apiKey, aiderPath, apiBase, apiVersion);
 
             return text;
         }
@@ -354,5 +337,70 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 NotificationType.INFORMATION
         );
         Notifications.Bus.notify(notification, project);
+    }
+
+    /**
+     * Schedules the AIDER workflow after a debounce delay (timeBuffer seconds) per project.
+     * If user pastes again within the buffer window, the previous pending task is canceled.
+     */
+    private void scheduleAiderWorkflow(Project project,
+                                       List<VirtualFile> targets,
+                                       String pastedText,
+                                       ProjectSettingsState.CloneMode cloneMode,
+                                       String provider,
+                                       String model,
+                                       String apiKey,
+                                       String aiderPath,
+                                       String apiBase,
+                                       String apiVersion) {
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
+        int delayMs = Math.max(0, settings.timeBuffer) * 1000;
+
+        // Debounce: if user pastes again within the buffer window, cancel the previous pending task.
+        TimerTask old = pendingAiderTaskByProject.remove(project);
+        if (old != null) {
+            old.cancel();
+        }
+
+        TimerTask task = new TimerTask() {
+            @Override
+            public void run() {
+                // Clear the pending task pointer for this project.
+                pendingAiderTaskByProject.remove(project);
+
+                ApplicationManager.getApplication().executeOnPooledThread(() -> {
+                    try {
+                        if (cloneMode == ProjectSettingsState.CloneMode.SINGLE_AGENT) {
+                            if (targets != null && !targets.isEmpty()) {
+                                for (VirtualFile vf : targets) {
+                                    AiderHelper.checkAndSuggestRefactor(
+                                            project, vf, provider, model, apiKey, aiderPath, apiBase, apiVersion
+                                    );
+                                }
+                            }
+                        } else {
+                            org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.run(
+                                    project,
+                                    targets,
+                                    pastedText
+                            );
+                        }
+                    } catch (Throwable t) {
+                        ApplicationManager.getApplication().invokeLater(() ->
+                                AntiCopyPastePreProcessor.notify(project, "Aider refactoring workflow failed: " + t.getMessage()));
+                    }
+                });
+            }
+        };
+
+        pendingAiderTaskByProject.put(project, task);
+
+        try {
+            timer.schedule(task, delayMs);
+        } catch (Exception ex) {
+            LOG.error("[ACP] Failed to schedule AIDER workflow.", ex.getMessage());
+            // Fallback: run immediately if scheduling fails.
+            task.run();
+        }
     }
 }
