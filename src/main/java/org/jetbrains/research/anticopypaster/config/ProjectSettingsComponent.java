@@ -142,6 +142,12 @@ public class ProjectSettingsComponent {
     private JLabel iterationHelp;
     private JTextField textField1;
     private JLabel aiderPath;
+    private JPanel numberMethodPanel;
+    private JPanel waitSecondPanel;
+    private JPanel cloneTypePanel;
+    private JPanel nameModelPanel;
+    private JPanel nameNumberPanel;
+    private JPanel parameterNamePanel;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     private final Project projectRef;
     private Integer pendingMainModelIndex = null;
@@ -728,6 +734,47 @@ public class ProjectSettingsComponent {
             fileSelectionPanel.setVisible(showFileSelection);
             fileSelectionPanel.revalidate();
             fileSelectionPanel.repaint();
+        }
+
+        // Hide method/name/clone configuration panels for Clone and Clone_multiagent in the main model selection.
+        boolean hideClonePanelsForClone = isMainClone;
+        boolean hideClonePanelsForCloneMulti = isMainCloneMulti;
+        boolean hideClonePanels = hideClonePanelsForClone || hideClonePanelsForCloneMulti;
+
+        if (numberMethodPanel != null) {
+            numberMethodPanel.setVisible(!hideClonePanelsForClone);
+            numberMethodPanel.revalidate();
+            numberMethodPanel.repaint();
+        }
+
+        if (cloneTypePanel != null) {
+            cloneTypePanel.setVisible(!hideClonePanels);
+            cloneTypePanel.revalidate();
+            cloneTypePanel.repaint();
+        }
+
+        if (nameModelPanel != null) {
+            nameModelPanel.setVisible(!hideClonePanels);
+            nameModelPanel.revalidate();
+            nameModelPanel.repaint();
+        }
+
+        if (parameterNamePanel != null) {
+            parameterNamePanel.setVisible(!hideClonePanels);
+            parameterNamePanel.revalidate();
+            parameterNamePanel.repaint();
+        }
+
+        if (nameNumberPanel != null) {
+            nameNumberPanel.setVisible(!hideClonePanels);
+            nameNumberPanel.revalidate();
+            nameNumberPanel.repaint();
+        }
+
+        if (iterationNumberPanel != null) {
+            iterationNumberPanel.setVisible(isMainCloneMulti);
+            iterationNumberPanel.revalidate();
+            iterationNumberPanel.repaint();
         }
 
         // Filter nameModel options based on whether main model is Clone, Clone_multiagent, or Copilot, preserving selection if possible
