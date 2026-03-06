@@ -391,17 +391,25 @@ public final class CloneRefactorWorkflow {
                 // Classify pasted snippet: whole-method vs fragment (best-effort).
                 PsiMethod wholeMethod = findWholeMethodCoveredBySnippet(project, vf, originalSource, pastedSnippet);
 
-                // Read max attempts from Settings (iteration slider)
+                // Read settings used by the workflow
                 int maxAttempts = 3;
+                int minimumCloneCount = 2;
                 try {
                     ProjectSettingsState st = ProjectSettingsState.getInstance(project);
                     if (st != null) {
                         maxAttempts = Math.max(1, st.getMaxAttempts());
+                        minimumCloneCount = Math.max(2, st.getMinimumDuplicateMethods());
+
+                        String selectedModel = null;
+                        try {
+                            selectedModel = st.getAiderModel();
+                        } catch (Throwable ignored) {}
                     }
                 } catch (Throwable ignored) {
-                    // keep default
+                    // keep defaults
                 }
-                logStage(viewer, "SETTINGS", "maxAttempts=" + maxAttempts);
+                logStage(viewer, "SETTINGS", "maxAttempts=" + maxAttempts +
+                        ", minimumCloneCount=" + minimumCloneCount);
 
                 // Resolve LLM from settings (provider/model/api key/base/version)
                 LLM = LlmClientFactory.fromProjectSettings(project, viewer);
@@ -494,6 +502,26 @@ public final class CloneRefactorWorkflow {
                         notify(project, "[Clone] No clones detected in: " + fileName, NotificationType.INFORMATION);
                         return;
                     }
+                }
+
+                int detectedCloneCount = 0;
+                if (det.clones != null) {
+                    for (detection.DetectedClone c : det.clones) {
+                        if (c != null && c.ranges != null) {
+                            detectedCloneCount += c.ranges.size();
+                        }
+                    }
+                }
+                logStage(viewer, "DETECTION", "detected clone range count=" + detectedCloneCount);
+
+                if (detectedCloneCount < minimumCloneCount) {
+                    logStage(viewer, "DETECTION", "stopped: detected clone range count " + detectedCloneCount +
+                            " is smaller than minimumCloneCount=" + minimumCloneCount + " for Clone_multiagent");
+                    notify(project,
+                            "[Clone] Only " + detectedCloneCount + " clone range(s) detected in: " + fileName +
+                                    ". Need at least " + minimumCloneCount + " to continue.",
+                            NotificationType.INFORMATION);
+                    return;
                 }
 
                 detection.DetectedClone clone = det.clones.get(0);

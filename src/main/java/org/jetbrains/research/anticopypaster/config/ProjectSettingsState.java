@@ -186,6 +186,11 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
         return selectedAnalysisButton;
     }
 
+
+    public int getMinimumDuplicateMethods() {
+        return minimumDuplicateMethods;
+    }
+
     public void setSelectedAnalysisButton(String analysisButton) {
         this.selectedAnalysisButton = analysisButton;
     }
