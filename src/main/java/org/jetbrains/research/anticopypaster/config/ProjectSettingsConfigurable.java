@@ -76,9 +76,10 @@ public class ProjectSettingsConfigurable implements Configurable {
     @Override
     public void apply() throws ConfigurationException {
         if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
-                settingsComponent.getNameModel() == 2) &&
+                settingsComponent.getNameModel() == 2 ||
+                settingsComponent.getNameModel() == 3) &&
                 (settingsComponent.getAiderApiKey() == null || settingsComponent.getAiderApiKey().trim().isEmpty())) {
-            throw new ConfigurationException("API Key must be provided when using Aider.");
+            throw new ConfigurationException("API Key must be provided when using LLM.");
         }
 
         if ("Azure".equalsIgnoreCase(settingsComponent.getLlmProvider())) {

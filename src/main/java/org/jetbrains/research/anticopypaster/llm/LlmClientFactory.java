@@ -86,6 +86,6 @@ public final class LlmClientFactory {
         if (viewer == null) return;
         String keyPreview = (key == null || key.isBlank()) ? "<empty>" :
                 (key.length() <= 6 ? "<set>" : key.substring(0, 3) + "..." + key.substring(key.length() - 3));
-        viewer.accept("[LLM_SETTINGS] provider=" + provider + ", model=" + model + ", apiBase=" + base + ", apiVersion=" + version + ", apiKey=" + keyPreview);
+        viewer.accept("[LLM_SETTINGS] provider=" + provider + ", model=" + model + ", apiKey=" + keyPreview);
     }
 }

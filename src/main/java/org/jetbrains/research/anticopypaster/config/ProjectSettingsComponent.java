@@ -106,7 +106,7 @@ public class ProjectSettingsComponent {
     private JSpinner timeBufferSelector;
     private JSpinner minimumMethodSelector;
     private JSpinner maxParamsSpinner;
-    private JPasswordField aiderApiKey;
+    private JPasswordField agentApiKey;
     private JComboBox aidermodelComboBox;
     private JComboBox llmProviderComboBox;
     private JPanel providerPanel;
@@ -154,10 +154,6 @@ public class ProjectSettingsComponent {
     private Integer pendingNameModelIndex = null;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
-    private JButton toggleApiKeyVisibilityButton;
-    private JPanel passwordWithEyePanel;
-    private boolean apiKeyVisible = false;
-    private char defaultApiKeyEchoChar;
 
     // Suppress auto-close of Aider windows during initial render
     private boolean suppressAutoCloseOnInit = true;
@@ -166,6 +162,8 @@ public class ProjectSettingsComponent {
     private Object lastNameModel = null;
     private JLabel apiBaseWarningLabel;
     private JLabel ollamaModelWarningLabel;
+    private JLabel apiKeyWarningLabel;
+    private JLabel multiAgentApiKeyWarningLabel;
     /**
      * Builds and wires the Project Settings UI for AntiCopyPaster, including provider/model pickers,
      * Aider fields, validation, and dynamic panel visibility.
@@ -189,12 +187,12 @@ public class ProjectSettingsComponent {
         // Add tooltips for Aider-related fields
         llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, DeepSeek or Azure.");
         aidermodelComboBox.setToolTipText("Select the specific model you want to use from the provider.");
-        aiderApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
+        agentApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
 
         // Preserve the original (multi-agent panel) widgets before we alias to the duplicated Aider panel widgets.
         multiAgentLlmProviderComboBox = llmProviderComboBox;
         multiAgentAidermodelComboBox = aidermodelComboBox;
-        multiAgentApiKey = aiderApiKey;
+        multiAgentApiKey = agentApiKey;
 
         multiAgentProviderPanel = providerPanel;
         multiAgentApiKeyPanel = apiKeyPanel;
@@ -225,7 +223,7 @@ public class ProjectSettingsComponent {
                 aidermodelComboBox = aiderAidermodelComboBox;
             }
             if (aiderAiderApiKey != null) {
-                aiderApiKey = aiderAiderApiKey;
+                agentApiKey = aiderAiderApiKey;
             }
 
             if (aiderProviderPanel != null) {
@@ -276,62 +274,19 @@ public class ProjectSettingsComponent {
 
         // Add warning icon and tooltip for empty API key
         Icon warningIcon = AllIcons.General.Error;
-        JLabel apiKeyWarningLabel = new JLabel(warningIcon);
+        apiKeyWarningLabel = new JLabel(warningIcon);
         apiKeyWarningLabel.setToolTipText("API key not found for selected provider");
         apiKeyWarningLabel.setVisible(false);
 
+        multiAgentApiKeyWarningLabel = new JLabel(warningIcon);
+        multiAgentApiKeyWarningLabel.setToolTipText("API key not found for selected provider");
+        multiAgentApiKeyWarningLabel.setVisible(false);
 
-        // Set layout and add aiderApiKey and warning label with proper constraints
+
+        // Set layout and add agentApiKey and warning label with proper constraints
         apiKeyPanel.setLayout(new GridBagLayout());
-        defaultApiKeyEchoChar = aiderApiKey.getEchoChar();
-
         // Wrap the password field with an eye icon drawn "inside" the field at the far right
-        passwordWithEyePanel = new JPanel();
-        passwordWithEyePanel.setLayout(new OverlayLayout(passwordWithEyePanel));
-        passwordWithEyePanel.setOpaque(false);
-        // Ensure the wrapper uses the same height as the field (prevents icon from floating vertically)
-        Dimension fieldSize = aiderApiKey.getPreferredSize();
-        passwordWithEyePanel.setPreferredSize(new Dimension(fieldSize.width, fieldSize.height));
-        passwordWithEyePanel.setMinimumSize(new Dimension(0, fieldSize.height));
-        passwordWithEyePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, fieldSize.height));
-
-        Icon eyeIcon = AllIcons.General.InspectionsEye;
-        toggleApiKeyVisibilityButton = new JButton(eyeIcon); // IntelliJ eye icon
-        toggleApiKeyVisibilityButton.setFocusable(false);
-        toggleApiKeyVisibilityButton.setBorderPainted(false);
-        toggleApiKeyVisibilityButton.setContentAreaFilled(false);
-        toggleApiKeyVisibilityButton.setOpaque(false);
-        toggleApiKeyVisibilityButton.setMargin(new Insets(0, 0, 0, 0));
-        toggleApiKeyVisibilityButton.setBorder(BorderFactory.createEmptyBorder());
-        // Tight preferred size around the icon to avoid extra blank space
-        toggleApiKeyVisibilityButton.setPreferredSize(new Dimension(eyeIcon.getIconWidth() + 2, eyeIcon.getIconHeight() + 2));
-        toggleApiKeyVisibilityButton.setToolTipText("Show/Hide the API key");
-
-        // Align eye icon horizontally with combo-box arrows by adding a right inset
-        int eyeRightInset = 6; // tweak this to nudge left/right as desired
-        int eyePad = eyeIcon.getIconWidth() + eyeRightInset + 4; // keep a small gap between text and icon
-        aiderApiKey.setBorder(BorderFactory.createCompoundBorder(
-                aiderApiKey.getBorder(),
-                BorderFactory.createEmptyBorder(0, 0, 0, eyePad)
-        ));
-
-        // A transparent right-aligned holder laid over the password field, vertically centered
-        int vpad = Math.max(0, (fieldSize.height - eyeIcon.getIconHeight()) / 2 - 1); // -1 to visually nudge to true center
-        JPanel eyeOverlay = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        eyeOverlay.setOpaque(false);
-        eyeOverlay.setBorder(BorderFactory.createEmptyBorder(vpad, 0, vpad, eyeRightInset));
-        eyeOverlay.add(toggleApiKeyVisibilityButton);
-
-        // Ensure both components fill the same bounds for proper overlay
-        aiderApiKey.setAlignmentX(0.0f);
-        aiderApiKey.setAlignmentY(0.5f);
-        eyeOverlay.setAlignmentX(0.0f);
-        eyeOverlay.setAlignmentY(0.5f);
-
-        passwordWithEyePanel.add(eyeOverlay);
-        passwordWithEyePanel.add(aiderApiKey);
-
-        // Add aiderApiKey field (now wrapped) with constraints
+        JComponent passwordWithEyePanel = createPasswordFieldWithEye(agentApiKey);
         GridBagConstraints apiKeyGbc = new GridBagConstraints();
         apiKeyGbc.gridx = 1;
         apiKeyGbc.gridy = 0;
@@ -340,7 +295,6 @@ public class ProjectSettingsComponent {
         apiKeyGbc.anchor = GridBagConstraints.WEST;
         apiKeyGbc.insets = new Insets(0, 0, 0, 0);
         apiKeyPanel.add(passwordWithEyePanel, apiKeyGbc);
-        scrollApiKeyToStart();
 
         // Add warning icon with constraints
         GridBagConstraints warningGbc = new GridBagConstraints();
@@ -349,6 +303,27 @@ public class ProjectSettingsComponent {
         warningGbc.anchor = GridBagConstraints.WEST;
         warningGbc.insets = new Insets(0, 5, 0, 0);
         apiKeyPanel.add(apiKeyWarningLabel, warningGbc);
+
+        if (multiAgentApiKeyPanel != null && multiAgentApiKeyPanel != apiKeyPanel) {
+            multiAgentApiKeyPanel.setLayout(new GridBagLayout());
+
+            GridBagConstraints multiApiKeyGbc = new GridBagConstraints();
+            multiApiKeyGbc.gridx = 1;
+            multiApiKeyGbc.gridy = 0;
+            multiApiKeyGbc.weightx = 1.0;
+            multiApiKeyGbc.fill = GridBagConstraints.HORIZONTAL;
+            multiApiKeyGbc.anchor = GridBagConstraints.WEST;
+            multiApiKeyGbc.insets = new Insets(0, 0, 0, 0);
+            JComponent multiPasswordWithEyePanel = createPasswordFieldWithEye(multiAgentApiKey);
+            multiAgentApiKeyPanel.add(multiPasswordWithEyePanel, multiApiKeyGbc);
+
+            GridBagConstraints multiWarningGbc = new GridBagConstraints();
+            multiWarningGbc.gridx = 2;
+            multiWarningGbc.gridy = 0;
+            multiWarningGbc.anchor = GridBagConstraints.WEST;
+            multiWarningGbc.insets = new Insets(0, 5, 0, 0);
+            multiAgentApiKeyPanel.add(multiAgentApiKeyWarningLabel, multiWarningGbc);
+        }
 
         // Warning labels for Ollama-required fields (simple and consistent with API key)
         apiBaseWarningLabel = new JLabel(AllIcons.General.Error);
@@ -371,21 +346,6 @@ public class ProjectSettingsComponent {
             }
         } catch (Exception ignored) {}
 
-        // Toggle API key visibility via the eye button
-        toggleApiKeyVisibilityButton.addActionListener(e2 -> {
-            apiKeyVisible = !apiKeyVisible;
-            if (apiKeyVisible) {
-                aiderApiKey.setEchoChar((char) 0); // show characters
-                toggleApiKeyVisibilityButton.setIcon(AllIcons.General.InspectionsEye); // fallback: use eye icon for both states
-                toggleApiKeyVisibilityButton.setToolTipText("Hide the API key");
-                scrollApiKeyToStart();
-            } else {
-                aiderApiKey.setEchoChar(defaultApiKeyEchoChar); // restore default echo char
-                toggleApiKeyVisibilityButton.setIcon(AllIcons.General.InspectionsEye); // eye icon
-                toggleApiKeyVisibilityButton.setToolTipText("Show the API key");
-                scrollApiKeyToStart();
-            }
-        });
 
         // Set layout for filesPanel and filesCheckboxesPanel; initialize ArrayList to keep track of checkboxes
         filesPanel.setLayout(new GridBagLayout());
@@ -535,20 +495,39 @@ public class ProjectSettingsComponent {
         });
 
         // Watch for API key input changes and toggle warning visibility
-        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+        agentApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             public void insertUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
             public void removeUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
             public void changedUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
 
             private void updateWarning() {
-                boolean isEmpty = new String(aiderApiKey.getPassword()).trim().isEmpty();
-                apiKeyWarningLabel.setVisible(isEmpty);
+                boolean isClone = "Clone".equals(modelComboBox.getSelectedItem());
+                boolean isEmpty = new String(agentApiKey.getPassword()).trim().isEmpty();
+                updateApiKeyWarningForPanel(apiKeyPanel, apiKeyWarningLabel, isClone && isEmpty);
             }
         });
 
+        if (multiAgentApiKey != null && multiAgentApiKey != agentApiKey) {
+            multiAgentApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+                public void insertUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
+                public void removeUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
+                public void changedUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
+
+                private void updateWarning() {
+                    boolean isCloneMulti = "Clone_multiagent".equals(modelComboBox.getSelectedItem());
+                    boolean isEmpty = new String(multiAgentApiKey.getPassword()).trim().isEmpty();
+                    updateApiKeyWarningForPanel(multiAgentApiKeyPanel, multiAgentApiKeyWarningLabel, isCloneMulti && isEmpty);
+                }
+            });
+        }
+
         // Initialize visibility based on current field state
-        boolean initialEmpty = new String(aiderApiKey.getPassword()).trim().isEmpty();
-        apiKeyWarningLabel.setVisible(initialEmpty);
+        boolean initialIsCloneMulti = "Clone_multiagent".equals(modelComboBox.getSelectedItem());
+        boolean initialIsClone = "Clone".equals(modelComboBox.getSelectedItem());
+        boolean initialSingleEmpty = agentApiKey == null || new String(agentApiKey.getPassword()).trim().isEmpty();
+        boolean initialMultiEmpty = multiAgentApiKey == null || new String(multiAgentApiKey.getPassword()).trim().isEmpty();
+        updateApiKeyWarningForPanel(apiKeyPanel, apiKeyWarningLabel, initialIsClone && initialSingleEmpty);
+        updateApiKeyWarningForPanel(multiAgentApiKeyPanel, multiAgentApiKeyWarningLabel, initialIsCloneMulti && initialMultiEmpty);
         addConditionallyEnabledMetricGroup(keywordsEnabledCheckBox,keywordsSlider,keywordsRequiredCheckBox);
         addConditionallyEnabledMetricGroup(couplingEnabledCheckBox,couplingSlider,couplingRequiredCheckBox);
         addConditionallyEnabledMetricGroup(complexityEnabledCheckBox, complexitySlider, complexityRequiredCheckBox);
@@ -735,6 +714,13 @@ public class ProjectSettingsComponent {
             fileSelectionPanel.revalidate();
             fileSelectionPanel.repaint();
         }
+
+        boolean showSingleApiKeyWarning = showAiderSettings
+                && (agentApiKey == null || new String(agentApiKey.getPassword()).trim().isEmpty());
+        boolean showMultiApiKeyWarning = showMultiAgentSettings
+                && (multiAgentApiKey == null || new String(multiAgentApiKey.getPassword()).trim().isEmpty());
+        updateApiKeyWarningForPanel(apiKeyPanel, apiKeyWarningLabel, showSingleApiKeyWarning);
+        updateApiKeyWarningForPanel(multiAgentApiKeyPanel, multiAgentApiKeyWarningLabel, showMultiApiKeyWarning);
 
         // Hide method/name/clone configuration panels for Clone and Clone_multiagent in the main model selection.
         boolean hideClonePanelsForClone = isMainClone;
@@ -1138,13 +1124,13 @@ public class ProjectSettingsComponent {
     }
 
     /**
-     * Returns the Aider API key from the password field.
+     * Returns the API key from the password field.
      */
     public String getAiderApiKey() {
         if (isCloneMultiAgentSelected() && multiAgentApiKey != null) {
             return new String(multiAgentApiKey.getPassword());
         }
-        return new String(aiderApiKey.getPassword());
+        return new String(agentApiKey.getPassword());
     }
 
     /**
@@ -1171,8 +1157,7 @@ public class ProjectSettingsComponent {
             });
             return;
         }
-        aiderApiKey.setText(apiKey);
-        scrollApiKeyToStart();
+        agentApiKey.setText(apiKey);
     }
 
     /**
@@ -1447,7 +1432,7 @@ public class ProjectSettingsComponent {
     void validateApiKeyPrefix() {
         if (!apiKeyPanel.isVisible()) return;
 
-        String apiKey = new String(aiderApiKey.getPassword()).trim();
+        String apiKey = new String(agentApiKey.getPassword()).trim();
         String provider = (String) llmProviderComboBox.getSelectedItem();
         boolean mismatch = false;
 
@@ -1541,18 +1526,64 @@ public class ProjectSettingsComponent {
         updateProviderSpecificPanelsFor(initProviderLocal, apiKeyPanelX, modelPanelX, azureApiVersionX, azureApiBaseX, ollamaModelPanelX);
     }
 
+
     /**
-     * Scrolls the API key field to the beginning so the prefix is visible.
+     * Helper to create a password field with an eye icon for toggling visibility.
      */
-    private void scrollApiKeyToStart() {
-        SwingUtilities.invokeLater(() -> {
-            aiderApiKey.setCaretPosition(0);
-            try {
-                aiderApiKey.setScrollOffset(0);
-            } catch (Exception ignored) {
-                // setScrollOffset may behave differently across LAFs; caret is enough
+    private JComponent createPasswordFieldWithEye(JPasswordField passwordField) {
+        JPanel passwordWithEyePanel = new JPanel();
+        passwordWithEyePanel.setLayout(new OverlayLayout(passwordWithEyePanel));
+        passwordWithEyePanel.setOpaque(false);
+
+        Dimension fieldSize = passwordField.getPreferredSize();
+        passwordWithEyePanel.setPreferredSize(new Dimension(fieldSize.width, fieldSize.height));
+        passwordWithEyePanel.setMinimumSize(new Dimension(0, fieldSize.height));
+        passwordWithEyePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, fieldSize.height));
+
+        Icon eyeIcon = AllIcons.General.InspectionsEye;
+        JButton toggleButton = new JButton(eyeIcon);
+        toggleButton.setFocusable(false);
+        toggleButton.setBorderPainted(false);
+        toggleButton.setContentAreaFilled(false);
+        toggleButton.setOpaque(false);
+        toggleButton.setMargin(new Insets(0, 0, 0, 0));
+        toggleButton.setBorder(BorderFactory.createEmptyBorder());
+        toggleButton.setPreferredSize(new Dimension(eyeIcon.getIconWidth() + 2, eyeIcon.getIconHeight() + 2));
+        toggleButton.setToolTipText("Show/Hide the API key");
+
+        int eyeRightInset = 6;
+        int eyePad = eyeIcon.getIconWidth() + eyeRightInset + 4;
+        passwordField.setBorder(BorderFactory.createCompoundBorder(
+                passwordField.getBorder(),
+                BorderFactory.createEmptyBorder(0, 0, 0, eyePad)
+        ));
+
+        int vpad = Math.max(0, (fieldSize.height - eyeIcon.getIconHeight()) / 2 - 1);
+        JPanel eyeOverlay = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        eyeOverlay.setOpaque(false);
+        eyeOverlay.setBorder(BorderFactory.createEmptyBorder(vpad, 0, vpad, eyeRightInset));
+        eyeOverlay.add(toggleButton);
+
+        passwordField.setAlignmentX(0.0f);
+        passwordField.setAlignmentY(0.5f);
+        eyeOverlay.setAlignmentX(0.0f);
+        eyeOverlay.setAlignmentY(0.5f);
+
+        passwordWithEyePanel.add(eyeOverlay);
+        passwordWithEyePanel.add(passwordField);
+
+        char defaultEchoChar = passwordField.getEchoChar();
+        toggleButton.addActionListener(ev -> {
+            if (passwordField.getEchoChar() == 0) {
+                passwordField.setEchoChar(defaultEchoChar);
+                toggleButton.setToolTipText("Show the API key");
+            } else {
+                passwordField.setEchoChar((char) 0);
+                toggleButton.setToolTipText("Hide the API key");
             }
         });
+
+        return passwordWithEyePanel;
     }
 
     private void updateOllamaWarnings() {
@@ -1610,4 +1641,21 @@ public class ProjectSettingsComponent {
         if (modelPanelX != null) { modelPanelX.revalidate(); modelPanelX.repaint(); }
         if (mainPanel != null) { mainPanel.revalidate(); mainPanel.repaint(); }
     }
+
+    private void updateApiKeyWarningForPanel(JPanel targetApiKeyPanel, JLabel warningLabel, boolean visible) {
+        if (warningLabel != null) {
+            warningLabel.setVisible(visible);
+        } else if (targetApiKeyPanel != null) {
+            for (java.awt.Component component : targetApiKeyPanel.getComponents()) {
+                if (component instanceof JLabel label && label.getIcon() == AllIcons.General.Error) {
+                    label.setVisible(visible);
+                }
+            }
+        }
+        if (targetApiKeyPanel != null) {
+            targetApiKeyPanel.revalidate();
+            targetApiKeyPanel.repaint();
+        }
+    }
 }
+

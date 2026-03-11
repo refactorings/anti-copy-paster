@@ -2,12 +2,19 @@ package org.jetbrains.research.anticopypaster.workflow;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
+import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.util.PsiTreeUtil;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
@@ -41,8 +48,6 @@ import org.jetbrains.research.anticopypaster.agents.PsiFallbackCloneDetector;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -138,6 +143,12 @@ public final class CloneRefactorWorkflow {
     private static volatile Project _LAST_PROJECT_FOR_TESTS = null;
     private static volatile Consumer<String> _LAST_TEST_VIEWER = null;
     private static volatile String _LAST_TARGET_FQN = null;
+
+    // Hard-cancel support
+    private static final AtomicReference<Thread> _CURRENT_WORKFLOW_THREAD = new AtomicReference<>();
+    private static final AtomicReference<Process> _CURRENT_PROCESS = new AtomicReference<>();
+    private static final AtomicLong _WORKFLOW_RUN_ID = new AtomicLong(0L);
+
     // Last converted (pure JUnit4) EvoSuite test FQN (best-effort), if conversion succeeded.
     private static volatile String _LAST_CONVERTED_TEST_FQN = null;
 
@@ -167,7 +178,30 @@ public final class CloneRefactorWorkflow {
 
     private static void cancelWorkflow(java.util.function.Consumer<String> viewer) {
         _CANCELLED.set(true);
-        logStage(viewer, "WORKFLOW", "CANCELLED by user (viewer closed)");
+
+        Process p = _CURRENT_PROCESS.getAndSet(null);
+        if (p != null) {
+            try {
+                if (viewer != null) viewer.accept("[WORKFLOW] Cancel requested; killing process...");
+            } catch (Throwable ignored) {}
+            try {
+                p.destroy();
+            } catch (Throwable ignored) {}
+            try {
+                if (p.isAlive()) {
+                    p.destroyForcibly();
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        Thread t = _CURRENT_WORKFLOW_THREAD.get();
+        if (t != null) {
+            try {
+                t.interrupt();
+            } catch (Throwable ignored) {}
+        }
+
+        logStage(viewer, "WORKFLOW", "CANCELLED by user (viewer closed; process/thread interrupted)");
     }
 
     private static java.util.function.Consumer<String> cancelAwareViewer(java.util.function.Consumer<String> viewer) {
@@ -179,7 +213,9 @@ public final class CloneRefactorWorkflow {
     }
 
     private static void throwIfCancelled(java.util.function.Consumer<String> viewer) {
-        if (isCancelled()) throw new RuntimeException("CANCELLED");
+        if (isCancelled() || Thread.currentThread().isInterrupted()) {
+            throw new RuntimeException("CANCELLED");
+        }
     }
 
     private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
@@ -199,6 +235,20 @@ public final class CloneRefactorWorkflow {
                 }
             }
 
+            toolWindow.setTitleActions(java.util.List.of(
+                    new com.intellij.openapi.actionSystem.AnAction(
+                            "Stop Workflow",
+                            "Stop current workflow",
+                            com.intellij.icons.AllIcons.Actions.Suspend
+                    ) {
+                        @Override
+                        public void actionPerformed(com.intellij.openapi.actionSystem.AnActionEvent e) {
+                            java.util.function.Consumer<String> w = writerRef.get();
+                            cancelWorkflow(w);
+                        }
+                    }
+            ));
+
             var cm = toolWindow.getContentManager();
             ConsoleView console = CONSOLE_BY_TITLE.get(title);
             Content content = cm.findContent(title);
@@ -206,26 +256,7 @@ public final class CloneRefactorWorkflow {
             if (console == null || content == null) {
                 console = TextConsoleBuilderFactory.getInstance().createBuilder(project).getConsole();
 
-// Wrap console with a top bar that has an X button.
-                javax.swing.JButton closeBtn = new javax.swing.JButton("✕");
-                closeBtn.setFocusable(false);
-                closeBtn.setMargin(new java.awt.Insets(2, 8, 2, 8));
-                closeBtn.addActionListener(e -> {
-                    java.util.function.Consumer<String> w = writerRef.get();
-                    cancelWorkflow(w);
-                    try {
-                        Content ctn = cm.findContent(title);
-                        if (ctn != null) {
-                            cm.removeContent(ctn, true);
-                        }
-                    } catch (Throwable ignored) {}
-                });
-
-                javax.swing.JPanel topBar = new javax.swing.JPanel(new java.awt.BorderLayout());
-                topBar.add(closeBtn, java.awt.BorderLayout.EAST);
-
                 javax.swing.JPanel wrapper = new javax.swing.JPanel(new java.awt.BorderLayout());
-                wrapper.add(topBar, java.awt.BorderLayout.NORTH);
                 wrapper.add(console.getComponent(), java.awt.BorderLayout.CENTER);
 
                 Content newContent = ContentFactory.getInstance().createContent(wrapper, title, true);
@@ -342,6 +373,10 @@ public final class CloneRefactorWorkflow {
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             BufferedWriter logWriter = null;
+            Document trackedDocument = null;
+            DocumentListener cloneMethodChangeListener = null;
+            long runId = _WORKFLOW_RUN_ID.incrementAndGet();
+            _CURRENT_WORKFLOW_THREAD.set(Thread.currentThread());
             try {
                 resetCancelFlag();
                 String fileName = vf.getName();
@@ -528,6 +563,30 @@ public final class CloneRefactorWorkflow {
                 logStage(viewer, "DETECTION", "clone found: " + clone.id);
                 notify(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
 
+                final java.util.List<CloneMethodSnapshot> watchedCloneMethods = captureCloneMethodSnapshots(project, vf, clone, viewer);
+                trackedDocument = FileDocumentManager.getInstance().getDocument(vf);
+                if (trackedDocument != null && watchedCloneMethods != null && !watchedCloneMethods.isEmpty()) {
+                    final java.util.List<CloneMethodSnapshot> listenerSnapshots = watchedCloneMethods;
+                    cloneMethodChangeListener = new DocumentListener() {
+                        @Override
+                        public void documentChanged(DocumentEvent event) {
+                            if (isCancelled()) return;
+                            String changedMethod = findModifiedCloneMethod(project, vf, listenerSnapshots);
+                            if (changedMethod != null) {
+                                logStage(viewer, "WATCH", "stopped: cloned method modified by user: " + changedMethod);
+                                CloneRefactorWorkflow.notify(project,
+                                        "[Clone] Stopped because a cloned method was modified by the user: " + changedMethod,
+                                        NotificationType.WARNING);
+                                cancelWorkflow(viewer);
+                            }
+                        }
+                    };
+                    trackedDocument.addDocumentListener(cloneMethodChangeListener);
+                    logStage(viewer, "WATCH", "tracking " + watchedCloneMethods.size() + " cloned method(s) for user edits");
+                } else {
+                    logStage(viewer, "WATCH", "no cloned methods to track for user edits");
+                }
+
                 // Build the RAG query text for refactoring few-shot retrieval.
                 // Prefer clone code if the detection agent already includes it; otherwise fall back to best-effort extraction.
                 String refactorRagQuery = buildRefactorRagQueryText(originalSource, clone);
@@ -572,6 +631,16 @@ public final class CloneRefactorWorkflow {
                 for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                         if (isCancelled()) {
                             notify(project, "[Clone] Cancelled by user.", NotificationType.WARNING);
+                            return;
+                        }
+
+                    String changedMethodAtAttemptStart = findModifiedCloneMethod(project, vf, watchedCloneMethods);
+                        if (changedMethodAtAttemptStart != null) {
+                            logStage(viewer, "WATCH", "stopped before attempt because cloned method changed: " + changedMethodAtAttemptStart);
+                            notify(project,
+                                    "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodAtAttemptStart,
+                                    NotificationType.WARNING);
+                            cancelWorkflow(viewer);
                             return;
                         }
 
@@ -782,6 +851,15 @@ public final class CloneRefactorWorkflow {
                         }
                         // ===== End usefulness check =====
 
+                        String changedMethodBeforeCompile = findModifiedCloneMethod(project, vf, watchedCloneMethods);
+                        if (changedMethodBeforeCompile != null) {
+                            logStage(viewer, "WATCH", "stopped before compile because cloned method changed: " + changedMethodBeforeCompile);
+                            notify(project,
+                                    "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeCompile,
+                                    NotificationType.WARNING);
+                            cancelWorkflow(viewer);
+                            return;
+                        }
                         // Compile the proposed source to a temp classes dir, without touching the original file.
                         String ideCp = buildProjectClasspathFromIde(project);
                         File patchedOutDir;
@@ -870,6 +948,16 @@ public final class CloneRefactorWorkflow {
                                         false
                                 );
 
+                        String changedMethodBeforeTest = findModifiedCloneMethod(project, vf, watchedCloneMethods);
+                        if (changedMethodBeforeTest != null) {
+                            logStage(viewer, "WATCH", "stopped before test because cloned method changed: " + changedMethodBeforeTest);
+                            notify(project,
+                                    "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeTest,
+                                    NotificationType.WARNING);
+                            cancelWorkflow(viewer);
+                            return;
+                        }
+
                         throwIfCancelled(viewer);
                         testing.TestResult tr =
                                 testAgent.runAndSummarize(
@@ -888,6 +976,15 @@ public final class CloneRefactorWorkflow {
                         if (tr != null && "tests_passed".equals(tr.status)) {
                             logStage(viewer, "TEST", "passed");
 
+                            String changedMethodBeforeApply = findModifiedCloneMethod(project, vf, watchedCloneMethods);
+                            if (changedMethodBeforeApply != null) {
+                                logStage(viewer, "WATCH", "stopped before apply because cloned method changed: " + changedMethodBeforeApply);
+                                notify(project,
+                                        "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeApply,
+                                        NotificationType.WARNING);
+                                cancelWorkflow(viewer);
+                                return;
+                            }
                             // Now that compile+test passed, ask user whether to apply the refactor to the real file.
                             boolean applyNow = showDiffAndConfirmApply(project, fileName, currentSource, proposedSource);
                             if (applyNow) {
@@ -917,13 +1014,23 @@ public final class CloneRefactorWorkflow {
                 notify(project, "[Clone] Workflow failed after retries for: " + vf.getName(), NotificationType.ERROR);
 
             } catch (Exception e) {
-                if (isCancelled() || (e.getMessage() != null && e.getMessage().contains("CANCELLED"))) {
+                if (isCancelled() || Thread.currentThread().isInterrupted()
+                        || (e.getMessage() != null && e.getMessage().contains("CANCELLED"))) {
                     notify(project, "Operation cancelled by user.", NotificationType.WARNING);
                     return;
                 }
                 e.printStackTrace();
                 notify(project, "[Clone] Workflow crashed: " + e.getMessage(), NotificationType.ERROR);
             } finally {
+                if (trackedDocument != null && cloneMethodChangeListener != null) {
+                    try {
+                        trackedDocument.removeDocumentListener(cloneMethodChangeListener);
+                    } catch (Throwable ignored) {}
+                }
+                _CURRENT_PROCESS.set(null);
+                if (_WORKFLOW_RUN_ID.get() == runId) {
+                    _CURRENT_WORKFLOW_THREAD.compareAndSet(Thread.currentThread(), null);
+                }
                 closeQuietly(logWriter);
             }
         });
@@ -1523,7 +1630,13 @@ public final class CloneRefactorWorkflow {
                     "---output---\n" +
                     testOutput;
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Test error: CANCELLED";
         } catch (Exception e) {
+            if (Thread.currentThread().isInterrupted()) {
+                return "Test error: CANCELLED";
+            }
             return "Test error: " + e.getMessage();
         }
     }
@@ -1869,53 +1982,91 @@ public final class CloneRefactorWorkflow {
     }
 
     private static ProcessRun runProcessStreaming(ProcessBuilder pb, java.util.function.Consumer<String> viewer) throws Exception {
-        Process p = pb.start();
+        Process p = null;
         StringBuilder sb = new StringBuilder();
+        Thread killer = null;
 
-        // If user cancels, destroy the process.
-        Thread killer = new Thread(() -> {
-            try {
-                while (p.isAlive()) {
-                    if (isCancelled()) {
-                        try {
-                            if (viewer != null) viewer.accept("[WORKFLOW] Cancel requested; killing process...");
-                        } catch (Throwable ignored) {}
-                        try { p.destroy(); } catch (Throwable ignored) {}
-                        try { p.destroyForcibly(); } catch (Throwable ignored) {}
-                        break;
-                    }
-                    try { Thread.sleep(120); } catch (InterruptedException ie) { break; }
-                }
-            } catch (Throwable ignored) {}
-        }, "acp-cancel-killer");
-        killer.setDaemon(true);
-        killer.start();
-
-        try (java.io.BufferedReader br = new java.io.BufferedReader(
-                new java.io.InputStreamReader(p.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                sb.append(line).append("\n");
-                if (viewer != null && !isCancelled()) viewer.accept(line);
-                if (isCancelled()) break;
-            }
-        } catch (Throwable ignored) {
-            // best-effort
-        }
-
-        int exit;
         try {
-            exit = p.waitFor();
-        } catch (Throwable t) {
-            exit = -1;
-        }
+            p = pb.start();
+            _CURRENT_PROCESS.set(p);
+            final Process proc = p;
 
-        if (isCancelled()) {
-            try { p.destroyForcibly(); } catch (Throwable ignored) {}
-            return new ProcessRun(-1, sb.toString() + "\n[CANCELLED]\n");
-        }
+            killer = new Thread(() -> {
+                try {
+                    while (proc.isAlive()) {
+                        if (isCancelled() || Thread.currentThread().isInterrupted()) {
+                            try {
+                                if (viewer != null) viewer.accept("[WORKFLOW] Cancel requested; killing process...");
+                            } catch (Throwable ignored) {}
+                            try { proc.destroy(); } catch (Throwable ignored) {}
+                            try {
+                                if (proc.isAlive()) proc.destroyForcibly();
+                            } catch (Throwable ignored) {}
+                            break;
+                        }
+                        try {
+                            Thread.sleep(120);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                } catch (Throwable ignored) {
+                    // ignore
+                }
+            }, "acp-cancel-killer");
+            killer.setDaemon(true);
+            killer.start();
 
-        return new ProcessRun(exit, sb.toString());
+            try (java.io.BufferedReader br = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        throw new InterruptedException("CANCELLED");
+                    }
+                    sb.append(line).append("\n");
+                    if (viewer != null && !isCancelled()) viewer.accept(line);
+                    if (isCancelled()) break;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw e;
+            } catch (Throwable ignored) {
+                // best-effort
+            }
+
+            int exit;
+            try {
+                exit = proc.waitFor();
+            } catch (InterruptedException e) {
+                try { proc.destroy(); } catch (Throwable ignored) {}
+                try {
+                    if (proc.isAlive()) proc.destroyForcibly();
+                } catch (Throwable ignored) {}
+                Thread.currentThread().interrupt();
+                throw e;
+            } catch (Throwable t) {
+                exit = -1;
+            }
+
+            if (isCancelled() || Thread.currentThread().isInterrupted()) {
+                try { proc.destroy(); } catch (Throwable ignored) {}
+                try {
+                    if (proc.isAlive()) proc.destroyForcibly();
+                } catch (Throwable ignored) {}
+                return new ProcessRun(-1, sb.toString() + "\n[CANCELLED]\n");
+            }
+
+            return new ProcessRun(exit, sb.toString());
+        } finally {
+            if (killer != null) {
+                try { killer.interrupt(); } catch (Throwable ignored) {}
+            }
+            if (p != null) {
+                _CURRENT_PROCESS.compareAndSet(p, null);
+            }
+        }
     }
 
     /**
@@ -2876,6 +3027,204 @@ public final class CloneRefactorWorkflow {
             }
             return out.exists() ? out : null;
         } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static final class CloneMethodSnapshot {
+        final SmartPsiElementPointer<PsiMethod> pointer;
+        final String className;
+        final String methodName;
+        final int parameterCount;
+        final String baselineBodyText;
+        final String displayName;
+
+        CloneMethodSnapshot(SmartPsiElementPointer<PsiMethod> pointer,
+                            String className,
+                            String methodName,
+                            int parameterCount,
+                            String baselineBodyText,
+                            String displayName) {
+            this.pointer = pointer;
+            this.className = className == null ? "<no-class>" : className;
+            this.methodName = methodName == null ? "<unknown>" : methodName;
+            this.parameterCount = parameterCount;
+            this.baselineBodyText = baselineBodyText == null ? "" : baselineBodyText;
+            this.displayName = displayName == null ? "<unknown>" : displayName;
+        }
+    }
+
+    private static String buildMethodDisplayName(PsiMethod method) {
+        if (method == null) return "<unknown>";
+        PsiClass cls = method.getContainingClass();
+        String className = cls == null ? "<no-class>"
+                : (cls.getQualifiedName() != null ? cls.getQualifiedName() : cls.getName());
+        if (className == null || className.isBlank()) className = "<no-class>";
+        return className + "#" + method.getName();
+    }
+
+    private static String buildMethodTrackingKey(PsiMethod method) {
+        if (method == null) return "<unknown>";
+        PsiClass cls = method.getContainingClass();
+        String className = cls == null ? "<no-class>"
+                : (cls.getQualifiedName() != null ? cls.getQualifiedName() : cls.getName());
+        if (className == null || className.isBlank()) className = "<no-class>";
+        return className + "#" + method.getName() + "#" + method.getParameterList().getParametersCount();
+    }
+
+    private static String getMethodClassName(PsiMethod method) {
+        if (method == null) return "<no-class>";
+        PsiClass cls = method.getContainingClass();
+        String className = cls == null ? "<no-class>"
+                : (cls.getQualifiedName() != null ? cls.getQualifiedName() : cls.getName());
+        if (className == null || className.isBlank()) className = "<no-class>";
+        return className;
+    }
+
+    private static String getMethodBodyText(PsiMethod method) {
+        if (method == null) return "";
+        try {
+            PsiElement body = method.getBody();
+            if (body != null) {
+                String text = body.getText();
+                return text == null ? "" : text;
+            }
+            String text = method.getText();
+            return text == null ? "" : text;
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    private static String normalizeMethodBodyText(String text) {
+        if (text == null || text.isBlank()) return "";
+        try {
+            String s = text.replace("\r\n", "\n").replace('\r', '\n');
+            s = s.replaceAll("//.*?(?=\n|$)", "");
+            s = s.replaceAll("(?s)/\\*.*?\\*/", "");
+            s = s.replaceAll("\\s+", " ").trim();
+            return s;
+        } catch (Throwable t) {
+            return text;
+        }
+    }
+
+    private static PsiMethod findMethodBySnapshot(Project project, VirtualFile vf, CloneMethodSnapshot snapshot) {
+        try {
+            if (project == null || project.isDisposed() || vf == null || snapshot == null) return null;
+
+            if (snapshot.pointer != null) {
+                PsiMethod pointed = snapshot.pointer.getElement();
+                if (pointed != null && pointed.isValid()) {
+                    String cls = getMethodClassName(pointed);
+                    if (java.util.Objects.equals(snapshot.className, cls)
+                            && java.util.Objects.equals(snapshot.methodName, pointed.getName())
+                            && snapshot.parameterCount == pointed.getParameterList().getParametersCount()) {
+                        return pointed;
+                    }
+                }
+            }
+
+            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+            if (!(psiFile instanceof PsiJavaFile javaFile)) return null;
+
+            for (PsiClass psiClass : javaFile.getClasses()) {
+                String cls = psiClass.getQualifiedName() != null ? psiClass.getQualifiedName() : psiClass.getName();
+                if (!java.util.Objects.equals(snapshot.className, cls)) continue;
+                for (PsiMethod method : psiClass.getMethods()) {
+                    if (!java.util.Objects.equals(snapshot.methodName, method.getName())) continue;
+                    if (snapshot.parameterCount != method.getParameterList().getParametersCount()) continue;
+                    return method;
+                }
+            }
+            return null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static PsiMethod findMethodContainingLine(Project project, VirtualFile vf, int oneBasedLine) {
+        try {
+            if (project == null || project.isDisposed() || vf == null) return null;
+            if (oneBasedLine <= 0) return null;
+
+            Document doc = FileDocumentManager.getInstance().getDocument(vf);
+            if (doc == null) return null;
+            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+            if (!(psiFile instanceof PsiJavaFile)) return null;
+            if (doc.getLineCount() <= 0) return null;
+
+            int zeroBasedLine = Math.max(0, Math.min(oneBasedLine - 1, doc.getLineCount() - 1));
+            int startOffset = doc.getLineStartOffset(zeroBasedLine);
+            int endOffset = Math.max(startOffset, doc.getLineEndOffset(zeroBasedLine) - 1);
+
+            PsiElement at = psiFile.findElementAt(startOffset);
+            if (at == null) at = psiFile.findElementAt(endOffset);
+            if (at == null) return null;
+
+            return PsiTreeUtil.getParentOfType(at, PsiMethod.class, false);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static java.util.List<CloneMethodSnapshot> captureCloneMethodSnapshots(
+            Project project,
+            VirtualFile vf,
+            detection.DetectedClone clone,
+            Consumer<String> viewer
+    ) {
+        java.util.LinkedHashMap<String, CloneMethodSnapshot> out = new java.util.LinkedHashMap<>();
+        try {
+            if (project == null || project.isDisposed() || vf == null || clone == null || clone.ranges == null) {
+                return new java.util.ArrayList<>();
+            }
+
+            for (detection.CloneRange range : clone.ranges) {
+                if (range == null) continue;
+
+                PsiMethod method = findMethodContainingLine(project, vf, range.startLine);
+                if (method == null) method = findMethodContainingLine(project, vf, range.endLine);
+                if (method == null) continue;
+
+                String key = buildMethodTrackingKey(method);
+                if (out.containsKey(key)) continue;
+                SmartPsiElementPointer<PsiMethod> ptr = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(method);
+                String displayName = buildMethodDisplayName(method);
+                String className = getMethodClassName(method);
+                String methodName = method.getName();
+                int parameterCount = method.getParameterList().getParametersCount();
+                String baselineBodyText = normalizeMethodBodyText(getMethodBodyText(method));
+                out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, baselineBodyText, displayName));
+                logStage(viewer, "WATCH", "tracking cloned method: " + displayName);
+            }
+        } catch (Throwable t) {
+            logStage(viewer, "WATCH", "failed to capture cloned method snapshots: " + t.getMessage());
+        }
+        return new java.util.ArrayList<>(out.values());
+    }
+
+
+    private static String findModifiedCloneMethod(Project project,
+                                                  VirtualFile vf,
+                                                  java.util.List<CloneMethodSnapshot> snapshots) {
+        try {
+            if (snapshots == null || snapshots.isEmpty()) return null;
+            for (CloneMethodSnapshot snapshot : snapshots) {
+                if (snapshot == null) continue;
+
+                PsiMethod method = findMethodBySnapshot(project, vf, snapshot);
+                if (method == null || !method.isValid()) {
+                    continue;
+                }
+
+                String currentBodyText = normalizeMethodBodyText(getMethodBodyText(method));
+                if (!java.util.Objects.equals(snapshot.baselineBodyText, currentBodyText)) {
+                    return snapshot.displayName;
+                }
+            }
+            return null;
+        } catch (Throwable t) {
             return null;
         }
     }
