@@ -336,9 +336,6 @@ public final class CloneRefactorWorkflow {
         return writer;
     }
 
-    /* ============================================================
-     * Public Entry
-     * ============================================================ */
 
     public static void run(Project project, List<VirtualFile> targets) {
         run(project, targets, null);
@@ -487,6 +484,25 @@ public final class CloneRefactorWorkflow {
                                 pastedSnippet,
                                 llmCaller
                         );
+
+                try {
+                    if (det != null) {
+                        java.nio.file.Path nicadOut =
+                                java.nio.file.Path.of(project.getBasePath(),
+                                        ".anticopypaster",
+                                        "nicad",
+                                        fileName + ".nicad.xml");
+
+                        java.nio.file.Files.createDirectories(nicadOut.getParent());
+
+                        detectionAgent.saveAsNiCadXml(det, vf.getPath(), nicadOut);
+
+                        logStage(viewer, "DETECTION", "NiCad file saved: " + nicadOut);
+                    }
+                } catch (Exception e) {
+                    logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
+                }
+
                 logStage(viewer, "DETECTION", "raw result: " + (det == null ? "null" : ("clones=" + (det.clones == null ? "null" : det.clones.size()))));
 
                 if (det == null || det.clones == null || det.clones.isEmpty()) {
@@ -1089,7 +1105,6 @@ public final class CloneRefactorWorkflow {
         return t;
     }
 
-    /** Best-effort: find pasted snippet line range in the given source text. Returns {startLine,endLine} 1-based, or null if not found. */
     private static int[] findSnippetLineRangeInText(String fileSource, String pastedSnippet) {
         try {
             if (fileSource == null || pastedSnippet == null) return null;
@@ -1213,13 +1228,6 @@ public final class CloneRefactorWorkflow {
             PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
             if (!(psiFile instanceof PsiJavaFile)) return null;
 
-            // --- Robust match by PSI method text (preferred) ---
-            // Many times the user copies the *whole method body* (not including the signature).
-            // So we compare the pasted snippet against:
-            //   (1) method.getBody().getText()   -> includes outer braces
-            //   (2) body text without braces     -> pure body
-            //   (3) method.getText()             -> full method (signature + body)
-            // Matching ignores whitespace differences.
             String pNorm = normalizeForMatch(pastedSnippet);
             String pNormNoBraces = normalizeForMatch(stripOuterBraces(pastedSnippet));
 
@@ -1513,7 +1521,6 @@ public final class CloneRefactorWorkflow {
             }
 
             // If tests were generated, run them in *native EvoSuite form* (keep *_ESTest.java + scaffolding + EvoRunner).
-            // We DO NOT convert to "pure" JUnit, because that loses EvoSuite runtime semantics and often causes flaky/invalid exception expectations.
             String nativeTestFqn = "";
             if (hasGeneratedTests) {
                 String simpleName;

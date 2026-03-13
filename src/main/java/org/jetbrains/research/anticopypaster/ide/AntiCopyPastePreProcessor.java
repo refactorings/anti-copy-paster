@@ -31,8 +31,10 @@ import java.util.ArrayList;
 import java.util.Timer;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOffset;
 
@@ -40,9 +42,12 @@ import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOf
  * Handles any copy-paste action and checks if the pasted code fragment could be extracted into a separate method.
  */
 public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
+    private static final long INTERNAL_COPY_VALIDITY_MS = 30_000L;
+
     private final Timer timer = new Timer(true);
     private final ArrayList<RefactoringNotificationTask> refactoringNotificationTask = new ArrayList<>();
     private final Map<Project, TimerTask> pendingAiderTaskByProject = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Project, CopiedSnippetInfo> lastCopiedSnippetByProject = new ConcurrentHashMap<>();
 
     private static final Logger LOG = Logger.getInstance(AntiCopyPastePreProcessor.class);
 
@@ -52,7 +57,11 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     @Nullable
     @Override
     public String preprocessOnCopy(PsiFile file, int[] startOffsets, int[] endOffsets, String text) {
-        AntiCopyPasterUsageStatistics.getInstance(file.getProject()).onCopy();
+        Project project = file == null ? null : file.getProject();
+        if (project != null) {
+            AntiCopyPasterUsageStatistics.getInstance(project).onCopy();
+            lastCopiedSnippetByProject.put(project, new CopiedSnippetInfo(text, System.currentTimeMillis()));
+        }
         return null;
     }
 
@@ -66,10 +75,16 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         RefactoringNotificationTask rnt = getRefactoringTask(project);
         ProjectSettingsState.JudgementModel currentModelType = ProjectSettingsState.getInstance(project).judgementModel;
 
+        AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
+
         ProjectSettingsState state = ProjectSettingsState.getInstance(project);
         String selectedAnalysisButton = state.getSelectedAnalysisButton();
         String filesPath = state.getFilesPath();
         ArrayList<JCheckBox> filesCheckboxes = new ArrayList<>(state.getAllFilesCheckboxes());
+
+        if (!wasCopiedInsideIde(project, text)) {
+            return text;
+        }
 
         // If user selects Copilot as the judgement model, hand off to Copilot Chat UI.
         if (currentModelType == ProjectSettingsState.JudgementModel.COPILOT) {
@@ -175,8 +190,6 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 refactoringNotificationTask.add(rnt);
                 setCheckingForRefactoringOpportunities(rnt, project);
             }
-
-            AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
 
             if (editor == null || file == null) return text;
 
@@ -339,6 +352,25 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         Notifications.Bus.notify(notification, project);
     }
 
+    private boolean wasCopiedInsideIde(Project project, String pastedText) {
+        if (project == null || pastedText == null) {
+            return false;
+        }
+
+        CopiedSnippetInfo copiedInfo = lastCopiedSnippetByProject.get(project);
+        if (copiedInfo == null) {
+            return false;
+        }
+
+        long ageMs = System.currentTimeMillis() - copiedInfo.timestampMs;
+        if (ageMs > INTERNAL_COPY_VALIDITY_MS) {
+            lastCopiedSnippetByProject.remove(project, copiedInfo);
+            return false;
+        }
+
+        return Objects.equals(copiedInfo.text, pastedText);
+    }
+
     /**
      * Schedules the AIDER workflow after a debounce delay (timeBuffer seconds) per project.
      * If user pastes again within the buffer window, the previous pending task is canceled.
@@ -367,6 +399,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             public void run() {
                 // Clear the pending task pointer for this project.
                 pendingAiderTaskByProject.remove(project);
+                lastCopiedSnippetByProject.remove(project);
 
                 ApplicationManager.getApplication().executeOnPooledThread(() -> {
                     try {
@@ -401,6 +434,16 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             LOG.error("[ACP] Failed to schedule AIDER workflow.", ex.getMessage());
             // Fallback: run immediately if scheduling fails.
             task.run();
+        }
+    }
+
+    private static final class CopiedSnippetInfo {
+        private final String text;
+        private final long timestampMs;
+
+        private CopiedSnippetInfo(String text, long timestampMs) {
+            this.text = text;
+            this.timestampMs = timestampMs;
         }
     }
 }

@@ -1019,4 +1019,15 @@ public final class ExtractMethodUsefulnessAnalyzer {
         }
         return false;
     }
+
+    private static boolean intersects1(Set<String> a, Set<String> b) {
+        if (a == null || b == null || a.isEmpty() || b.isEmpty()) return false;
+        // Iterate the smaller set for efficiency
+        Set<String> small = a.size() <= b.size() ? a : b;
+        Set<String> large = small == a ? b : a;
+        for (String s : small) {
+            if (large.contains(s)) return true;
+        }
+        return false;
+    }
 }

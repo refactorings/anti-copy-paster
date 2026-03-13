@@ -3,9 +3,14 @@ package org.jetbrains.research.anticopypaster.agents;
 import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
 import com.intellij.openapi.project.Project;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import java.lang.reflect.Type;
 import java.util.*;
+import java.util.Locale;
 import java.util.function.Function;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 import java.util.regex.Matcher;
@@ -18,6 +23,167 @@ public class detection {
     private static final String CLONE_DB_PATH = "combined_clone_database_cleaned.csv";
     private static final int DETECTION_FEWSHOT_K = 8;
     private static final int DETECTION_MAX_CHARS = 400;
+
+    public void saveAsNiCadXml(DetectionResult result, String filePath, Path outputPath) throws IOException {
+        if (outputPath == null) {
+            throw new IllegalArgumentException("outputPath must not be null");
+        }
+        String xml = toNiCadXml(result, filePath);
+        Files.writeString(outputPath, xml, StandardCharsets.UTF_8);
+    }
+
+    public String toNiCadXml(DetectionResult result, String filePath) {
+        String normalizedFilePath = normalizeNiCadSourcePath(filePath);
+        StringBuilder xml = new StringBuilder();
+        xml.append("<clones>\n");
+        xml.append("<systeminfo processor=\"nicad3\" system=\"_\" granularity=\"blocks-consistent\" threshold=\"20%\" minlines=\"5\" maxlines=\"2500\"/>\n");
+
+        List<DetectedClone> clones = (result == null || result.clones == null) ? Collections.emptyList() : result.clones;
+        int npairs = 0;
+        for (DetectedClone clone : clones) {
+            if (clone != null && clone.ranges != null && clone.ranges.size() >= 2) {
+                npairs += clone.ranges.size() * (clone.ranges.size() - 1) / 2;
+            }
+        }
+        xml.append("<cloneinfo npcs=\"").append(countCloneSources(clones)).append("\" npairs=\"").append(npairs).append("\"/>\n");
+        xml.append("<runinfo ncompares=\"0\" cputime=\"0\"/>\n");
+        xml.append("<classinfo nclasses=\"").append(countCloneClasses(clones)).append("\"/>\n\n");
+
+        int classId = 1;
+        int pcid = 1;
+        for (DetectedClone clone : clones) {
+            if (clone == null || clone.ranges == null || clone.ranges.size() < 2) {
+                continue;
+            }
+
+            int nlines = computeCloneNLines(clone);
+            int similarity = estimateSimilarity(clone);
+            xml.append("<class classid=\"").append(classId++)
+                    .append("\" nclones=\"").append(clone.ranges.size())
+                    .append("\" nlines=\"").append(nlines)
+                    .append("\" similarity=\"").append(similarity)
+                    .append("\">\n");
+
+            for (CloneRange range : clone.ranges) {
+                if (range == null) {
+                    continue;
+                }
+                xml.append("<source file=\"").append(escapeXml(normalizedFilePath))
+                        .append("\" startline=\"").append(range.startLine)
+                        .append("\" endline=\"").append(range.endLine)
+                        .append("\" pcid=\"").append(pcid++)
+                        .append("\"></source>\n");
+            }
+
+            xml.append("</class>\n\n");
+        }
+
+        xml.append("</clones>\n");
+        return xml.toString();
+    }
+
+    private String normalizeNiCadSourcePath(String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            return "unknown";
+        }
+        try {
+            return Path.of(filePath).toAbsolutePath().normalize().toString();
+        } catch (Exception e) {
+            return filePath;
+        }
+    }
+
+    private int countCloneSources(List<DetectedClone> clones) {
+        if (clones == null || clones.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (DetectedClone clone : clones) {
+            if (clone != null && clone.ranges != null) {
+                count += clone.ranges.size();
+            }
+        }
+        return count;
+    }
+
+    private int countCloneClasses(List<DetectedClone> clones) {
+        if (clones == null || clones.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (DetectedClone clone : clones) {
+            if (clone != null && clone.ranges != null && clone.ranges.size() >= 2) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int computeCloneNLines(DetectedClone clone) {
+        if (clone == null || clone.ranges == null || clone.ranges.isEmpty()) {
+            return 0;
+        }
+        CloneRange first = clone.ranges.get(0);
+        if (first == null) {
+            return 0;
+        }
+        return Math.max(0, first.endLine - first.startLine + 1);
+    }
+
+    private int estimateSimilarity(DetectedClone clone) {
+        String a = clone == null || clone.cloneCodeA == null ? "" : clone.cloneCodeA;
+        String b = clone == null || clone.cloneCodeB == null ? "" : clone.cloneCodeB;
+        if (a.isBlank() || b.isBlank()) {
+            return 100;
+        }
+
+        String na = collapseWhitespace(a);
+        String nb = collapseWhitespace(b);
+        if (na.isEmpty() && nb.isEmpty()) {
+            return 100;
+        }
+
+        int maxLen = Math.max(na.length(), nb.length());
+        if (maxLen == 0) {
+            return 100;
+        }
+
+        int distance = levenshteinDistance(na, nb);
+        int similarity = (int) Math.round((1.0 - ((double) distance / maxLen)) * 100.0);
+        return Math.max(0, Math.min(100, similarity));
+    }
+
+    private int levenshteinDistance(String a, String b) {
+        int[][] dp = new int[a.length() + 1][b.length() + 1];
+        for (int i = 0; i <= a.length(); i++) {
+            dp[i][0] = i;
+        }
+        for (int j = 0; j <= b.length(); j++) {
+            dp[0][j] = j;
+        }
+        for (int i = 1; i <= a.length(); i++) {
+            for (int j = 1; j <= b.length(); j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                dp[i][j] = Math.min(
+                        Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1),
+                        dp[i - 1][j - 1] + cost
+                );
+            }
+        }
+        return dp[a.length()][b.length()];
+    }
+
+    private String escapeXml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("\"", "&quot;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("'", "&apos;");
+    }
 
     // ---- Snippet-centered detection helpers ----
     private static int[] findSnippetLineRange(String fileSource, String selectedSnippet) {
@@ -310,6 +476,9 @@ public class detection {
                     if (c == null) continue;
                     if (c.cloneCodeA == null) c.cloneCodeA = "";
                     if (c.cloneCodeB == null) c.cloneCodeB = "";
+                    if (c.id == null || c.id.isBlank()) {
+                        c.id = "clone_" + UUID.randomUUID().toString().replace("-", "").toLowerCase(Locale.ROOT);
+                    }
                 }
             }
             return result;

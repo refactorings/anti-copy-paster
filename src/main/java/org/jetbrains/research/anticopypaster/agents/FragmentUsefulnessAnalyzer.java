@@ -5,7 +5,6 @@ import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.openapi.util.TextRange;
 
 import java.util.*;
 import java.util.regex.Pattern;

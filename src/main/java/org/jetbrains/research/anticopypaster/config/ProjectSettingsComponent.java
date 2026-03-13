@@ -148,6 +148,7 @@ public class ProjectSettingsComponent {
     private JPanel nameModelPanel;
     private JPanel nameNumberPanel;
     private JPanel parameterNamePanel;
+    private JScrollPane scrollpanel;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     private final Project projectRef;
     private Integer pendingMainModelIndex = null;
@@ -816,8 +817,8 @@ public class ProjectSettingsComponent {
     /**
      * Returns the root settings panel for embedding into dialogs.
      */
-    public JPanel getPanel() {
-        return mainPanel;
+    public JComponent getPanel() {
+        return scrollpanel;
     }
 
     /**
