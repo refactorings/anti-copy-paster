@@ -502,7 +502,7 @@ public class ProjectSettingsComponent {
             public void changedUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
 
             private void updateWarning() {
-                boolean isClone = "Clone".equals(modelComboBox.getSelectedItem());
+                boolean isClone = isCloneSelected();
                 boolean isEmpty = new String(agentApiKey.getPassword()).trim().isEmpty();
                 updateApiKeyWarningForPanel(apiKeyPanel, apiKeyWarningLabel, isClone && isEmpty);
             }
@@ -515,7 +515,7 @@ public class ProjectSettingsComponent {
                 public void changedUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
 
                 private void updateWarning() {
-                    boolean isCloneMulti = "Clone_multiagent".equals(modelComboBox.getSelectedItem());
+                    boolean isCloneMulti = isCloneMultiAgentSelected();
                     boolean isEmpty = new String(multiAgentApiKey.getPassword()).trim().isEmpty();
                     updateApiKeyWarningForPanel(multiAgentApiKeyPanel, multiAgentApiKeyWarningLabel, isCloneMulti && isEmpty);
                 }
@@ -523,8 +523,8 @@ public class ProjectSettingsComponent {
         }
 
         // Initialize visibility based on current field state
-        boolean initialIsCloneMulti = "Clone_multiagent".equals(modelComboBox.getSelectedItem());
-        boolean initialIsClone = "Clone".equals(modelComboBox.getSelectedItem());
+        boolean initialIsCloneMulti = isCloneMultiAgentSelected();
+        boolean initialIsClone = isCloneSelected();
         boolean initialSingleEmpty = agentApiKey == null || new String(agentApiKey.getPassword()).trim().isEmpty();
         boolean initialMultiEmpty = multiAgentApiKey == null || new String(multiAgentApiKey.getPassword()).trim().isEmpty();
         updateApiKeyWarningForPanel(apiKeyPanel, apiKeyWarningLabel, initialIsClone && initialSingleEmpty);
@@ -1116,12 +1116,17 @@ public class ProjectSettingsComponent {
         return complexityRequiredCheckBox.isSelected();
     }
 
-    /**
-     * Returns true if the main model selection is Clone_multiagent.
-     */
+
     private boolean isCloneMultiAgentSelected() {
-        Object sel = modelComboBox != null ? modelComboBox.getSelectedItem() : null;
-        return "Clone_multiagent".equals(sel);
+        Object mainSel = modelComboBox != null ? modelComboBox.getSelectedItem() : null;
+        Object nameSel = nameModel != null ? nameModel.getSelectedItem() : null;
+        return "Clone_multiagent".equals(mainSel) || "Clone_multiagent".equals(nameSel);
+    }
+
+    private boolean isCloneSelected() {
+        Object mainSel = modelComboBox != null ? modelComboBox.getSelectedItem() : null;
+        Object nameSel = nameModel != null ? nameModel.getSelectedItem() : null;
+        return "Clone".equals(mainSel) || "Clone".equals(nameSel);
     }
 
     /**
