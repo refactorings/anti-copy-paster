@@ -270,14 +270,14 @@ public class refactoring {
 //        if (clone.reason != null && !clone.reason.trim().isEmpty()) {
 //            sb.append("Reason for refactoring: ").append(clone.reason).append("\n\n");
 //        }
-
+//
 //        // ===== Optional RAG few-shot guidance =====
 //        if (ragExamples != null && !ragExamples.trim().isEmpty()) {
 //            sb.append("=== FEW-SHOT GUIDANCE (RAG) ===\n");
 //            sb.append("Use these examples only as guidance for structure and style. Do NOT copy verbatim.\n");
 //            sb.append(ragExamples).append("\n\n");
 //        }
-
+//
 //        // ===== Refactoring Task (pattern + intent) =====
 //        sb.append("=== REFACTORING TASK ===\n");
 //        sb.append("Refactoring Pattern: Extract Method (ONLY)\n");

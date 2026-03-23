@@ -21,15 +21,6 @@ import com.intellij.diff.DiffContentFactory;
 import com.intellij.diff.DiffManager;
 import com.intellij.diff.requests.SimpleDiffRequest;
 
-import com.intellij.execution.ProgramRunnerUtil;
-import com.intellij.execution.RunManager;
-import com.intellij.execution.RunnerAndConfigurationSettings;
-import com.intellij.execution.executors.DefaultRunExecutor;
-import com.intellij.execution.junit.JUnitConfiguration;
-import com.intellij.execution.configurations.ConfigurationType;
-import com.intellij.execution.runners.ExecutionEnvironment;
-import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
-
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.execution.impl.ConsoleViewImpl;

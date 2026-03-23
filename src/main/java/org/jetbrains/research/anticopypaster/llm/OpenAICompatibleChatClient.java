@@ -21,7 +21,7 @@ public final class OpenAICompatibleChatClient implements LlmClient {
     private final HttpClient http = HttpClient.newHttpClient();
 
     public OpenAICompatibleChatClient(String baseUrl, String apiKey, String model) {
-        this(baseUrl, apiKey, model, 8192, 4);
+        this(baseUrl, apiKey, model, defaultMaxTokensForModel(model), 4);
     }
 
     public OpenAICompatibleChatClient(String baseUrl, String apiKey, String model, int maxTokens, int maxContinueTurns) {
@@ -54,13 +54,15 @@ public final class OpenAICompatibleChatClient implements LlmClient {
                 body.addProperty("temperature", 0.2);
             }
 
+            int effectiveMaxTokens = effectiveMaxTokensForRequest();
+
             // Most OpenAI-compatible providers support max_tokens on /v1/chat/completions.
             // This helps for long Java files.
             if (model.startsWith("gpt-5")) {
                 // Newer OpenAI models require max_completion_tokens instead of max_tokens
-                body.addProperty("max_completion_tokens", maxTokens);
+                body.addProperty("max_completion_tokens", effectiveMaxTokens);
             } else {
-                body.addProperty("max_tokens", maxTokens);
+                body.addProperty("max_tokens", effectiveMaxTokens);
             }
 
             JsonObject choice = sendOnce(body);
@@ -95,6 +97,22 @@ public final class OpenAICompatibleChatClient implements LlmClient {
         }
 
         return full.toString();
+    }
+
+    private static int defaultMaxTokensForModel(String model) {
+        String normalized = model == null ? "" : model.trim().toLowerCase();
+        if (normalized.startsWith("gpt-3.5")) {
+            return 4096;
+        }
+        return 8192;
+    }
+
+    private int effectiveMaxTokensForRequest() {
+        String normalized = model == null ? "" : model.trim().toLowerCase();
+        if (normalized.startsWith("gpt-3.5")) {
+            return Math.min(maxTokens, 4096);
+        }
+        return maxTokens;
     }
 
     private JsonObject sendOnce(JsonObject body) throws Exception {

@@ -609,36 +609,20 @@ public final class CloneRefactorWorkflow {
 
                 // Precompute RAG guidance once per file (it will be prepended to refactor feedback each attempt).
                 String refactorRagGuidance = "";
-                boolean skipRagForModel = false;
+
                 try {
-                    ProjectSettingsState stForRag = ProjectSettingsState.getInstance(project);
-                    if (stForRag != null) {
-                        String modelName = stForRag.getAiderModel();
-                        if (modelName != null && modelName.toLowerCase(Locale.ROOT).contains("gpt-3.5")) {
-                            skipRagForModel = true;
-                            logStage(viewer, "RAG", "Skipping RAG for model: " + modelName);
-                        }
-                    }
-                } catch (Throwable ignored) {
-                    // ignore and proceed normally
+                    refactorRagGuidance = RagService.buildRefactorRagGuidance(
+                            project,
+                            REFACTOR_RAG_DB_RESOURCE,
+                            refactorRagQuery,
+                            REFACTOR_RAG_TOP_K,
+                            REFACTOR_RAG_MAX_CHARS
+                    );
+                } catch (Throwable t) {
+                    refactorRagGuidance = "";
+                    logStage(viewer, "RAG", "refactor RAG guidance failed: " + t.getMessage());
                 }
 
-                if (!skipRagForModel) {
-                    try {
-                        refactorRagGuidance = RagService.buildRefactorRagGuidance(
-                                project,
-                                REFACTOR_RAG_DB_RESOURCE,
-                                refactorRagQuery,
-                                REFACTOR_RAG_TOP_K,
-                                REFACTOR_RAG_MAX_CHARS
-                        );
-                    } catch (Throwable t) {
-                        refactorRagGuidance = "";
-                        logStage(viewer, "RAG", "refactor RAG guidance failed: " + t.getMessage());
-                    }
-                } else {
-                    refactorRagGuidance = "";
-                }
 
                 String currentSource = originalSource;
                 String feedback = null;
@@ -1078,7 +1062,7 @@ public final class CloneRefactorWorkflow {
             content = escapeHtml(content).replace("\n", "<br/>");
             content = "<html>" + content + "</html>";
         }
-        Notification n = new Notification("AntiCopyPaster", "AntiCopyPaster", content, type);
+        Notification n = new Notification("AntiCopyPaster", "Clone Refactoring", content, type);
         Notifications.Bus.notify(n, project);
     }
 
@@ -2548,13 +2532,13 @@ public final class CloneRefactorWorkflow {
         final java.util.concurrent.atomic.AtomicBoolean decision = new java.util.concurrent.atomic.AtomicBoolean(false);
 
         Runnable ui = () -> {
-            Disposable disp = Disposer.newDisposable("AntiCopyPasterDiffPreview");
+            Disposable disp = Disposer.newDisposable("DiffPreview");
             try {
                 DiffContentFactory f = DiffContentFactory.getInstance();
                 var left = f.create(before == null ? "" : before);
                 var right = f.create(after == null ? "" : after);
 
-                String title = "AntiCopyPaster Refactor Preview";
+                String title = "Refactor Preview";
                 String leftTitle = "Current";
                 String rightTitle = "Proposed";
                 SimpleDiffRequest req = new SimpleDiffRequest(title, left, right, leftTitle, rightTitle);
