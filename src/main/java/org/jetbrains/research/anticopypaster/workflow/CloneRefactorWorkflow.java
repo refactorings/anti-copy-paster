@@ -503,7 +503,6 @@ public final class CloneRefactorWorkflow {
                     logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
                 }
 
-                logStage(viewer, "DETECTION", "raw result: " + (det == null ? "null" : ("clones=" + (det.clones == null ? "null" : det.clones.size()))));
 
                 if (det == null || det.clones == null || det.clones.isEmpty()) {
                     logStage(viewer, "DETECTION", "no clones from LLM; trying PSI fallback (same-file)");
@@ -555,11 +554,11 @@ public final class CloneRefactorWorkflow {
                     }
                 }
 
-                int detectedCloneCount = 0;
+                int detectedCloneCount = 1;
                 if (det.clones != null) {
                     for (detection.DetectedClone c : det.clones) {
                         if (c != null && c.ranges != null) {
-                            detectedCloneCount += c.ranges.size();
+                            detectedCloneCount += c.ranges.size() - 1;
                         }
                     }
                 }
@@ -1632,12 +1631,6 @@ public final class CloneRefactorWorkflow {
         }
     }
 
-    /**
-     * Best-effort: add JUnit4 + Hamcrest + EvoSuite runtime jars as a TEST-scoped module library so that
-     * IntelliJ can resolve native EvoSuite tests (EvoRunner/runtime) and the editor does not show red.
-     *
-     * This avoids modifying pom.xml / build.gradle and works for plain Java projects.
-     */
     private static void ensureTestDependencies(Project project, File baseDir, File evosuiteJar) {
         try {
             if (project == null || project.isDisposed()) return;
