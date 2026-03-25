@@ -1165,7 +1165,7 @@
                     </constraints>
                     <properties>
                       <text value=""/>
-                      <toolTipText value="This is the Api Base of Azure"/>
+                      <toolTipText value="This is the Api Base of Azure or Ollama"/>
                     </properties>
                   </component>
                 </children>
@@ -1350,7 +1350,7 @@
                     </constraints>
                     <properties>
                       <text value=""/>
-                      <toolTipText value="This is the Api Base of Azure"/>
+                      <toolTipText value=""/>
                     </properties>
                   </component>
                 </children>

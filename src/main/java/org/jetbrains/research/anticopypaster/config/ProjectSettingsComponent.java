@@ -1311,21 +1311,45 @@ public class ProjectSettingsComponent {
         complexityRequiredCheckBox.setSelected(required);
     }
     /**
-     * Sets the name-model selection by index while suppressing change side-effects during load.
+     * Sets the name-model selection by value while suppressing change side-effects during load.
      */
-    public void setNameModel(int selectedIndex) {
+    public void setNameModel(String selectedValue) {
         isLoadingSettings = true;
         try {
-            nameModel.setSelectedIndex(selectedIndex);
+            if (selectedValue == null || selectedValue.isBlank()) {
+                selectedValue = "code2vec";
+            }
+
+            ComboBoxModel<String> model = nameModel.getModel();
+            boolean found = false;
+            for (int i = 0; i < model.getSize(); i++) {
+                String value = model.getElementAt(i);
+                if (selectedValue.equals(value)) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (found) {
+                nameModel.setSelectedItem(selectedValue);
+            } else {
+                nameModel.setSelectedItem("code2vec");
+            }
+
             lastNameModel = nameModel.getSelectedItem();
+            pendingNameModelIndex = nameModel.getSelectedIndex();
+            updatePanelVisibilities();
         } finally {
             isLoadingSettings = false;
         }
     }
     /**
-     * Returns the index of the selected name-model option.
+     * Returns the selected name-model option.
      */
-    public int getNameModel() { return (nameModel.getSelectedIndex()); }
+    public String getNameModel() {
+        Object selected = nameModel.getSelectedItem();
+        return selected == null ? "code2vec" : selected.toString();
+    }
     /**
      * Returns the number of predicted names to request for suggestions.
      */
@@ -1352,6 +1376,20 @@ public class ProjectSettingsComponent {
      */
     public void setFilesPath(String path) {
         filesPath.setText(path);
+    }
+
+    /**
+     * Returns the configured Aider executable path.
+     */
+    public String getAiderPath() {
+        return textField1.getText();
+    }
+
+    /**
+     * Sets the configured Aider executable path.
+     */
+    public void setAiderPath(String path) {
+        textField1.setText(path == null ? "" : path);
     }
 
     /**
@@ -1639,6 +1677,14 @@ public class ProjectSettingsComponent {
             modelPanelX.setVisible(!isOllama);
         }
 
+        JLabel helpLabel = null;
+        if (azureApiBaseX == azureApiBase) {
+            helpLabel = apiBaseHelp;
+        } else if (azureApiBaseX == multiAgentAzureApiBase) {
+            helpLabel = multiAgentApiBaseHelp;
+        }
+        updateApiBaseHelpLabel(helpLabel, provider);
+
         // Refresh layouts so UI updates immediately
         if (apiKeyPanelX != null) { apiKeyPanelX.revalidate(); apiKeyPanelX.repaint(); }
         if (azureApiVersionX != null) { azureApiVersionX.revalidate(); azureApiVersionX.repaint(); }
@@ -1661,6 +1707,25 @@ public class ProjectSettingsComponent {
         if (targetApiKeyPanel != null) {
             targetApiKeyPanel.revalidate();
             targetApiKeyPanel.repaint();
+        }
+    }
+
+    private void updateApiBaseHelpLabel(JLabel helpLabel, String provider) {
+        if (helpLabel == null) {
+            return;
+        }
+
+        String p = provider == null ? "" : provider.trim();
+
+        if ("Ollama".equalsIgnoreCase(provider)) {
+//            helpLabel.setText("API base for Ollama");
+            helpLabel.setToolTipText("API Base for the Ollama server, for example http://localhost:11434/v1");
+        } else if ("Azure".equalsIgnoreCase(provider)) {
+//            helpLabel.setText("API base for Azure");
+            helpLabel.setToolTipText("API Base for the Azure OpenAI endpoint, for example https://your-resource.openai.azure.com");
+        } else {
+//            helpLabel.setText(p + " API base");
+            helpLabel.setToolTipText("Base URL used by " + p + " provider.");
         }
     }
 }

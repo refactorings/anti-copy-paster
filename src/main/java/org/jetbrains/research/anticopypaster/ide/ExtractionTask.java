@@ -488,7 +488,7 @@ public class ExtractionTask {
             String methodName;
             // Predictions
             List<String> pred = null;
-            if(ProjectSettingsState.getInstance(project).useNameRec == 0) {
+            if ("code2vec".equals(ProjectSettingsState.getInstance(project).useNameRec)) {
                 try {
                     List<String> recs = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
                     if (recs != null) pred = recs;
@@ -508,7 +508,7 @@ public class ExtractionTask {
                         finalizeExtraction(project, containingClass, factory, results, finalTemplate1, finalReturnType1, normalizedLambdaArgs, methodName, extractToStatic)
                 );
             }
-            else if (ProjectSettingsState.getInstance(project).useNameRec == 1) {
+            else if ("built-in".equals(ProjectSettingsState.getInstance(project).useNameRec)) {
                 pred = new ArrayList<>();
                 pred.add("extractedMethod");
                 methodName = getNewMethodName(containingClass, pred.get(0));

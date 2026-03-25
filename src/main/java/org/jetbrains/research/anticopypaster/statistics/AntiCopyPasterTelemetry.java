@@ -71,7 +71,7 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         Thread predserver = new Thread(new predHolder());
         predserver.start();
-        if(settings.useNameRec == 0){
+        if ("code2vec".equals(settings.useNameRec)) {
             String pluginId = "org.jetbrains.research.anticopypaster";
             String pluginPath = PluginManagerCore.getPlugin(PluginId.getId(pluginId)).getPluginPath().toString();
             pluginPath = pluginPath.replace("\\", "/");

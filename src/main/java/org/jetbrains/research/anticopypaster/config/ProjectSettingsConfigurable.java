@@ -53,14 +53,16 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= settingsComponent.getComplexitySensitivity() != settings.complexitySensitivity;
         modified |= settingsComponent.getComplexityEnabled() != settings.complexityEnabled;
         modified |= settingsComponent.getComplexityRequired() != settings.complexityRequired;
-        modified |= settingsComponent.getNameModel() != settings.useNameRec;
+        modified |= !Objects.equals(settingsComponent.getNameModel(), settings.useNameRec);
         modified |= settingsComponent.getNumOfPreds() != settings.numOfPreds;
         modified |= settingsComponent.getJudgementModel() != settings.judgementModel;
-        modified |= settingsComponent.getCloneMode() != settings.getCloneMode();
+        modified |= settings.judgementModel == ProjectSettingsState.JudgementModel.AIDER &&
+                settingsComponent.getCloneMode() != settings.getCloneMode();
         modified |= settingsComponent.getExtractionType() != settings.extractionType;
         modified |= settingsComponent.getModelSensitivity() != settings.modelSensitivity;
         modified |= settingsComponent.getMaxParams() != settings.maxParams;
         modified |= !Objects.equals(settingsComponent.getAiderApiKey(), settings.getAiderApiKey());
+        modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
         modified |= !Objects.equals(settingsComponent.getSelectedAiderModel(), settings.getAiderModel());
         modified |= !Objects.equals(settingsComponent.getLlmProvider(), settings.getLlmprovider());
         modified |= !Objects.equals(settingsComponent.getApiBase(), settings.getApiBase());
@@ -76,8 +78,8 @@ public class ProjectSettingsConfigurable implements Configurable {
     @Override
     public void apply() throws ConfigurationException {
         if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
-                settingsComponent.getNameModel() == 2 ||
-                settingsComponent.getNameModel() == 3) &&
+                "Clone".equals(settingsComponent.getNameModel()) ||
+                "Clone_multiagent".equals(settingsComponent.getNameModel())) &&
                 (settingsComponent.getAiderApiKey() == null || settingsComponent.getAiderApiKey().trim().isEmpty())) {
             throw new ConfigurationException("API Key must be provided when using LLM.");
         }
@@ -126,6 +128,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.setLlmprovider(settingsComponent.getLlmProvider());
         settings.setAiderModel(settingsComponent.getSelectedAiderModel());
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
+        settings.setAiderPath(settingsComponent.getAiderPath());
         settings.setApiBase(settingsComponent.getApiBase());
         settings.setApiVersion(settingsComponent.getApiVersion());
         settings.setFilesPath(settingsComponent.getFilesPath());
@@ -154,10 +157,12 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setComplexitySensitivity(settings.complexitySensitivity);
         settingsComponent.setComplexityEnabled(settings.complexityEnabled);
         settingsComponent.setComplexityRequired(settings.complexityRequired);
+        settingsComponent.setJudgementModel(settings.judgementModel);
+        if (settings.judgementModel == ProjectSettingsState.JudgementModel.AIDER) {
+            settingsComponent.setCloneMode(settings.getCloneMode());
+        }
         settingsComponent.setNameModel(settings.useNameRec);
         settingsComponent.setNumOfPreds(settings.numOfPreds);
-        settingsComponent.setJudgementModel(settings.judgementModel);
-        settingsComponent.setCloneMode(settings.getCloneMode());
         settingsComponent.setExtractionType(settings.extractionType);
         settingsComponent.setModelSensitivity(settings.modelSensitivity);
         settingsComponent.setMaxParams(settings.maxParams);
@@ -165,6 +170,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setLlmProvider(settings.getLlmprovider());
         settingsComponent.setSelectedAiderModel(settings.getAiderModel());
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());
+        settingsComponent.setAiderPath(settings.getAiderPath());
         settingsComponent.setFilesPath(settings.getFilesPath());
         settingsComponent.setApiBase(settings.getApiBase());
         settingsComponent.setApiVersion(settings.getApiVersion());

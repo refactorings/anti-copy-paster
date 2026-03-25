@@ -566,7 +566,7 @@ public final class CloneRefactorWorkflow {
 
                 if (detectedCloneCount < minimumCloneCount) {
                     logStage(viewer, "DETECTION", "stopped: detected clone range count " + detectedCloneCount +
-                            " is smaller than minimumCloneCount=" + minimumCloneCount + " for Clone_multiagent");
+                            " is smaller than minimumCloneCount=" + minimumCloneCount + " for Clone_multiagent. This parameter is set in the settings and can be adjusted based on your needs.");
                     notify(project,
                             "[Clone] Only " + detectedCloneCount + " clone range(s) detected in: " + fileName +
                                     ". Need at least " + minimumCloneCount + " to continue.",
@@ -588,7 +588,6 @@ public final class CloneRefactorWorkflow {
                             if (isCancelled()) return;
                             String changedMethod = findModifiedCloneMethod(project, vf, listenerSnapshots);
                             if (changedMethod != null) {
-                                logStage(viewer, "WATCH", "stopped: cloned method modified by user: " + changedMethod);
                                 CloneRefactorWorkflow.notify(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethod,
                                         NotificationType.WARNING);
@@ -1009,8 +1008,8 @@ public final class CloneRefactorWorkflow {
                         notify(project, "[Clone] Tests failed (attempt " + attempt + ") for: " + fileName, NotificationType.WARNING);
                 }
 
-                logStage(viewer, "WORKFLOW", "FAILED after retries");
-                notify(project, "[Clone] Workflow failed after retries for: " + vf.getName(), NotificationType.ERROR);
+                logStage(viewer, "WORKFLOW", "FAILED after " + maxAttempts + " retries");
+                notify(project, "[Clone] Workflow failed after " + maxAttempts + " retries for: " + vf.getName(), NotificationType.ERROR);
 
             } catch (Exception e) {
                 if (isCancelled() || Thread.currentThread().isInterrupted()
