@@ -169,149 +169,159 @@ public class refactoring {
         return new RefactorResult("refactored", fileName, newSource, "Refactoring successful");
     }
 
-    /**
-     * Improved refactor prompt (combined ideas from:
-     * - RefAgent (structured task, strong constraints, clear output contract)
-     * - ChatGPT for Code Refactoring paper (role + working set + context + steps + output format)
-     */
+
     private String buildRefactorPrompt(String fileName, String fileSource, DetectedClone clone, String ragExamples) {
         StringBuilder sb = new StringBuilder();
 
         // ===== Refactoring Agent prompt (paper listing: Refactoring Agent prompt with RAG context) =====
-        sb.append("You are a Java software engineer.\n\n");
-        sb.append("Your task is to refactor the given Java file to remove cloned code.\n");
-        sb.append("You must apply Extract Method refactoring only.\n\n");
-
-        sb.append("Input:\n");
-        sb.append("- A Java source file.\n");
-        sb.append("- Detected cloned code snippets copied verbatim from the file.\n\n");
-
-        sb.append("Java source file (FULL FILE):\n");
-        sb.append("```\n").append(fileSource).append("\n```\n\n");
-
-        sb.append("Detected cloned code snippets (copied verbatim):\n");
-        if (clone != null) {
-            if (clone.cloneCode != null && !clone.cloneCode.trim().isEmpty()) {
-                sb.append("```\n").append(clone.cloneCode).append("\n```\n\n");
-            }
-            if (clone.ranges != null && !clone.ranges.isEmpty()) {
-                sb.append("(Approximate line ranges, secondary hint)\n");
-                for (CloneRange range : clone.ranges) {
-                    sb.append("- from line ").append(range.startLine)
-                      .append(" to line ").append(range.endLine).append("\n");
-                }
-                sb.append("\n");
-            }
-        }
-
-        sb.append("Retrieved refactoring examples (for guidance only):\n");
-        sb.append("Each example includes a BEFORE code fragment, an AFTER code fragment,\n");
-        sb.append("and a short note describing the refactoring intent.\n");
-        sb.append("Use these examples only as guidance.\n");
-        sb.append("Do not copy code directly from them.\n");
-        sb.append("Always follow the Extract Method pattern.\n\n");
-
-        // RAG block (keep placeholder even if empty so the prompt matches the paper listing)
-        sb.append("[RAG_EXAMPLES]\n");
-        if (ragExamples != null && !ragExamples.trim().isEmpty()) {
-            sb.append(ragExamples.trim()).append("\n");
-        }
-        sb.append("\n");
-
-        sb.append("Instructions:\n");
-        sb.append("- Use Extract Method to remove clones.\n");
-        sb.append("- Do not apply any other refactoring type.\n");
-        sb.append("- Do not rename existing classes, methods, or variables unless required by Extract Method.\n");
-        sb.append("- Do not modify package or import declarations.\n");
-        sb.append("- Restrict all changes to this file only.\n");
-        sb.append("- Preserve the original program behavior.\n");
-        sb.append("- Keep the refactoring minimal and focused.\n\n");
-
-        sb.append("Output:\n");
-        sb.append("- Return the full updated Java file.\n");
-        sb.append("- Output exactly one Java code block.\n");
-        sb.append("- Do not include any explanation or text outside the code block.\n");
-        sb.append("\n");
-
-        // ===== Role =====
-//        sb.append("You are an expert Java refactoring agent.\n");
-//        sb.append("You specialize in clone removal via Extract Method and improving software quality ");
-//        sb.append("(readability, maintainability, cohesion, and low coupling).\n");
-//        sb.append("Follow the constraints and output format EXACTLY.\n");
-//        sb.append("If anything is unclear, ask at most ONE concise clarification question; otherwise proceed.\n\n");
+//        sb.append("You are a Java software engineer.\n\n");
+//        sb.append("Your task is to refactor the given Java file to remove cloned code.\n");
+//        sb.append("You must apply Extract Method refactoring only.\n\n");
 //
-//        // ===== Working Set =====
-//        sb.append("=== WORKING SET (Single File Only) ===\n");
-//        sb.append("File name: ").append(fileName).append("\n");
-//        sb.append("You are given the FULL file source below. You may ONLY modify this file.\n");
+//        sb.append("Input:\n");
+//        sb.append("- A Java source file.\n");
+//        sb.append("- Detected cloned code snippets copied verbatim from the file.\n\n");
+//
+//        sb.append("Java source file (FULL FILE):\n");
 //        sb.append("```\n").append(fileSource).append("\n```\n\n");
 //
-//        // ===== Context =====
-//        sb.append("=== CONTEXT ===\n");
-//        sb.append("- Language: Java\n");
-//        sb.append("- Goal: Remove duplicated code (clone) with minimal behavior change.\n");
-//        sb.append("- Constraints: Preserve public API, preserve package/imports, keep semantics.\n\n");
-//
-//        // ===== Clone Context =====
-//        sb.append("=== CLONE CONTEXT ===\n");
-//        sb.append("Clone ID: ").append(clone.id).append("\n");
-//        if (clone.cloneCode != null && !clone.cloneCode.trim().isEmpty()) {
-//            sb.append("Representative clone snippet (PRIMARY ground truth):\n");
-//            sb.append("```\n").append(clone.cloneCode).append("\n```\n\n");
-//        }
-//        if (clone.ranges != null && !clone.ranges.isEmpty()) {
-//            sb.append("Approximate clone line ranges (SECONDARY, may be imprecise):\n");
-//            for (CloneRange range : clone.ranges) {
-//                sb.append("- from line ").append(range.startLine)
-//                  .append(" to line ").append(range.endLine).append("\n");
+//        sb.append("Detected cloned code snippets (copied verbatim):\n");
+//        if (clone != null) {
+//            if (clone.cloneCode != null && !clone.cloneCode.trim().isEmpty()) {
+//                sb.append("```\n").append(clone.cloneCode).append("\n```\n\n");
 //            }
-//            sb.append("\n");
+//            if (clone.ranges != null && !clone.ranges.isEmpty()) {
+//                sb.append("(Approximate line ranges, secondary hint)\n");
+//                for (CloneRange range : clone.ranges) {
+//                    sb.append("- from line ").append(range.startLine)
+//                      .append(" to line ").append(range.endLine).append("\n");
+//                }
+//                sb.append("\n");
+//            }
 //        }
+//
+//        sb.append("Retrieved refactoring examples (for guidance only):\n");
+//        sb.append("Each example includes a BEFORE code fragment, an AFTER code fragment,\n");
+//        sb.append("and a short note describing the refactoring intent.\n");
+//        sb.append("Use these examples only as guidance.\n");
+//        sb.append("Do not copy code directly from them.\n");
+//        sb.append("Always follow the Extract Method pattern.\n\n");
+//
+//        // RAG block (keep placeholder even if empty so the prompt matches the paper listing)
+//        sb.append("[RAG_EXAMPLES]\n");
+//        if (ragExamples != null && !ragExamples.trim().isEmpty()) {
+//            sb.append(ragExamples.trim()).append("\n");
+//        }
+//        sb.append("\n");
+//
+//        sb.append("Instructions:\n");
+//        sb.append("- Use Extract Method to remove clones.\n");
+//        sb.append("- Do not apply any other refactoring type.\n");
+//        sb.append("- Do not rename existing classes, methods, or variables unless required by Extract Method.\n");
+//        sb.append("- Do not modify package or import declarations.\n");
+//        sb.append("- Restrict all changes to this file only.\n");
+//        sb.append("- Preserve the original program behavior.\n");
+//        sb.append("- Keep the refactoring minimal and focused.\n\n");
+//
+//        sb.append("Output:\n");
+//        sb.append("- Return the full updated Java file.\n");
+//        sb.append("- Output exactly one Java code block.\n");
+//        sb.append("- Do not include any explanation or text outside the code block.\n");
+//        sb.append("\n");
+
+//         ===== Role =====
+        sb.append("You are an expert Java refactoring agent.\n");
+        sb.append("You specialize in clone removal via Extract Method and improving software quality ");
+        sb.append("(readability, maintainability, cohesion, and low coupling).\n");
+        sb.append("Follow the constraints and output format EXACTLY.\n");
+        sb.append("Do not skip the refactoring task. If the target clone can be extracted with parameters, you must still perform Extract Method.\n");
+        sb.append("If anything is unclear, prefer the most conservative valid Extract Method that targets the provided clone rather than leaving the file unchanged.\n\n");
+
+        // ===== Working Set =====
+        sb.append("=== WORKING SET (Single File Only) ===\n");
+        sb.append("File name: ").append(fileName).append("\n");
+        sb.append("You are given the FULL file source below. You may ONLY modify this file.\n");
+        sb.append("```\n").append(fileSource).append("\n```\n\n");
+
+        // ===== Context =====
+        sb.append("=== CONTEXT ===\n");
+        sb.append("- Language: Java\n");
+        sb.append("- Goal: Remove duplicated code (clone) with Extract Method if clones are worth refactoring.\n");
+        sb.append("- Constraints: Preserve public API, preserve package/imports, keep semantics.\n\n");
+
+        // ===== Clone Context =====
+        sb.append("=== CLONE CONTEXT ===\n");
+        sb.append("Clone ID: ").append(clone.id).append("\n");
+        if (clone.ranges != null && !clone.ranges.isEmpty()) {
+            sb.append("Approximate target clone ranges (secondary location hints):\n");
+            for (CloneRange range : clone.ranges) {
+                sb.append("- lines ").append(range.startLine)
+                  .append(" to ").append(range.endLine).append("\n");
+            }
+            sb.append("\n");
+        }
+        if (clone.cloneCode != null && !clone.cloneCode.trim().isEmpty()) {
+            sb.append("Representative clone snippet (MANDATORY refactoring target):\n");
+            sb.append("The refactoring must focus on occurrences corresponding to this snippet.\n");
+            sb.append("Use the ranges above only as approximate location hints.\n");
+            sb.append("If the snippet and ranges do not align perfectly, prioritize the snippet.\n");
+            sb.append("Do NOT ignore this snippet and do NOT switch to a different duplicated region.\n");
+            sb.append("```\n").append(clone.cloneCode).append("\n```\n\n");
+        }
+
 //        if (clone.reason != null && !clone.reason.trim().isEmpty()) {
 //            sb.append("Reason for refactoring: ").append(clone.reason).append("\n\n");
 //        }
-//
-//        // ===== Optional RAG few-shot guidance =====
-//        if (ragExamples != null && !ragExamples.trim().isEmpty()) {
-//            sb.append("=== FEW-SHOT GUIDANCE (RAG) ===\n");
-//            sb.append("Use these examples only as guidance for structure and style. Do NOT copy verbatim.\n");
-//            sb.append(ragExamples).append("\n\n");
-//        }
-//
-//        // ===== Refactoring Task (pattern + intent) =====
-//        sb.append("=== REFACTORING TASK ===\n");
-//        sb.append("Refactoring Pattern: Extract Method (ONLY)\n");
-//        sb.append("Intent: To improve maintainability and reduce duplication while preserving behavior.\n");
-//        sb.append("Requirements:\n");
-//        sb.append("1) Identify duplicated logic corresponding to the representative clone snippet.\n");
-//        sb.append("2) Extract the duplicated logic into one private helper method.\n");
-//        sb.append("3) Replace ALL duplicated occurrences with calls to the extracted method.\n");
-//        sb.append("4) Choose the smallest safe extraction boundary (minimal code movement).\n");
-//        sb.append("5) Ensure the result compiles as valid Java.\n\n");
-//
-//        // ===== Steps (structured, but must not be printed) =====
-//        sb.append("=== STEPS TO FOLLOW (DO NOT OUTPUT THESE STEPS) ===\n");
-//        sb.append("Step 1: Locate all occurrences of the duplicated logic (use snippet first, ranges second).\n");
-//        sb.append("Step 2: Create private helper method(s) with clear names.\n");
-//        sb.append("Step 3: Replace duplicated blocks with helper call.\n");
-//        sb.append("Step 4: Re-check for compilation issues (imports, generics, visibility, checked exceptions).\n\n");
-//
-//        // ===== Strict Constraints (hard rules) =====
-//        sb.append("=== STRICT CONSTRAINTS (HARD RULES) ===\n");
-//        sb.append("- Modify ONLY this file. Do NOT reference or require changes in other files.\n");
-//        sb.append("- Preserve the package line and ALL import statements EXACTLY (do not add/remove/reorder).\n");
-//        sb.append("- Do NOT change public/protected method signatures or class public API.\n");
-//        sb.append("- Do NOT introduce new classes or new files.\n");
-//        sb.append("- Do NOT change external behavior; keep outputs and side effects the same.\n");
-//        sb.append("- Minimize edits outside the clone regions.\n");
-//        sb.append("- Do NOT add explanatory prose outside code.\n\n");
-//
-//        // ===== Output Format (compatible with your extractor) =====
-//        sb.append("=== OUTPUT FORMAT ===\n");
-//        sb.append("- Output ONLY ONE Java code block containing the full updated file.\n");
-//        sb.append("- Do NOT output JSON.\n");
-//        sb.append("- Do NOT output multiple alternatives.\n");
-//        sb.append("- Do NOT output any text before or after the code block.\n");
+
+        if (ragExamples != null && !ragExamples.trim().isEmpty()) {
+            sb.append("=== FEW-SHOT GUIDANCE (RAG) ===\n");
+            sb.append("Use these examples only as guidance for structure and style. Do NOT copy verbatim.\n");
+            sb.append(ragExamples).append("\n\n");
+        }
+
+        // ===== Refactoring Task (pattern + intent) =====
+        sb.append("=== REFACTORING TASK ===\n");
+        sb.append("Refactoring Pattern: Extract Method (ONLY)\n");
+        sb.append("Intent: To improve maintainability and reduce duplication while preserving behavior.\n");
+        sb.append("Requirements:\n");
+        sb.append("1) Refactor the provided target clone, not some other duplication in the file.\n");
+        sb.append("2) Extract the duplicated logic into one private helper method.\n");
+        sb.append("3) Replace ALL target clone occurrences with calls to the extracted method.\n");
+        sb.append("4) Prefer a parameterized helper method when the clone occurrences have small local differences.\n");
+        sb.append("5) Choose the smallest safe extraction boundary that still removes the target duplication.\n");
+        sb.append("6) Ensure the result compiles as valid Java.\n");
+        sb.append("7) Do not leave the target clone unrefactored unless Extract Method is truly impossible within this file.\n\n");
+
+        // ===== Steps (structured, but must not be printed) =====
+        sb.append("=== STEPS TO FOLLOW (DO NOT OUTPUT THESE STEPS) ===\n");
+        sb.append("Step 1: Use the provided clone snippet as the primary target. Use the clone ranges only as approximate hints to locate the snippet in the file.\n");
+        sb.append("Step 2: Locate only the occurrences that correspond to that target clone.\n");
+        sb.append("Step 3: Create a private helper method with a clear name and parameters if needed.\n");
+        sb.append("Step 4: Replace the target clone occurrences with helper calls.\n");
+        sb.append("Step 5: Re-check for compilation issues (imports, generics, visibility, checked exceptions).\n\n");
+
+        // ===== Strict Constraints (hard rules) =====
+        sb.append("=== STRICT CONSTRAINTS (HARD RULES) ===\n");
+        sb.append("- Modify ONLY this file. Do NOT reference or require changes in other files.\n");
+        sb.append("- Preserve the package line and ALL import statements EXACTLY (do not add/remove/reorder).\n");
+        sb.append("- Do NOT change public/protected method signatures or class public API.\n");
+        sb.append("- Do NOT introduce new classes or new files.\n");
+        sb.append("- The provided clone snippet is the mandatory refactoring target.\n");
+        sb.append("- The clone ranges are approximate hints and must not override the snippet.\n");
+        sb.append("- Do NOT refactor unrelated duplicated code elsewhere in the file.\n");
+        sb.append("- Do NOT leave the target clone unchanged if a valid Extract Method can be applied within this file.\n");
+        sb.append("- If exact matching is difficult, prefer the closest valid extraction centered on the target clone.\n");
+        sb.append("- Do NOT change external behavior; keep outputs and side effects the same.\n");
+        sb.append("- Minimize edits outside the target clone regions.\n");
+        sb.append("- Do NOT add explanatory prose outside code.\n\n");
+
+        // ===== Output Format (compatible with your extractor) =====
+        sb.append("=== OUTPUT FORMAT ===\n");
+        sb.append("- Output ONLY ONE Java code block containing the full updated file.\n");
+        sb.append("- The output must contain an actual refactoring of the target clone, not the unchanged original file, unless Extract Method is impossible within this file.\n");
+        sb.append("- Do NOT output JSON.\n");
+        sb.append("- Do NOT output multiple alternatives.\n");
+        sb.append("- Do NOT output any text before or after the code block.\n");
 
         return sb.toString();
     }

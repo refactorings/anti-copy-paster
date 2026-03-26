@@ -197,14 +197,29 @@ public final class ExtractMethodUsefulnessAnalyzer {
                 clonePairs = findClonePairs(beforeSig, cfg);
                 debugLines.add("clonePairsFound=" + clonePairs.size());
             }
+
             if (clonePairs.isEmpty()) {
-                // We do NOT require re-detecting a whole-method clone in BEFORE.
-                // Usefulness here only checks whether the AFTER code has a clear Extract Method shape.
                 ConfirmResult confirm = confirmExtractMethodShape(beforeMethods, afterMethods, addedKeys, afterPsi, cfg);
+
                 if (confirm.confirmed) {
                     return new UsefulnessResult(true, 100, List.of(Reason.EXTRACT_METHOD_CONFIRMED), confirm.notes);
                 }
-                return new UsefulnessResult(false, 45, List.of(Reason.EXTRACT_METHOD_NOT_CONFIRMED), confirm.notes);
+
+                if (confirm.notes != null && confirm.notes.contains("likely incomplete extract")) {
+                    return new UsefulnessResult(
+                            false,
+                            40,
+                            List.of(Reason.INCOMPLETE_REFACTORING_DETECTED),
+                            confirm.notes
+                    );
+                }
+
+                return new UsefulnessResult(
+                        false,
+                        45,
+                        List.of(Reason.EXTRACT_METHOD_NOT_CONFIRMED),
+                        confirm.notes
+                );
             }
 
             // STRICT usefulness: ALL pairs must be EXTRACT_METHOD, else NOT useful.
@@ -353,6 +368,30 @@ public final class ExtractMethodUsefulnessAnalyzer {
                 }
             }
 
+            // NEW: check shared helper calls even if not thin delegates (fragment-level extraction)
+            Map<String, Integer> helperCallCounts = new HashMap<>();
+
+            for (Map.Entry<String, PsiMethod> e : afterMethods.entrySet()) {
+                String methodKey = e.getKey();
+                PsiMethod mAfter = e.getValue();
+
+                if (beforeMethods == null || !beforeMethods.containsKey(methodKey)) continue;
+
+                Set<String> calls = collectResolvedCalleeKeys(mAfter, afterPsi, cfg);
+                for (String callee : calls) {
+                    if (!addedKeys.contains(callee)) continue;
+                    helperCallCounts.put(callee, helperCallCounts.getOrDefault(callee, 0) + 1);
+                }
+            }
+
+            for (Map.Entry<String, Integer> e : helperCallCounts.entrySet()) {
+                if (e.getValue() >= 2) {
+                    String notes = "Detected shared helper calls without thin delegation (likely incomplete extract): helper=" + e.getKey() +
+                            ", callers=" + e.getValue();
+                    return new ConfirmResult(false, notes);
+                }
+            }
+
             return new ConfirmResult(false,
                     "Cannot confirm Extract Method shape: no >=2 existing methods delegate to the same newly added helper");
 
@@ -456,17 +495,29 @@ public final class ExtractMethodUsefulnessAnalyzer {
         }
 
         // (2) Asymmetric delegation cases
-        // If exactly one side is a delegate, and it delegates to the other clone method => call-based clone substitution.
+        // One side is a thin delegate, the other is not.
+        // This can still be a valid Extract Method outcome for Type-3 clones:
+        // the non-delegate side may keep its own non-cloned statements while both
+        // methods call the same newly added helper that contains the shared logic.
         if (aDel.isDelegate ^ bDel.isDelegate) {
             DelegateInfo del = aDel.isDelegate ? aDel : bDel;
-            String delegatedFrom = aDel.isDelegate ? aKey : bKey;
             String delegatedToOther = aDel.isDelegate ? bKey : aKey;
+            PsiMethod nonDelegateMethod = aDel.isDelegate ? bAfter : aAfter;
 
             if (!del.calleeKeys.isEmpty() && del.calleeKeys.contains(delegatedToOther)) {
                 return new PairOutcome(Strategy.CALL_BASED_CLONE_SUBSTITUTION, true);
             }
 
-            // Delegate exists but not to the same shared callee => clone removal by delegation
+            Set<String> nonDelegateCalls = collectResolvedCalleeKeys(nonDelegateMethod, afterPsi, cfg);
+            Set<String> sharedWithNonDelegate = new HashSet<>(del.calleeKeys);
+            sharedWithNonDelegate.retainAll(nonDelegateCalls);
+
+            if (!sharedWithNonDelegate.isEmpty() && intersects(sharedWithNonDelegate, addedKeys)) {
+                return new PairOutcome(Strategy.EXTRACT_METHOD, true);
+            }
+
+            // Delegate exists but there is no evidence that both sides now share the same
+            // newly extracted helper.
             return new PairOutcome(Strategy.CLONE_REMOVAL_BY_DELEGATION, true);
         }
 
@@ -990,9 +1041,6 @@ public final class ExtractMethodUsefulnessAnalyzer {
                 "Analyzer fallback: " + (msg == null ? "" : msg));
     }
 
-    private static int clamp(int v, int lo, int hi) {
-        return Math.max(lo, Math.min(hi, v));
-    }
 
     private static String summarizeStrategies(EnumMap<Strategy, Integer> counts) {
         if (counts == null || counts.isEmpty()) return "{}";
@@ -1019,15 +1067,163 @@ public final class ExtractMethodUsefulnessAnalyzer {
         }
         return false;
     }
+    /* =============================
+     * Feedback prompt generation
+     * ============================= */
 
-    private static boolean intersects1(Set<String> a, Set<String> b) {
-        if (a == null || b == null || a.isEmpty() || b.isEmpty()) return false;
-        // Iterate the smaller set for efficiency
-        Set<String> small = a.size() <= b.size() ? a : b;
-        Set<String> large = small == a ? b : a;
-        for (String s : small) {
-            if (large.contains(s)) return true;
+    public static String buildFeedbackPrompt(List<Reason> reasons) {
+        if (reasons == null || reasons.isEmpty()) {
+            return "Your previous refactoring was rejected, but no specific reason was identified. Please perform a correct Extract Method refactoring.";
         }
-        return false;
+
+        // Priority order
+        if (reasons.contains(Reason.INCOMPLETE_REFACTORING_DETECTED)) {
+            return """
+Your previous refactoring was rejected because it performed an incomplete Extract Method refactoring.
+
+Problem:
+The duplicated logic between the clone methods still remains in the original methods after refactoring.
+
+How to fix it:
+- Extract the full shared duplicated logic into exactly one helper method.
+- Remove duplicated statements from the original methods.
+- Keep only method-specific differences in each method.
+- Make both methods call the helper.
+
+Important constraints:
+- Do not delete either clone method.
+- Do not make one clone call the other.
+- Do not split logic across multiple helpers.
+- Only perform Extract Method.
+
+Return exactly one Java code block containing the full updated file.
+""";
+        }
+
+        if (reasons.contains(Reason.POST_EXTRACTION_CLONE_DELETION_DETECTED)) {
+            return """
+Your previous refactoring was rejected because one clone method was deleted after extraction.
+
+Problem:
+A valid Extract Method refactoring must preserve both original clone methods.
+
+How to fix it:
+- Restore both original methods.
+- Keep the helper method.
+- Make both methods call the helper.
+
+Important constraints:
+- Do not delete clone methods.
+- Do not merge them.
+- Only perform Extract Method.
+
+Return exactly one Java code block containing the full updated file.
+""";
+        }
+
+        if (reasons.contains(Reason.DIRECT_CLONE_REMOVAL_DETECTED)) {
+            return """
+Your previous refactoring was rejected because it removed a clone directly instead of extracting shared logic.
+
+Problem:
+Duplication was removed by deleting code, not by Extract Method.
+
+How to fix it:
+- Restore removed clone logic.
+- Extract shared logic into one helper.
+- Make both methods call the helper.
+
+Important constraints:
+- Do not delete clones.
+- Do not substitute one clone with another.
+- Only perform Extract Method.
+
+Return exactly one Java code block containing the full updated file.
+""";
+        }
+
+        if (reasons.contains(Reason.CALL_BASED_CLONE_SUBSTITUTION_DETECTED)) {
+            return """
+Your previous refactoring was rejected because one clone method calls the other instead of using a shared helper.
+
+Problem:
+This is call-based substitution, not Extract Method.
+
+How to fix it:
+- Introduce one new helper method with shared logic.
+- Make both methods call the helper instead of each other.
+
+Important constraints:
+- Do not make one clone call the other.
+- Do not delete clones.
+- Only perform Extract Method.
+
+Return exactly one Java code block containing the full updated file.
+""";
+        }
+
+        if (reasons.contains(Reason.CLONE_REMOVAL_BY_DELEGATION_DETECTED)) {
+            return """
+Your previous refactoring was rejected because duplication was handled by delegation instead of proper extraction.
+
+Problem:
+One method became a delegate, but no clear shared helper is used by both methods.
+
+How to fix it:
+- Extract shared logic into one new helper.
+- Make both methods call the same helper.
+- Keep method-specific differences.
+
+Important constraints:
+- Do not rely on delegation alone.
+- Do not make one clone call the other.
+- Only perform Extract Method.
+
+Return exactly one Java code block containing the full updated file.
+""";
+        }
+
+        if (reasons.contains(Reason.FRAGMENTATION_OF_LOGIC_DETECTED)) {
+            return """
+Your previous refactoring was rejected because the logic was fragmented across multiple helpers.
+
+Problem:
+Shared logic was split instead of extracted as a single unit.
+
+How to fix it:
+- Combine shared logic into one helper method.
+- Make both methods call that helper.
+
+Important constraints:
+- Do not create multiple helpers unnecessarily.
+- Do not delete clones.
+- Only perform Extract Method.
+
+Return exactly one Java code block containing the full updated file.
+""";
+        }
+
+        if (reasons.contains(Reason.EXTRACT_METHOD_NOT_CONFIRMED)) {
+            return """
+Your previous refactoring was rejected because Extract Method structure was not clearly identified.
+
+Problem:
+The shared logic extraction is unclear or inconsistent.
+
+How to fix it:
+- Create one helper method with shared logic.
+- Make both methods call it.
+- Keep only method-specific differences outside.
+
+Important constraints:
+- Do not delete clones.
+- Do not split logic across helpers.
+- Only perform Extract Method.
+
+Return exactly one Java code block containing the full updated file.
+""";
+        }
+
+        return "Your previous refactoring was rejected. Please perform a valid Extract Method refactoring.";
     }
 }

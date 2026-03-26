@@ -566,7 +566,7 @@ public final class CloneRefactorWorkflow {
 
                 if (detectedCloneCount < minimumCloneCount) {
                     logStage(viewer, "DETECTION", "stopped: detected clone range count " + detectedCloneCount +
-                            " is smaller than minimumCloneCount=" + minimumCloneCount + " for Clone_multiagent. This parameter is set in the settings and can be adjusted based on your needs.");
+                            " is smaller than minimumCloneCount=" + minimumCloneCount + " for Clone_multiagent. This parameter is set by the user in the settings and can be adjusted based on your needs.");
                     notify(project,
                             "[Clone] Only " + detectedCloneCount + " clone range(s) detected in: " + fileName +
                                     ". Need at least " + minimumCloneCount + " to continue.",
@@ -765,12 +765,36 @@ public final class CloneRefactorWorkflow {
                                                 definitionForReason(urBeforeCompile.reasons),
                                         NotificationType.WARNING);
 
-                                feedback = "Your Extract Method refactoring is not useful. " +
-                                        "Please do a real Extract Method that removes duplication in BOTH places. " +
-                                        "Extract the entire duplicated code into a new helper method.\n" +
-                                        "The extracted method must include all statements in the clone region,\n" +
-                                        "including method calls, control flow, and calls to super methods.\n" +
-                                        "Do not leave any duplicated statements in the original methods. avoid deleting one side, and avoid delegating to unrelated existing methods.";
+                                String feedbackPrompt = ExtractMethodUsefulnessAnalyzer.buildFeedbackPrompt(urBeforeCompile.reasons);
+                                String reasonsText = String.valueOf(urBeforeCompile.reasons);
+                                String reasonDefinition = definitionForReason(urBeforeCompile.reasons);
+                                String notesText = (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank())
+                                        ? ""
+                                        : ("\n\n[USEFULNESS_NOTES]\n" + urBeforeCompile.notes);
+
+                                feedback = """
+Your previous refactoring attempt was rejected by the usefulness checker.
+
+[NOT_USEFUL_REFACTORED_CODE]
+```java
+%s
+```
+
+[REASONS]
+%s
+
+[REASON_DEFINITION]
+%s%s
+
+[REVISION_INSTRUCTION]
+%s
+""".formatted(
+                                        proposedSource == null ? "" : proposedSource,
+                                        reasonsText,
+                                        reasonDefinition == null ? "" : reasonDefinition,
+                                        notesText,
+                                        feedbackPrompt == null ? "" : feedbackPrompt
+                                );
                             }
                             } else if (urBeforeCompile != null) {
                                 logStage(viewer, "USEFUL", "ok (before compile): score=" + urBeforeCompile.score +
@@ -823,9 +847,39 @@ public final class CloneRefactorWorkflow {
                                                     definitionForReason(frBeforeCompile.strategy),
                                             NotificationType.WARNING);
 
-                                    feedback = "Your refactoring is not useful. " +
-                                            "You must actually remove or significantly reduce the duplicated fragment in BOTH places. " +
-                                            "Avoid incomplete refactoring, deleting one side, or delegating only one side.";
+                                    String reasonsText = String.valueOf(frBeforeCompile.reasons);
+                                    String strategyText = String.valueOf(frBeforeCompile.strategy);
+                                    String reasonDefinition = definitionForReason(frBeforeCompile.strategy);
+                                    String notesText = (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank())
+                                            ? ""
+                                            : ("\n\n[USEFULNESS_NOTES]\n" + frBeforeCompile.notes);
+
+                                    feedback = """
+Your previous refactoring attempt was rejected by the usefulness checker.
+
+[NOT_USEFUL_REFACTORED_CODE]
+```java
+%s
+```
+
+[REASONS]
+%s
+
+[STRATEGY]
+%s
+
+[REASON_DEFINITION]
+%s%s
+
+[REVISION_INSTRUCTION]
+Your refactoring is not useful. You must actually remove or significantly reduce the duplicated fragment in BOTH places. Avoid incomplete refactoring, deleting one side, or delegating only one side.
+""".formatted(
+                                            proposedSource == null ? "" : proposedSource,
+                                            reasonsText,
+                                            strategyText,
+                                            reasonDefinition == null ? "" : reasonDefinition,
+                                            notesText
+                                    );
                                 } else if (frBeforeCompile != null) {
                                     logStage(viewer, "USEFUL", "ok(FRAGMENT, before compile): strategy=" + frBeforeCompile.strategy + ", score=" + frBeforeCompile.score +
                                             (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes)));
@@ -860,6 +914,21 @@ public final class CloneRefactorWorkflow {
                         }
                         // Compile the proposed source to a temp classes dir, without touching the original file.
                         String ideCp = buildProjectClasspathFromIde(project);
+                        String ideSourcePath = buildProjectSourcepathFromIde(project);
+                        ideCp = buildCompileClasspathWithSourceRoots(project, ideCp);
+                        if (viewer != null) {
+                            String cpPreview = ideCp == null ? "" : ideCp;
+                            if (cpPreview.length() > 4000) {
+                                cpPreview = cpPreview.substring(0, 4000) + "\n...<truncated>...";
+                            }
+                            viewer.accept("[COMPILE] ide classpath:\n" + cpPreview);
+
+                            String spPreview = ideSourcePath == null ? "" : ideSourcePath;
+                            if (spPreview.length() > 4000) {
+                                spPreview = spPreview.substring(0, 4000) + "\n...<truncated>...";
+                            }
+                            viewer.accept("[COMPILE] ide sourcepath:\n" + spPreview);
+                        }
                         File patchedOutDir;
                         String compileLog;
                         try {
@@ -2171,46 +2240,77 @@ public final class CloneRefactorWorkflow {
             com.intellij.openapi.module.Module[] modules = com.intellij.openapi.module.ModuleManager.getInstance(project).getModules();
             if (modules == null || modules.length == 0) return "";
 
-            // Use the first module
-            com.intellij.openapi.module.Module m = modules[0];
-
             java.util.Set<String> paths = new java.util.LinkedHashSet<>();
 
-            // 1. Module dependencies
-            com.intellij.util.PathsList orderEntries = com.intellij.openapi.roots.OrderEnumerator.orderEntries(m)
-                    .recursively().withoutSdk().classes().getPathsList();
-            paths.addAll(orderEntries.getPathList());
+            for (com.intellij.openapi.module.Module m : modules) {
+                if (m == null || m.isDisposed()) continue;
 
-            // 2. Compiler outputs (Production & Test)
-            com.intellij.openapi.roots.CompilerModuleExtension ext = com.intellij.openapi.roots.CompilerModuleExtension.getInstance(m);
-            if (ext != null) {
-                if (ext.getCompilerOutputPath() != null)
-                    paths.add(ext.getCompilerOutputPath().getPath());
-                if (ext.getCompilerOutputPathForTests() != null)
-                    paths.add(ext.getCompilerOutputPathForTests().getPath());
-            }
+                try {
+                    com.intellij.util.PathsList orderEntries = com.intellij.openapi.roots.OrderEnumerator.orderEntries(m)
+                            .recursively().withoutSdk().classes().getPathsList();
+                    paths.addAll(orderEntries.getPathList());
+                } catch (Throwable ignored) {
+                }
 
-            // 3. Heuristic: If test output is missing, try to infer it from production path
-            // FIX: Only add the inferred path if it actually exists!
-            java.util.List<String> addedPaths = new java.util.ArrayList<>(paths);
-            for (String p : addedPaths) {
-                if (p.contains("/classes/production/")) {
-                    String testPath = p.replace("/classes/production/", "/classes/test/");
-                    if (new File(testPath).exists()) {
-                        paths.add(testPath);
+                try {
+                    com.intellij.openapi.roots.CompilerModuleExtension ext =
+                            com.intellij.openapi.roots.CompilerModuleExtension.getInstance(m);
+                    if (ext != null) {
+                        if (ext.getCompilerOutputPath() != null) {
+                            paths.add(ext.getCompilerOutputPath().getPath());
+                        }
+                        if (ext.getCompilerOutputPathForTests() != null) {
+                            paths.add(ext.getCompilerOutputPathForTests().getPath());
+                        }
                     }
-                } else if (p.contains("/out/production/")) {
-                    String testPath = p.replace("/out/production/", "/out/test/");
-                    if (new File(testPath).exists()) {
-                        paths.add(testPath);
+                } catch (Throwable ignored) {
+                }
+
+                // Fallback for old multi-module projects: include source roots too.
+                try {
+                    com.intellij.openapi.roots.ModuleRootManager rootManager =
+                            com.intellij.openapi.roots.ModuleRootManager.getInstance(m);
+                    if (rootManager != null) {
+                        for (com.intellij.openapi.vfs.VirtualFile root : rootManager.getSourceRoots(false)) {
+                            if (root != null && root.getPath() != null && !root.getPath().isBlank()) {
+                                paths.add(root.getPath());
+                            }
+                        }
+                        for (com.intellij.openapi.vfs.VirtualFile root : rootManager.getSourceRoots(true)) {
+                            if (root != null && root.getPath() != null && !root.getPath().isBlank()) {
+                                paths.add(root.getPath());
+                            }
+                        }
                     }
+                } catch (Throwable ignored) {
                 }
             }
 
-            // Filter out any non-existent paths just to be safe for EvoSuite
+            // Heuristic: include common output dirs anywhere under the project if they exist.
+            try {
+                String basePath = project.getBasePath();
+                if (basePath != null && !basePath.isBlank()) {
+                    java.nio.file.Path base = java.nio.file.Paths.get(basePath);
+                    java.nio.file.Files.walk(base)
+                            .filter(p -> p != null && java.nio.file.Files.isDirectory(p))
+                            .forEach(p -> {
+                                String s = p.toString();
+                                if (s.endsWith(java.io.File.separator + "target" + java.io.File.separator + "classes")
+                                        || s.endsWith(java.io.File.separator + "target" + java.io.File.separator + "test-classes")
+                                        || s.endsWith(java.io.File.separator + "classes" + java.io.File.separator + "production")
+                                        || s.endsWith(java.io.File.separator + "classes" + java.io.File.separator + "test")
+                                        || s.endsWith(java.io.File.separator + "out" + java.io.File.separator + "production")
+                                        || s.endsWith(java.io.File.separator + "out" + java.io.File.separator + "test")) {
+                                    paths.add(s);
+                                }
+                            });
+                }
+            } catch (Throwable ignored) {
+            }
+
             java.util.Set<String> validPaths = new java.util.LinkedHashSet<>();
             for (String p : paths) {
-                if (new File(p).exists()) {
+                if (p != null && !p.isBlank() && new File(p).exists()) {
                     validPaths.add(p);
                 }
             }
@@ -2631,6 +2731,7 @@ public final class CloneRefactorWorkflow {
         }
 
         String javacExe = javacFile.getAbsolutePath();
+        String sourcepath = buildProjectSourcepathFromIde(project);
 
         java.util.List<String> cmd = new java.util.ArrayList<>();
         cmd.add(javacExe);
@@ -2639,16 +2740,48 @@ public final class CloneRefactorWorkflow {
         addJavacTargetFlags(cmd, sdk.getHomePath(), resolveProjectTargetMajor(project));
         cmd.add("-cp");
         cmd.add(classpath == null ? "" : classpath);
+        if (sourcepath != null && !sourcepath.isBlank()) {
+            cmd.add("-sourcepath");
+            cmd.add(sourcepath);
+        }
         cmd.add("-d");
         cmd.add(tempOut.getAbsolutePath());
         cmd.add(tempJava.getAbsolutePath());
 
+        try {
+            logStage("COMPILE", "javac classpath:\n" + (classpath == null ? "" : classpath));
+            logStage("COMPILE", "javac sourcepath:\n" + (sourcepath == null ? "" : sourcepath));
+        } catch (Throwable ignored) {
+            // ignore
+        }
+
+        // First attempt: UTF-8
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
         Process p = pb.start();
         String out = readProcessOutput(p);
         int exitCode;
         try { exitCode = p.exitValue(); } catch (Throwable t) { exitCode = -1; }
+
+        // If encoding error, retry with ISO-8859-1
+        if (exitCode != 0 && out != null && out.contains("unmappable character")) {
+            logStage("COMPILE", "Retry with ISO-8859-1 due to encoding error...");
+
+            java.util.List<String> retryCmd = new java.util.ArrayList<>(cmd);
+            for (int i = 0; i < retryCmd.size() - 1; i++) {
+                if ("-encoding".equals(retryCmd.get(i))) {
+                    retryCmd.set(i + 1, "ISO-8859-1");
+                    break;
+                }
+            }
+
+            ProcessBuilder pb2 = new ProcessBuilder(retryCmd);
+            pb2.redirectErrorStream(true);
+            Process p2 = pb2.start();
+            out = readProcessOutput(p2);
+            try { exitCode = p2.exitValue(); } catch (Throwable t) { exitCode = -1; }
+        }
+
         if (exitCode != 0) {
             throw new RuntimeException("Compilation failed:\n" + out);
         }
@@ -2842,6 +2975,124 @@ public final class CloneRefactorWorkflow {
             throw new RuntimeException("Compilation failed:\n" + out);
         }
         return outputDir;
+    }
+
+    /**
+     * Build a javac sourcepath from all IDE modules.
+     * This is needed for old multi-module projects that do not have compiled class output directories.
+     */
+    private static String buildProjectSourcepathFromIde(Project project) {
+        if (project == null || project.isDisposed()) return "";
+        try {
+            java.util.Set<String> roots = new java.util.LinkedHashSet<>();
+
+            com.intellij.openapi.module.Module[] modules =
+                    com.intellij.openapi.module.ModuleManager.getInstance(project).getModules();
+            if (modules != null) {
+                for (com.intellij.openapi.module.Module m : modules) {
+                    if (m == null || m.isDisposed()) continue;
+                    try {
+                        com.intellij.openapi.roots.ModuleRootManager rootManager =
+                                com.intellij.openapi.roots.ModuleRootManager.getInstance(m);
+                        if (rootManager == null) continue;
+
+                        for (com.intellij.openapi.vfs.VirtualFile root : rootManager.getSourceRoots(false)) {
+                            if (root != null) {
+                                String p = root.getPath();
+                                if (p != null && !p.isBlank() && new File(p).exists()) {
+                                    roots.add(p);
+                                }
+                            }
+                        }
+                        for (com.intellij.openapi.vfs.VirtualFile root : rootManager.getSourceRoots(true)) {
+                            if (root != null) {
+                                String p = root.getPath();
+                                if (p != null && !p.isBlank() && new File(p).exists()) {
+                                    roots.add(p);
+                                }
+                            }
+                        }
+                    } catch (Throwable ignored) {
+                        // ignore
+                    }
+                }
+            }
+
+            // Generic fallback for old or non-standard multi-module projects.
+            // Do not hardcode project/module names. Instead, discover likely Java source roots by shape.
+            try {
+                String basePath = project.getBasePath();
+                if (basePath != null && !basePath.isBlank()) {
+                    java.nio.file.Path base = java.nio.file.Paths.get(basePath);
+                    java.nio.file.Files.walk(base)
+                            .filter(p -> p != null && java.nio.file.Files.isDirectory(p))
+                            .forEach(p -> {
+                                try {
+                                    String norm = p.toString().replace('\\', '/');
+                                    String name = p.getFileName() == null ? "" : p.getFileName().toString();
+
+                                    boolean looksLikeSourceRoot =
+                                            norm.endsWith("/src/main/java")
+                                                    || norm.endsWith("/src/test/java")
+                                                    || norm.endsWith("/src")
+                                                    || norm.endsWith("/test")
+                                                    || norm.endsWith("/tests")
+                                                    || "src".equals(name)
+                                                    || "test".equals(name)
+                                                    || "tests".equals(name);
+
+                                    if (!looksLikeSourceRoot) return;
+                                    if (!containsJavaFilesUnder(p, 6)) return;
+
+                                    String candidate = p.toString();
+                                    if (new File(candidate).exists()) {
+                                        roots.add(candidate);
+                                    }
+                                } catch (Throwable ignored2) {
+                                    // ignore this candidate
+                                }
+                            });
+                }
+            } catch (Throwable ignored) {
+                // ignore
+            }
+
+            return String.join(File.pathSeparator, roots);
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    /**
+     * Merge an existing classpath with all source roots from the IDE so javac can resolve project-internal classes
+     * even when there are no compiled output directories yet.
+     */
+    private static String buildCompileClasspathWithSourceRoots(Project project, String classpath) {
+        java.util.LinkedHashSet<String> paths = new java.util.LinkedHashSet<>();
+        try {
+            if (classpath != null && !classpath.isBlank()) {
+                String[] cpEntries = classpath.split(java.util.regex.Pattern.quote(File.pathSeparator));
+                for (String entry : cpEntries) {
+                    if (entry != null && !entry.isBlank() && new File(entry).exists()) {
+                        paths.add(entry);
+                    }
+                }
+            }
+
+        String sourcepath = buildProjectSourcepathFromIde(project);
+
+            if (sourcepath != null && !sourcepath.isBlank()) {
+                String[] sourceEntries = sourcepath.split(java.util.regex.Pattern.quote(File.pathSeparator));
+                for (String entry : sourceEntries) {
+                    if (entry != null && !entry.isBlank() && new File(entry).exists()) {
+                        paths.add(entry);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // ignore
+        }
+        return String.join(File.pathSeparator, paths);
     }
 
     /**
@@ -3209,6 +3460,42 @@ public final class CloneRefactorWorkflow {
             return null;
         } catch (Throwable t) {
             return null;
+        }
+    }
+
+    private static boolean containsJavaFilesUnder(java.nio.file.Path dir, int maxDepth) {
+        if (dir == null || maxDepth < 0) return false;
+        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.walk(dir, maxDepth)) {
+            return s.anyMatch(p -> {
+                try {
+                    return p != null
+                            && java.nio.file.Files.isRegularFile(p)
+                            && p.getFileName() != null
+                            && p.getFileName().toString().endsWith(".java");
+                } catch (Throwable ignored) {
+                    return false;
+                }
+            });
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static boolean containsSpecificJavaFileUnder(java.nio.file.Path dir, String relativeUnixPath, int maxDepth) {
+        if (dir == null || relativeUnixPath == null || relativeUnixPath.isBlank() || maxDepth < 0) return false;
+        final String expectedSuffix = "/" + relativeUnixPath.replace('\\', '/');
+        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.walk(dir, maxDepth)) {
+            return s.anyMatch(p -> {
+                try {
+                    if (p == null || !java.nio.file.Files.isRegularFile(p) || p.getFileName() == null) return false;
+                    String norm = p.toString().replace('\\', '/');
+                    return norm.endsWith(expectedSuffix);
+                } catch (Throwable ignored) {
+                    return false;
+                }
+            });
+        } catch (Throwable t) {
+            return false;
         }
     }
 }
