@@ -77,11 +77,15 @@ public class ProjectSettingsConfigurable implements Configurable {
 
     @Override
     public void apply() throws ConfigurationException {
+        String provider = settingsComponent.getLlmProvider();
+        boolean providerNeedsApiKey = provider != null && !"Ollama".equalsIgnoreCase(provider);
+
         if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
                 "Clone".equals(settingsComponent.getNameModel()) ||
                 "Clone_multiagent".equals(settingsComponent.getNameModel())) &&
+                providerNeedsApiKey &&
                 (settingsComponent.getAiderApiKey() == null || settingsComponent.getAiderApiKey().trim().isEmpty())) {
-            throw new ConfigurationException("API Key must be provided when using LLM.");
+            throw new ConfigurationException("API Key must be provided for the selected provider.");
         }
 
         if ("Azure".equalsIgnoreCase(settingsComponent.getLlmProvider())) {

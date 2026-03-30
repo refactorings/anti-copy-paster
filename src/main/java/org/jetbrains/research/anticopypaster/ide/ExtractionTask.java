@@ -706,7 +706,7 @@ public class ExtractionTask {
                         finalizeExtraction(project, containingClass, factory, results, finalTemplate2, finalReturnType2, normalizedLambdaArgs, methodName, extractToStatic)
                 );
             }
-            else if ("clone".equals(ProjectSettingsState.getInstance(project).useNameRec)) {
+            else if ("Clone".equals(ProjectSettingsState.getInstance(project).useNameRec)) {
                 // Use the new async method name suggestion
                 final Project finalProject = project;
                 final PsiClass finalContainingClass = containingClass;
@@ -745,7 +745,7 @@ public class ExtractionTask {
                             );
                         });
             }
-            else if ("clone_multiagent".equals(ProjectSettingsState.getInstance(project).useNameRec)) {
+            else if ("Clone_multiagent".equals(ProjectSettingsState.getInstance(project).useNameRec)) {
                 // Use the new async method name suggestion
                 final Project finalProject = project;
                 final PsiClass finalContainingClass = containingClass;
@@ -896,7 +896,7 @@ public class ExtractionTask {
     private static void notify(Project project, String content) {
         Notification notification = new Notification(
                 "AiderRefactor",
-                "Aider Refactoring",
+                "Clone Refactoring",
                 content,
                 NotificationType.INFORMATION
         );

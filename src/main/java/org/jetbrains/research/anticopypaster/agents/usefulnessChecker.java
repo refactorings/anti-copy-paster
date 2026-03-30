@@ -23,9 +23,9 @@ import java.util.stream.Collectors;
  *
  * Important: This is a conservative, best-effort filter. It should never break the workflow.
  */
-public final class ExtractMethodUsefulnessAnalyzer {
+public final class usefulnessChecker {
 
-    private ExtractMethodUsefulnessAnalyzer() {}
+    private usefulnessChecker() {}
 
     /* =============================
      * Public DTOs
@@ -368,7 +368,8 @@ public final class ExtractMethodUsefulnessAnalyzer {
                 }
             }
 
-            // NEW: check shared helper calls even if not thin delegates (fragment-level extraction)
+            // Also accept the common case where existing methods keep their own method-specific
+            // logic but both call the same newly added helper.
             Map<String, Integer> helperCallCounts = new HashMap<>();
 
             for (Map.Entry<String, PsiMethod> e : afterMethods.entrySet()) {
@@ -386,9 +387,10 @@ public final class ExtractMethodUsefulnessAnalyzer {
 
             for (Map.Entry<String, Integer> e : helperCallCounts.entrySet()) {
                 if (e.getValue() >= 2) {
-                    String notes = "Detected shared helper calls without thin delegation (likely incomplete extract): helper=" + e.getKey() +
-                            ", callers=" + e.getValue();
-                    return new ConfirmResult(false, notes);
+                    String notes = "Confirmed Extract Method shape via shared calls to new helper: helper=" + e.getKey() +
+                            ", callers=" + e.getValue() +
+                            ", addedMethods=" + addedKeys.size();
+                    return new ConfirmResult(true, notes);
                 }
             }
 
@@ -527,6 +529,33 @@ public final class ExtractMethodUsefulnessAnalyzer {
         Set<String> sharedCalls = new HashSet<>(aCalls);
         sharedCalls.retainAll(bCalls);
 
+        Set<String> sharedNewHelpers = new HashSet<>(sharedCalls);
+        sharedNewHelpers.retainAll(addedKeys);
+        if (!sharedNewHelpers.isEmpty()) {
+            if (sharedNewHelpers.size() >= 2 && simAfter <= cfg.cloneSimilarityAfterReduced) {
+                return new PairOutcome(Strategy.FRAGMENTATION_OF_LOGIC, true);
+            }
+
+            boolean asymmetricDelegateToSharedHelper = false;
+            if (aDel.isDelegate ^ bDel.isDelegate) {
+                DelegateInfo del = aDel.isDelegate ? aDel : bDel;
+                asymmetricDelegateToSharedHelper = intersects(del.calleeKeys, sharedNewHelpers);
+            }
+
+            boolean bothDelegateToSharedHelper = aDel.isDelegate && bDel.isDelegate
+                    && intersects(aDel.calleeKeys, sharedNewHelpers)
+                    && intersects(bDel.calleeKeys, sharedNewHelpers);
+
+            if (simAfter >= cfg.cloneSimilarityAfterStill) {
+                if (bothDelegateToSharedHelper || asymmetricDelegateToSharedHelper) {
+                    return new PairOutcome(Strategy.EXTRACT_METHOD, true);
+                }
+                return new PairOutcome(Strategy.INCOMPLETE_REFACTORING, false);
+            }
+
+            return new PairOutcome(Strategy.EXTRACT_METHOD, true);
+        }
+
         if (sharedCalls.size() >= 2 && simAfter <= cfg.cloneSimilarityAfterReduced) {
             return new PairOutcome(Strategy.FRAGMENTATION_OF_LOGIC, true);
         }
@@ -550,9 +579,11 @@ public final class ExtractMethodUsefulnessAnalyzer {
             return new PairOutcome(Strategy.UNKNOWN, false);
         }
 
-        // Similarity dropped enough => reduced (even if strategy unknown)
+        // Similarity dropped enough => reduced.
         if (simAfter <= cfg.cloneSimilarityAfterReduced) {
-            // Similarity reduced, but we cannot prove it is Extract Method.
+            if (!sharedNewHelpers.isEmpty()) {
+                return new PairOutcome(Strategy.EXTRACT_METHOD, true);
+            }
             return new PairOutcome(Strategy.UNKNOWN, false);
         }
 

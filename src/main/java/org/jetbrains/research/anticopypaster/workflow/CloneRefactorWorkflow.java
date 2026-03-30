@@ -41,7 +41,7 @@ import org.jetbrains.research.anticopypaster.agents.detection;
 import org.jetbrains.research.anticopypaster.agents.refactoring;
 import org.jetbrains.research.anticopypaster.agents.compilation;
 import org.jetbrains.research.anticopypaster.agents.testing;
-import org.jetbrains.research.anticopypaster.agents.ExtractMethodUsefulnessAnalyzer;
+import org.jetbrains.research.anticopypaster.agents.usefulnessChecker;
 import org.jetbrains.research.anticopypaster.agents.FragmentUsefulnessAnalyzer;
 import org.jetbrains.research.anticopypaster.agents.PsiFallbackCloneDetector;
 
@@ -704,9 +704,9 @@ public final class CloneRefactorWorkflow {
                         // ===== Show proposed refactored code (for debugging / transparency) =====
                         if (viewer != null) {
                             String src = proposedSource == null ? "" : proposedSource;
-                            int maxChars = REFACTOR_PROPOSAL_PREVIEW_CHARS; // keep console usable
-                            String shown = src.length() > maxChars ? (src.substring(0, maxChars) + "\n...<truncated>...") : src;
-                            viewer.accept("[REFACTOR_CODE] proposedSource (showing up to " + maxChars + " chars):\n" + shown);
+//                            int maxChars = REFACTOR_PROPOSAL_PREVIEW_CHARS; // keep console usable
+//                            String shown = src.length() > maxChars ? (src.substring(0, maxChars) + "\n...<truncated>...") : src;
+                            viewer.accept("[REFACTOR_CODE] proposedSource:" + src);
                         }
 
                         // Also persist the full proposed source to a file under the project, so the user can open it.
@@ -728,13 +728,13 @@ public final class CloneRefactorWorkflow {
                         boolean isUseful = true;
 
                         if (wholeMethod != null) {
-                            ExtractMethodUsefulnessAnalyzer.UsefulnessResult urBeforeCompile =
-                                    ExtractMethodUsefulnessAnalyzer.analyze(
+                            usefulnessChecker.UsefulnessResult urBeforeCompile =
+                                    usefulnessChecker.analyze(
                                             project,
                                             fileName,
                                             currentSource,
                                             proposedSource,
-                                            new ExtractMethodUsefulnessAnalyzer.UsefulnessConfig()
+                                            new usefulnessChecker.UsefulnessConfig()
                                     );
 
                             if (urBeforeCompile != null && !urBeforeCompile.isUseful) {
@@ -765,7 +765,7 @@ public final class CloneRefactorWorkflow {
                                                 definitionForReason(urBeforeCompile.reasons),
                                         NotificationType.WARNING);
 
-                                String feedbackPrompt = ExtractMethodUsefulnessAnalyzer.buildFeedbackPrompt(urBeforeCompile.reasons);
+                                String feedbackPrompt = usefulnessChecker.buildFeedbackPrompt(urBeforeCompile.reasons);
                                 String reasonsText = String.valueOf(urBeforeCompile.reasons);
                                 String reasonDefinition = definitionForReason(urBeforeCompile.reasons);
                                 String notesText = (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank())
