@@ -41,6 +41,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.List;
 import org.jetbrains.research.anticopypaster.rag.RagService;
+import com.intellij.openapi.project.ProjectManager;
+import com.intellij.openapi.roots.ProjectRootManager;
 
 public class AiderHelper {
 
@@ -566,18 +568,46 @@ public class AiderHelper {
     }
 
     /**
+     * Read a Java home from environment variables first, then from JVM system properties.
+     * This lets the plugin work both when launched from a shell and when JAVA_8_HOME/JAVA_11_HOME
+     * is passed through IntelliJ VM options (for example: -DJAVA_8_HOME=/path/to/jdk8).
+     */
+    private static String getConfiguredJavaHome(String key) {
+        String v = System.getenv(key);
+        if (v != null && !v.isBlank()) return v;
+        v = System.getProperty(key);
+        if (v != null && !v.isBlank()) return v;
+        return null;
+    }
+
+    /**
      * Best-effort javac resolution. Prefers JAVA_8_HOME (to match EvoSuite runtime), then JAVA_11_HOME, then JAVA_HOME, else "javac".
      */
     private static String resolveJavacExecutable() {
-        String java8 = System.getenv("JAVA_8_HOME");
+        String java8 = getConfiguredJavaHome("JAVA_8_HOME");
         String p = resolveExeUnderHome(java8, "javac");
         if (p != null) return p;
 
-        String java11 = System.getenv("JAVA_11_HOME");
+        try {
+            Project project = ProjectManager.getInstance().getOpenProjects().length > 0
+                    ? ProjectManager.getInstance().getOpenProjects()[0]
+                    : null;
+            if (project != null) {
+                ProjectRootManager prm = ProjectRootManager.getInstance(project);
+                if (prm != null && prm.getProjectSdk() != null && prm.getProjectSdk().getHomePath() != null) {
+                    p = resolveExeUnderHome(prm.getProjectSdk().getHomePath(), "javac");
+                    if (p != null) return p;
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort only
+        }
+
+        String java11 = getConfiguredJavaHome("JAVA_11_HOME");
         p = resolveExeUnderHome(java11, "javac");
         if (p != null) return p;
 
-        String javaHome = System.getenv("JAVA_HOME");
+        String javaHome = getConfiguredJavaHome("JAVA_HOME");
         p = resolveExeUnderHome(javaHome, "javac");
         if (p != null) return p;
 
@@ -960,6 +990,7 @@ public class AiderHelper {
         versionProcess.waitFor();
 
         String versionText = versionOut.toString();
+        viewer.accept("[EvoSuite] resolved java executable: " + javaExe);
         viewer.accept("[EvoSuite] java -version:\n" + versionText);
 
         int javaMajor = parseJavaMajorVersion(versionText);
@@ -1779,15 +1810,33 @@ public class AiderHelper {
      * Then fall back to JAVA_11_HOME, JAVA_HOME, else "java".
      */
     private static String resolveJavaExecutable() {
-        String java8 = System.getenv("JAVA_8_HOME");
+        // 0) Prefer explicit Java 8 home if provided
+        String java8 = getConfiguredJavaHome("JAVA_8_HOME");
         String p = resolveExeUnderHome(java8, "java");
         if (p != null) return p;
 
-        String java11 = System.getenv("JAVA_11_HOME");
+        // 1) Use IntelliJ Project SDK if available
+        try {
+            Project project = ProjectManager.getInstance().getOpenProjects().length > 0
+                    ? ProjectManager.getInstance().getOpenProjects()[0]
+                    : null;
+            if (project != null) {
+                ProjectRootManager prm = ProjectRootManager.getInstance(project);
+                if (prm != null && prm.getProjectSdk() != null && prm.getProjectSdk().getHomePath() != null) {
+                    p = resolveExeUnderHome(prm.getProjectSdk().getHomePath(), "java");
+                    if (p != null) return p;
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort only
+        }
+
+        // 2) Fall back to JAVA_11_HOME, then JAVA_HOME
+        String java11 = getConfiguredJavaHome("JAVA_11_HOME");
         p = resolveExeUnderHome(java11, "java");
         if (p != null) return p;
 
-        String javaHome = System.getenv("JAVA_HOME");
+        String javaHome = getConfiguredJavaHome("JAVA_HOME");
         p = resolveExeUnderHome(javaHome, "java");
         if (p != null) return p;
 
