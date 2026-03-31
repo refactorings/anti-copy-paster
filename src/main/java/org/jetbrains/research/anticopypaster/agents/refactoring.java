@@ -95,6 +95,16 @@ public class refactoring {
         }
     }
 
+    private static class NormalizedMatchText {
+        public String text;
+        public List<Integer> offsets;
+
+        public NormalizedMatchText(String text, List<Integer> offsets) {
+            this.text = text == null ? "" : text;
+            this.offsets = offsets == null ? List.of() : offsets;
+        }
+    }
+
     public static class RefactorResult {
         public String status;
         public String file;
@@ -188,14 +198,19 @@ public class refactoring {
         }
 
         StructuredRefactorOutcome structuredOutcome = tryApplyStructuredRefactor(rawOutput, fileSource, clone);
-        String newSource = structuredOutcome == null ? null : structuredOutcome.newSource;
-        if (newSource == null) {
+        String newSource = null;
+        if (structuredOutcome != null && structuredOutcome.recognized) {
+            if (structuredOutcome.newSource == null || structuredOutcome.newSource.isBlank()) {
+                String detail = structuredOutcome.error == null || structuredOutcome.error.isBlank()
+                        ? "Structured JSON refactor output was recognized but could not be applied."
+                        : "Failed to apply structured refactor output: " + structuredOutcome.error;
+                return fail(fileName, detail);
+            }
+            newSource = structuredOutcome.newSource;
+        } else {
             newSource = extractJavaCodeBlock(rawOutput);
         }
         if (newSource == null) {
-            if (structuredOutcome != null && structuredOutcome.recognized && structuredOutcome.error != null && !structuredOutcome.error.isBlank()) {
-                return fail(fileName, "Failed to apply structured refactor output: " + structuredOutcome.error);
-            }
             // Try JSON parsing fallback
             String jsonStr = extractJsonSubstring(rawOutput);
             if (jsonStr != null) {
@@ -517,7 +532,11 @@ public class refactoring {
             }
             TextSpan span = locateOccurrence(fileSource, spec, usedSpans);
             if (span == null) {
-                throw new IllegalStateException("Could not locate source for " + spec.occurrenceId);
+                throw new IllegalStateException(
+                        "Could not locate source for " + spec.occurrenceId +
+                                formatPreferredRange(spec.preferredRange) +
+                                " snippet=" + previewSnippet(spec.snippet, 160)
+                );
             }
             usedSpans.add(span);
             resolved.add(new ResolvedReplacement(span, rewrite.replacementCode));
@@ -591,7 +610,60 @@ public class refactoring {
             specs.add(new OccurrenceSpec("OCCURRENCE_1", clone.cloneCode, getRange(clone.ranges, 0)));
         }
 
+        recalibrateOccurrenceSpecs(specs, fileSource);
         return specs;
+    }
+
+    private void recalibrateOccurrenceSpecs(List<OccurrenceSpec> specs, String fileSource) {
+        if (specs == null || specs.isEmpty() || fileSource == null || fileSource.isBlank()) return;
+
+        List<TextSpan> usedSpans = new ArrayList<>();
+        for (OccurrenceSpec spec : specs) {
+            if (spec == null || spec.snippet == null || spec.snippet.isBlank()) continue;
+
+            TextSpan resolved = null;
+            if (spec.preferredRange != null && rangeLikelyContainsSnippet(fileSource, spec.preferredRange, spec.snippet)) {
+                resolved = locateOccurrence(fileSource, spec, usedSpans);
+            }
+
+            if (resolved == null) {
+                OccurrenceSpec relaxed = new OccurrenceSpec(spec.occurrenceId, spec.snippet, null);
+                resolved = locateOccurrence(fileSource, relaxed, usedSpans);
+            }
+
+            if (resolved != null) {
+                usedSpans.add(resolved);
+                spec.preferredRange = toCloneRange(fileSource, resolved);
+                continue;
+            }
+
+            if (spec.preferredRange != null) {
+                String rangeSnippet = sliceByLineRange(fileSource, spec.preferredRange);
+                if (rangeSnippet != null && !rangeSnippet.isBlank()) {
+                    spec.snippet = rangeSnippet;
+                }
+            }
+        }
+    }
+
+    private boolean rangeLikelyContainsSnippet(String source, CloneRange range, String snippet) {
+        if (source == null || source.isBlank() || range == null || snippet == null || snippet.isBlank()) return false;
+        String rangeText = sliceByLineRange(source, range);
+        if (rangeText == null || rangeText.isBlank()) return false;
+        if (rangeText.contains(snippet)) return true;
+
+        String normalizedRange = normalizeWhitespaceFree(rangeText);
+        String normalizedSnippet = normalizeWhitespaceFree(snippet);
+        if (normalizedRange.isBlank() || normalizedSnippet.isBlank()) return false;
+        return normalizedRange.contains(normalizedSnippet) || normalizedSnippet.contains(normalizedRange);
+    }
+
+    private CloneRange toCloneRange(String source, TextSpan span) {
+        if (source == null || source.isBlank() || span == null) return null;
+        int[] lineStarts = computeLineStarts(source);
+        int startLine = lineOfOffset(lineStarts, span.start);
+        int endLine = lineOfOffset(lineStarts, Math.max(span.start, span.end - 1));
+        return new CloneRange(startLine, endLine);
     }
 
     private String sliceByLineRange(String source, CloneRange range) {
@@ -628,6 +700,9 @@ public class refactoring {
         List<TextSpan> candidates = findExactCandidates(source, spec.snippet);
         if (candidates.isEmpty()) {
             candidates = findTrimmedLineCandidates(source, spec.snippet);
+        }
+        if (candidates.isEmpty()) {
+            candidates = findWhitespaceNormalizedCandidates(source, spec.snippet);
         }
         if (candidates.isEmpty()) return null;
 
@@ -684,7 +759,7 @@ public class refactoring {
 
         List<String> needed = new ArrayList<>();
         for (String line : snippetLines) {
-            String trimmed = line == null ? "" : line.trim();
+            String trimmed = normalizeLineForMatch(line);
             if (!trimmed.isEmpty()) {
                 needed.add(trimmed);
             }
@@ -700,7 +775,7 @@ public class refactoring {
             int candidateStart = iSource;
 
             while (iSource < sourceLines.length && iNeed < needed.size()) {
-                String trimmed = sourceLines[iSource].trim();
+                String trimmed = normalizeLineForMatch(sourceLines[iSource]);
                 if (trimmed.isEmpty()) {
                     iSource++;
                     continue;
@@ -718,6 +793,26 @@ public class refactoring {
                 int endOffset = endLine + 1 < lineStarts.length ? lineStarts[endLine + 1] : normalizedSource.length();
                 out.add(new TextSpan(startOffset, endOffset));
             }
+        }
+        return out;
+    }
+
+    private List<TextSpan> findWhitespaceNormalizedCandidates(String source, String snippet) {
+        List<TextSpan> out = new ArrayList<>();
+        if (source == null || snippet == null || snippet.isBlank()) return out;
+
+        NormalizedMatchText normalizedSource = normalizeForWhitespaceInsensitiveMatch(source);
+        String normalizedSnippet = normalizeWhitespaceFree(snippet);
+        if (normalizedSnippet.isBlank()) return out;
+
+        int from = 0;
+        while (from <= normalizedSource.text.length() - normalizedSnippet.length()) {
+            int idx = normalizedSource.text.indexOf(normalizedSnippet, from);
+            if (idx < 0) break;
+            int startOffset = normalizedSource.offsets.get(idx);
+            int endOffset = normalizedSource.offsets.get(idx + normalizedSnippet.length() - 1) + 1;
+            out.add(new TextSpan(startOffset, endOffset));
+            from = idx + Math.max(1, normalizedSnippet.length());
         }
         return out;
     }
@@ -922,6 +1017,49 @@ public class refactoring {
         return s.replace("\r\n", "\n").replace("\r", "\n");
     }
 
+    private String normalizeLineForMatch(String line) {
+        if (line == null) return "";
+        return line.replaceAll("\\s+", " ").trim();
+    }
+
+    private NormalizedMatchText normalizeForWhitespaceInsensitiveMatch(String text) {
+        String normalized = normalizeNewlines(text);
+        StringBuilder sb = new StringBuilder(normalized.length());
+        List<Integer> offsets = new ArrayList<>();
+        for (int i = 0; i < normalized.length(); i++) {
+            char ch = normalized.charAt(i);
+            if (Character.isWhitespace(ch)) continue;
+            sb.append(ch);
+            offsets.add(i);
+        }
+        return new NormalizedMatchText(sb.toString(), offsets);
+    }
+
+    private String normalizeWhitespaceFree(String text) {
+        if (text == null || text.isBlank()) return "";
+        String normalized = normalizeNewlines(text);
+        StringBuilder sb = new StringBuilder(normalized.length());
+        for (int i = 0; i < normalized.length(); i++) {
+            char ch = normalized.charAt(i);
+            if (!Character.isWhitespace(ch)) sb.append(ch);
+        }
+        return sb.toString();
+    }
+
+    private String formatPreferredRange(CloneRange range) {
+        if (range == null) return "";
+        return " near lines " + range.startLine + "-" + range.endLine;
+    }
+
+    private String previewSnippet(String snippet, int maxChars) {
+        if (snippet == null) return "\"\"";
+        String text = normalizeNewlines(snippet).replace("\n", "\\n").trim();
+        if (text.length() > maxChars) {
+            text = text.substring(0, Math.max(0, maxChars)) + "...";
+        }
+        return "\"" + text + "\"";
+    }
+
     private String getString(JsonObject obj, String... keys) {
         if (obj == null || keys == null) return null;
         for (String key : keys) {
@@ -960,50 +1098,58 @@ public class refactoring {
 
     private String extractJavaCodeBlock(String raw) {
         if (raw == null) return null;
-        String lower = raw.toLowerCase(Locale.ROOT);
-        int idx = -1;
-        int start = -1;
-        int end = -1;
-
-        // Try to find ```java fenced code block
-        idx = lower.indexOf("```java");
-        if (idx >= 0) {
-            start = idx + 7;
-            end = raw.indexOf("```", start);
-            if (end > start) {
-                String code = raw.substring(start, end).trim();
-                if (!code.isEmpty()) {
-                    return code;
-                }
-            } else {
-                // Some models omit the closing fence. If we see a Java-looking file, take the rest.
-                String tail = raw.substring(start).trim();
-                if (!tail.isEmpty() && (tail.contains("package ") || tail.contains("class ") || tail.contains("interface "))) {
-                    return tail;
-                }
-            }
+        String javaFence = extractFencedCodeBlock(raw, "java");
+        if (javaFence != null && !javaFence.isBlank()) {
+            return javaFence;
         }
 
-        // Try to find any fenced code block ```
-        idx = raw.indexOf("```");
-        if (idx >= 0) {
-            start = idx + 3;
-            end = raw.indexOf("```", start);
-            if (end > start) {
-                String code = raw.substring(start, end).trim();
-                if (!code.isEmpty()) {
-                    return code;
-                }
-            } else {
-                // Missing closing fence: take the rest if it looks like Java source.
-                String tail = raw.substring(start).trim();
-                if (!tail.isEmpty() && (tail.contains("package ") || tail.contains("class ") || tail.contains("interface "))) {
-                    return tail;
-                }
-            }
+        String unlabeledFence = extractFencedCodeBlock(raw, "");
+        if (looksLikeJavaSource(unlabeledFence)) {
+            return unlabeledFence;
         }
 
+        String trimmed = raw.trim();
+        return looksLikeJavaSource(trimmed) ? trimmed : null;
+    }
+
+    private String extractFencedCodeBlock(String raw, String infoString) {
+        if (raw == null) return null;
+        String expected = infoString == null ? "" : infoString.trim().toLowerCase(Locale.ROOT);
+        int idx = 0;
+        while (idx >= 0 && idx < raw.length()) {
+            int fenceStart = raw.indexOf("```", idx);
+            if (fenceStart < 0) return null;
+
+            int infoEnd = raw.indexOf('\n', fenceStart + 3);
+            if (infoEnd < 0) return null;
+
+            String actualInfo = raw.substring(fenceStart + 3, infoEnd).trim().toLowerCase(Locale.ROOT);
+            int bodyStart = infoEnd + 1;
+            int fenceEnd = raw.indexOf("```", bodyStart);
+            String code = fenceEnd >= 0 ? raw.substring(bodyStart, fenceEnd).trim() : raw.substring(bodyStart).trim();
+
+            if (actualInfo.equals(expected)) {
+                return code.isEmpty() ? null : code;
+            }
+            idx = bodyStart;
+        }
         return null;
+    }
+
+    private boolean looksLikeJavaSource(String text) {
+        if (text == null) return false;
+        String trimmed = text.trim();
+        if (trimmed.isEmpty()) return false;
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) return false;
+        return trimmed.contains("package ")
+                || trimmed.contains(" class ")
+                || trimmed.startsWith("class ")
+                || trimmed.contains(" interface ")
+                || trimmed.startsWith("interface ")
+                || trimmed.contains(" enum ")
+                || trimmed.startsWith("enum ")
+                || trimmed.contains(" record ")
+                || trimmed.startsWith("record ");
     }
 
     private String extractJsonSubstring(String raw) {

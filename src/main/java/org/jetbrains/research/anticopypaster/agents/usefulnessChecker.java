@@ -220,16 +220,17 @@ public final class usefulnessChecker {
             // Focused clonePairs: only consider pairs among the methods that delegate to the same newly added helper.
             // This approximates “analyze only the detection pair”.
             List<PairScore> clonePairs;
-            List<PairScore> allClonePairs = findClonePairs(beforeSig, cfg);
             if (!targetKeys.isEmpty()) {
-                clonePairs = mergePairLists(targetPairs, allClonePairs, cfg.maxPairs);
-                debugLines.add("targetMethods=" + targetKeys.size() + ", targetPairs=" + targetPairs.size() + ", allClonePairs=" + allClonePairs.size() + ", analyzedClonePairs=" + clonePairs.size());
+                clonePairs = targetPairs;
+                debugLines.add("targetMethods=" + targetKeys.size() + ", targetPairs=" + targetPairs.size() + ", analyzedClonePairs=" + clonePairs.size() + ", mode=target-only");
             } else if (focusKeys != null && focusKeys.size() >= 2) {
+                List<PairScore> allClonePairs = findClonePairs(beforeSig, cfg);
                 List<PairScore> focusedPairs = computePairsRestricted(beforeSig, focusKeys, 0.0, cfg.maxPairs);
                 clonePairs = mergePairLists(focusedPairs, allClonePairs, cfg.maxPairs);
                 debugLines.add("focusHelper=" + (focusHelper == null ? "" : focusHelper) + ", focusMethods=" + focusKeys.size());
                 debugLines.add("focusedClonePairs=" + focusedPairs.size() + ", allClonePairs=" + allClonePairs.size() + ", analyzedClonePairs=" + clonePairs.size());
             } else {
+                List<PairScore> allClonePairs = findClonePairs(beforeSig, cfg);
                 clonePairs = allClonePairs;
                 debugLines.add("clonePairsFound=" + clonePairs.size());
             }
@@ -659,7 +660,6 @@ public final class usefulnessChecker {
         if (simAfter >= cfg.cloneSimilarityAfterStill) {
             // Pair-local evidence of a refactoring attempt:
             // - either method became a thin delegate, OR
-            // - they now share callees, OR
             // - either side calls a newly added helper method.
             boolean callsNewHelper = intersects(aCalls, addedKeys) || intersects(bCalls, addedKeys) ||
                     (aDel.isDelegate && intersects(aDel.calleeKeys, addedKeys)) ||
@@ -674,7 +674,7 @@ public final class usefulnessChecker {
                 return new PairOutcome(Strategy.EXTRACTION_WITHOUT_CLONE_REPLACEMENT, false, true);
             }
 
-            boolean refactorAttempt = aDel.isDelegate || bDel.isDelegate || (!sharedCalls.isEmpty()) || callsNewHelper;
+            boolean refactorAttempt = aDel.isDelegate || bDel.isDelegate || callsNewHelper;
 
             if (refactorAttempt) {
                 return new PairOutcome(Strategy.INCOMPLETE_REFACTORING, false);

@@ -17,6 +17,8 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.SmartPointerManager;
 import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.openapi.editor.event.DocumentEvent;
@@ -26,11 +28,13 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiMethodCallExpression;
 import com.intellij.psi.util.PsiTreeUtil;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.diff.DiffContentFactory;
@@ -309,7 +313,7 @@ public final class CloneRefactorWorkflow {
 
                         detectionAgent.saveAsNiCadXml(det, vf.getPath(), nicadOut);
 
-                        logStage(viewer, "DETECTION", "NiCad file saved: " + nicadOut);
+//                        logStage(viewer, "DETECTION", "NiCad file saved: " + nicadOut);
                     }
                 } catch (Exception e) {
                     logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
@@ -408,7 +412,7 @@ public final class CloneRefactorWorkflow {
                         }
                     };
                     trackedDocument.addDocumentListener(cloneMethodChangeListener);
-                    logStage(viewer, "WATCH", "tracking " + watchedCloneMethods.size() + " cloned method(s) for user edits");
+//                    logStage(viewer, "WATCH", "tracking " + watchedCloneMethods.size() + " cloned method(s) for user edits");
                 } else {
                     logStage(viewer, "WATCH", "no cloned methods to track for user edits");
                 }
@@ -574,28 +578,35 @@ public final class CloneRefactorWorkflow {
                                 isUseful = false;
                                 String msg = "Not useful refactoring proposal: reasons=" + urBeforeCompile.reasons;
                                 logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
-                                showNotification(project,
-                                        "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
-                                                "for: " + fileName + "\n \n" +
-                                                "Reason:\n" +
-                                                urBeforeCompile.reasons + "\n" +
-                                                definitionForReason(urBeforeCompile.reasons),
-                                        NotificationType.WARNING);
+	                                showNotification(project,
+	                                        "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+	                                                "for: " + fileName + "\n \n" +
+	                                                "Reason:\n" +
+	                                                urBeforeCompile.reasons + "\n" +
+	                                                definitionForReason(urBeforeCompile.reasons),
+	                                        NotificationType.WARNING);
 
-                                String feedbackPrompt = usefulnessChecker.buildFeedbackPrompt(urBeforeCompile.reasons);
-                                String reasonsText = String.valueOf(urBeforeCompile.reasons);
-                                String reasonDefinition = definitionForReason(urBeforeCompile.reasons);
-                                String notesText = (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank())
-                                        ? ""
+	                                String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+	                                        project,
+	                                        fileName,
+	                                        currentSource,
+	                                        proposedSource,
+	                                        watchedCloneMethods
+	                                );
+	                                String feedbackPrompt = usefulnessChecker.buildFeedbackPrompt(urBeforeCompile.reasons);
+	                                String reasonsText = String.valueOf(urBeforeCompile.reasons);
+	                                String reasonDefinition = definitionForReason(urBeforeCompile.reasons);
+	                                String notesText = (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank())
+	                                        ? ""
                                         : ("\n\n[USEFULNESS_NOTES]\n" + urBeforeCompile.notes);
 
                                 feedback = """
 Your previous refactoring attempt was rejected by the usefulness checker.
 
-[NOT_USEFUL_REFACTORED_CODE]
-```java
-%s
-```
+	[NOT_USEFUL_REFACTORED_CODE]
+	```java
+	%s
+	```
 
 [REASONS]
 %s
@@ -603,15 +614,15 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 [REASON_DEFINITION]
 %s%s
 
-[REVISION_INSTRUCTION]
-%s
-""".formatted(
-                                        proposedSource == null ? "" : proposedSource,
-                                        reasonsText,
-                                        reasonDefinition == null ? "" : reasonDefinition,
-                                        notesText,
-                                        feedbackPrompt == null ? "" : feedbackPrompt
-                                );
+	[REVISION_INSTRUCTION]
+	%s
+	""".formatted(
+	                                        focusedProposedCode,
+	                                        reasonsText,
+	                                        reasonDefinition == null ? "" : reasonDefinition,
+	                                        notesText,
+	                                        feedbackPrompt == null ? "" : feedbackPrompt
+	                                );
                             }
                             } else if (urBeforeCompile != null) {
                                 logStage(viewer, "USEFUL", "ok (before compile): score=" + urBeforeCompile.score +
@@ -668,19 +679,26 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                                     String msg = "Not useful refactoring proposal: strategy=" + strategyText +
                                              ", reasons=" + reasonsText;
                                     logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
-                                    showNotification(project,
-                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
-                                                    "for: " + fileName + "\n \n" +
-                                                    "Reason:\n" +
-                                                    strategyText + "\n" +
-                                                    reasonDefinition,
-                                            NotificationType.WARNING);
+	                                    showNotification(project,
+	                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+	                                                    "for: " + fileName + "\n \n" +
+	                                                    "Reason:\n" +
+	                                                    strategyText + "\n" +
+	                                                    reasonDefinition,
+	                                            NotificationType.WARNING);
 
-                                    feedback = """
-Your previous refactoring attempt was rejected by the usefulness checker.
+	                                    String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+	                                            project,
+	                                            fileName,
+	                                            currentSource,
+	                                            proposedSource,
+	                                            watchedCloneMethods
+	                                    );
+	                                    feedback = """
+	Your previous refactoring attempt was rejected by the usefulness checker.
 
-[NOT_USEFUL_REFACTORED_CODE]
-```java
+	[NOT_USEFUL_REFACTORED_CODE]
+	```java
 %s
 ```
 
@@ -693,15 +711,15 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 [REASON_DEFINITION]
 %s%s
 
-[REVISION_INSTRUCTION]
-Your refactoring is not useful. You must actually remove or significantly reduce the duplicated fragment in BOTH places. Avoid incomplete refactoring, deleting one side, or delegating only one side.
-""".formatted(
-                                            proposedSource == null ? "" : proposedSource,
-                                            reasonsText,
-                                            strategyText,
-                                            reasonDefinition == null ? "" : reasonDefinition,
-                                            notesText
-                                    );
+	[REVISION_INSTRUCTION]
+	Your refactoring is not useful. You must actually remove or significantly reduce the duplicated fragment in BOTH places. Avoid incomplete refactoring, deleting one side, or delegating only one side.
+	""".formatted(
+	                                            focusedProposedCode,
+	                                            reasonsText,
+	                                            strategyText,
+	                                            reasonDefinition == null ? "" : reasonDefinition,
+	                                            notesText
+	                                    );
                                 } else if (frBeforeCompile != null) {
                                     logStage(viewer, "USEFUL", "ok(FRAGMENT, before compile): strategy=" + frBeforeCompile.strategy + ", score=" + frBeforeCompile.score +
                                             (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes)));
@@ -1284,6 +1302,223 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         return decision.get();
     }
 
+    private static String buildFocusedFeedbackRefactoredCode(Project project,
+                                                             String fileName,
+                                                             String beforeSource,
+                                                             String afterSource,
+                                                             java.util.List<CloneMethodSnapshot> snapshots) {
+        String fullSource = afterSource == null ? "" : afterSource;
+        try {
+            if (project == null || project.isDisposed() || fullSource.isBlank()) return fullSource;
+
+            PsiJavaFile afterPsi = parseInMemoryJavaFile(project, fileName, fullSource);
+            if (afterPsi == null) return fullSource;
+            PsiJavaFile beforePsi = parseInMemoryJavaFile(project, fileName, beforeSource == null ? "" : beforeSource);
+
+            java.util.LinkedHashMap<String, PsiMethod> afterMethods = collectAllMethodsByTrackingKey(afterPsi);
+            if (afterMethods.isEmpty()) return fullSource;
+
+            java.util.LinkedHashMap<String, PsiMethod> beforeMethods =
+                    beforePsi == null ? new java.util.LinkedHashMap<>() : collectAllMethodsByTrackingKey(beforePsi);
+
+            java.util.LinkedHashSet<String> targetKeys = collectTargetMethodKeys(snapshots);
+            if (targetKeys.isEmpty()) return fullSource;
+
+            java.util.LinkedHashSet<String> addedKeys = new java.util.LinkedHashSet<>(afterMethods.keySet());
+            addedKeys.removeAll(beforeMethods.keySet());
+
+            java.util.LinkedHashSet<String> helperKeys = collectRelevantHelperMethodKeys(afterMethods, targetKeys, addedKeys);
+
+            StringBuilder sb = new StringBuilder();
+            appendFocusedMethodSection(sb, "Target clone methods", targetKeys, afterMethods, snapshots, false);
+            appendFocusedMethodSection(sb, "New helper methods", helperKeys, afterMethods, snapshots, true);
+
+            String focused = sb.toString().trim();
+            return focused.isEmpty() ? fullSource : focused;
+        } catch (Throwable t) {
+            return fullSource;
+        }
+    }
+
+    private static void appendFocusedMethodSection(StringBuilder sb,
+                                                   String title,
+                                                   java.util.LinkedHashSet<String> keys,
+                                                   java.util.Map<String, PsiMethod> afterMethods,
+                                                   java.util.List<CloneMethodSnapshot> snapshots,
+                                                   boolean helperSection) {
+        if (sb == null || keys == null || keys.isEmpty()) return;
+
+        if (sb.length() > 0) sb.append("\n\n");
+        sb.append("// ").append(title).append("\n");
+
+        for (String key : keys) {
+            if (key == null || key.isBlank()) continue;
+            PsiMethod method = afterMethods == null ? null : afterMethods.get(key);
+            if (method == null) {
+                if (!helperSection) {
+                    String displayName = findSnapshotDisplayName(snapshots, key);
+                    sb.append("// Missing in proposed source: ").append(displayName == null ? key : displayName).append("\n");
+                }
+                continue;
+            }
+
+            String displayName = buildMethodDisplayName(method);
+            if (displayName != null && !displayName.isBlank()) {
+                sb.append("// ").append(displayName).append("\n");
+            }
+            sb.append(method.getText().strip()).append("\n\n");
+        }
+
+        while (sb.length() > 0 && Character.isWhitespace(sb.charAt(sb.length() - 1))) {
+            sb.setLength(sb.length() - 1);
+        }
+    }
+
+    private static java.util.LinkedHashSet<String> collectTargetMethodKeys(java.util.List<CloneMethodSnapshot> snapshots) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (snapshots == null || snapshots.isEmpty()) return out;
+        for (CloneMethodSnapshot snapshot : snapshots) {
+            if (snapshot == null) continue;
+            out.add(buildMethodTrackingKey(snapshot.className, snapshot.methodName, snapshot.parameterCount));
+        }
+        return out;
+    }
+
+    private static java.util.LinkedHashSet<String> collectRelevantHelperMethodKeys(java.util.Map<String, PsiMethod> afterMethods,
+                                                                                   java.util.Set<String> targetKeys,
+                                                                                   java.util.Set<String> addedKeys) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (afterMethods == null || afterMethods.isEmpty() || targetKeys == null || targetKeys.isEmpty()
+                || addedKeys == null || addedKeys.isEmpty()) {
+            return out;
+        }
+
+        for (String targetKey : targetKeys) {
+            PsiMethod targetMethod = afterMethods.get(targetKey);
+            if (targetMethod == null) continue;
+            out.addAll(collectCalledAddedMethodKeys(targetMethod, addedKeys));
+        }
+        if (!out.isEmpty()) return out;
+
+        java.util.LinkedHashSet<String> targetClasses = new java.util.LinkedHashSet<>();
+        for (String targetKey : targetKeys) {
+            String className = extractClassNameFromTrackingKey(targetKey);
+            if (className != null && !className.isBlank()) targetClasses.add(className);
+        }
+
+        for (String addedKey : addedKeys) {
+            if (targetClasses.contains(extractClassNameFromTrackingKey(addedKey))) {
+                out.add(addedKey);
+            }
+        }
+        return out;
+    }
+
+    private static java.util.LinkedHashSet<String> collectCalledAddedMethodKeys(PsiMethod method,
+                                                                                java.util.Set<String> addedKeys) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        try {
+            if (method == null || addedKeys == null || addedKeys.isEmpty()) return out;
+            PsiCodeBlock body = method.getBody();
+            if (body == null) return out;
+
+            java.util.Collection<PsiMethodCallExpression> calls =
+                    PsiTreeUtil.findChildrenOfType(body, PsiMethodCallExpression.class);
+            if (calls == null || calls.isEmpty()) return out;
+
+            for (PsiMethodCallExpression call : calls) {
+                PsiMethod resolved = null;
+                try {
+                    resolved = call.resolveMethod();
+                } catch (Throwable ignored) {
+                }
+
+                String key = null;
+                if (resolved != null) {
+                    key = buildMethodTrackingKey(resolved);
+                }
+                if ((key == null || key.isBlank()) && call.getMethodExpression() != null) {
+                    String name = call.getMethodExpression().getReferenceName();
+                    int arity = call.getArgumentList() == null ? 0 : call.getArgumentList().getExpressionCount();
+                    key = findAddedMethodKeyByNameAndArity(addedKeys, name, arity);
+                }
+
+                if (key != null && addedKeys.contains(key)) out.add(key);
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    private static String findAddedMethodKeyByNameAndArity(java.util.Set<String> addedKeys,
+                                                           String methodName,
+                                                           int parameterCount) {
+        if (addedKeys == null || addedKeys.isEmpty() || methodName == null || methodName.isBlank()) return null;
+        String suffix = "#" + methodName + "#" + parameterCount;
+        for (String key : addedKeys) {
+            if (key != null && key.endsWith(suffix)) return key;
+        }
+        return null;
+    }
+
+    private static String findSnapshotDisplayName(java.util.List<CloneMethodSnapshot> snapshots, String trackingKey) {
+        if (snapshots == null || snapshots.isEmpty() || trackingKey == null || trackingKey.isBlank()) return trackingKey;
+        for (CloneMethodSnapshot snapshot : snapshots) {
+            if (snapshot == null) continue;
+            String key = buildMethodTrackingKey(snapshot.className, snapshot.methodName, snapshot.parameterCount);
+            if (trackingKey.equals(key)) return snapshot.displayName;
+        }
+        return trackingKey;
+    }
+
+    private static PsiJavaFile parseInMemoryJavaFile(Project project, String fileName, String text) {
+        try {
+            String effectiveName = (fileName == null || fileName.isBlank()) ? "Temp.java" : fileName;
+            if (!effectiveName.endsWith(".java")) effectiveName = effectiveName + ".java";
+            String effectiveText = text == null ? "" : text;
+            PsiFile psi = PsiFileFactory.getInstance(project)
+                    .createFileFromText(effectiveName, JavaLanguage.INSTANCE, effectiveText, false, true);
+            return (psi instanceof PsiJavaFile javaFile) ? javaFile : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static java.util.LinkedHashMap<String, PsiMethod> collectAllMethodsByTrackingKey(PsiJavaFile javaFile) {
+        java.util.LinkedHashMap<String, PsiMethod> out = new java.util.LinkedHashMap<>();
+        if (javaFile == null) return out;
+        PsiClass[] classes = javaFile.getClasses();
+        if (classes == null) return out;
+        for (PsiClass psiClass : classes) {
+            collectMethodsByTrackingKeyRecursive(psiClass, out);
+        }
+        return out;
+    }
+
+    private static void collectMethodsByTrackingKeyRecursive(PsiClass psiClass,
+                                                             java.util.LinkedHashMap<String, PsiMethod> out) {
+        if (psiClass == null || out == null) return;
+        for (PsiMethod method : psiClass.getMethods()) {
+            String key = buildMethodTrackingKey(method);
+            if (key != null && !key.isBlank()) out.putIfAbsent(key, method);
+        }
+        for (PsiClass inner : psiClass.getInnerClasses()) {
+            collectMethodsByTrackingKeyRecursive(inner, out);
+        }
+    }
+
+    private static String buildMethodTrackingKey(String className, String methodName, int parameterCount) {
+        String safeClass = (className == null || className.isBlank()) ? "<no-class>" : className;
+        String safeMethod = (methodName == null || methodName.isBlank()) ? "<unknown>" : methodName;
+        return safeClass + "#" + safeMethod + "#" + parameterCount;
+    }
+
+    private static String extractClassNameFromTrackingKey(String trackingKey) {
+        if (trackingKey == null || trackingKey.isBlank()) return "";
+        int idx = trackingKey.indexOf('#');
+        return idx < 0 ? trackingKey : trackingKey.substring(0, idx);
+    }
+
     // Extract clone code blocks embedded by the detection agent in `clone.reason`.
     // Expected tags:
     //   [CLONE_CODE_A]...[/CLONE_CODE_A]
@@ -1544,7 +1779,7 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                 int parameterCount = method.getParameterList().getParametersCount();
                 String baselineBodyText = normalizeMethodBodyText(getMethodBodyText(method));
                 out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, baselineBodyText, displayName));
-                logStage(viewer, "WATCH", "tracking cloned method: " + displayName);
+//                logStage(viewer, "WATCH", "tracking cloned method: " + displayName);
             }
         } catch (Throwable t) {
             logStage(viewer, "WATCH", "failed to capture cloned method snapshots: " + t.getMessage());
