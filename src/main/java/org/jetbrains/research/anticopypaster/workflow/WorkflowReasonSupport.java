@@ -86,6 +86,17 @@ final class WorkflowReasonSupport {
         }
     }
 
+    static boolean containsReasonName(Object reasonObj, String reasonName) {
+        if (reasonObj == null || reasonName == null || reasonName.isBlank()) return false;
+        if (reasonObj instanceof Iterable<?> iterable) {
+            for (Object item : iterable) {
+                if (reasonName.equals(String.valueOf(item))) return true;
+            }
+            return false;
+        }
+        return reasonName.equals(String.valueOf(reasonObj));
+    }
+
     static String definitionForReason(Object reasonObj) {
         if (reasonObj == null) return "No definition available.";
 
@@ -118,6 +129,9 @@ final class WorkflowReasonSupport {
         }
         if ((r.contains("without") && r.contains("replacement")) || r.contains("extraction_without_clone_replacement")) {
             return "A helper method was extracted, but the original clone body was not replaced by calls to that helper and still remains duplicated.";
+        }
+        if ((r.contains("extract") && r.contains("not") && r.contains("found")) || r.contains("extract_method_not_found")) {
+            return "No valid Extract Method refactoring was found: the target clone remains essentially unchanged and no extracted helper replaced it.";
         }
         if (r.contains("excessive")) {
             return "The extracted method includes statements beyond the intended cloned fragment.";

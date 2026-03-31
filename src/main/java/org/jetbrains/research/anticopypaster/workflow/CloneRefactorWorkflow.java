@@ -1,4 +1,5 @@
 package org.jetbrains.research.anticopypaster.workflow;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.containsReasonName;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.definitionForReason;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.extractUsefulnessDebugText;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.parseWrapperNamesFromUsefulnessDebug;
@@ -556,7 +557,7 @@ public final class CloneRefactorWorkflow {
                             if (urBeforeCompile != null && !urBeforeCompile.isUseful) {
                                 boolean overridden = false;
                                 try {
-                                    if (urBeforeCompile.reasons != null && urBeforeCompile.reasons.contains("EXTRACT_METHOD_NOT_CONFIRMED")) {
+                                    if (containsReasonName(urBeforeCompile.reasons, "EXTRACT_METHOD_NOT_CONFIRMED")) {
                                         String[] wrappers = parseWrapperNamesFromUsefulnessDebug(extractUsefulnessDebugText(urBeforeCompile));
                                         if (wrappers != null && wrappers.length == 2
                                                 && looksLikeValidExtractMethodDelegation(currentSource, proposedSource, wrappers[0], wrappers[1])) {
@@ -650,25 +651,30 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                                                 new FragmentUsefulnessAnalyzer.UsefulnessConfig()
                                         );
 
-                                if (frBeforeCompile != null && !frBeforeCompile.isUseful) {
+                                if (frBeforeCompile == null || !frBeforeCompile.isUseful) {
                                     isUseful = false;
-                                    String msg = "Not useful refactoring proposal: strategy=" + frBeforeCompile.strategy +
-                                             ", reasons=" + frBeforeCompile.reasons;
+                                    String strategyText = frBeforeCompile == null
+                                            ? "UNKNOWN"
+                                            : String.valueOf(frBeforeCompile.strategy);
+                                    String reasonsText = frBeforeCompile == null
+                                            ? "[ANALYZER_FALLBACK]"
+                                            : String.valueOf(frBeforeCompile.reasons);
+                                    String notesText = (frBeforeCompile == null || frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank())
+                                            ? ""
+                                            : ("\n\n[USEFULNESS_NOTES]\n" + frBeforeCompile.notes);
+                                    String reasonDefinition = frBeforeCompile == null
+                                            ? "The fragment usefulness analyzer could not confidently validate this refactoring, so the proposal was rejected conservatively."
+                                            : definitionForReason(frBeforeCompile.strategy);
+                                    String msg = "Not useful refactoring proposal: strategy=" + strategyText +
+                                             ", reasons=" + reasonsText;
                                     logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
                                     showNotification(project,
                                             "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
                                                     "for: " + fileName + "\n \n" +
                                                     "Reason:\n" +
-                                                    frBeforeCompile.strategy + "\n" +
-                                                    definitionForReason(frBeforeCompile.strategy),
+                                                    strategyText + "\n" +
+                                                    reasonDefinition,
                                             NotificationType.WARNING);
-
-                                    String reasonsText = String.valueOf(frBeforeCompile.reasons);
-                                    String strategyText = String.valueOf(frBeforeCompile.strategy);
-                                    String reasonDefinition = definitionForReason(frBeforeCompile.strategy);
-                                    String notesText = (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank())
-                                            ? ""
-                                            : ("\n\n[USEFULNESS_NOTES]\n" + frBeforeCompile.notes);
 
                                     feedback = """
 Your previous refactoring attempt was rejected by the usefulness checker.

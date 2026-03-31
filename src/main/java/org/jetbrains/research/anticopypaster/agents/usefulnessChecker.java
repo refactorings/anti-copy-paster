@@ -84,6 +84,7 @@ public final class usefulnessChecker {
         NON_TARGET_CLONE_REFACTORING_DETECTED,
         EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED,
 
+        EXTRACT_METHOD_NOT_FOUND,
         EXTRACT_METHOD_NOT_CONFIRMED,
         ANALYZER_FALLBACK
     }
@@ -249,6 +250,15 @@ public final class usefulnessChecker {
                     );
                 }
 
+                if (looksLikeNoExtractMethodFound(beforeSource, afterSource, addedKeys)) {
+                    return new UsefulnessResult(
+                            false,
+                            45,
+                            List.of(Reason.EXTRACT_METHOD_NOT_FOUND),
+                            confirm.notes
+                    );
+                }
+
                 return new UsefulnessResult(
                         false,
                         45,
@@ -352,9 +362,16 @@ public final class usefulnessChecker {
                 reasons.add(Reason.EXTRACT_METHOD_CONFIRMED);
                 score = 100;
             } else {
-                reasons.addAll(failReasons.isEmpty()
-                        ? List.of(Reason.EXTRACT_METHOD_NOT_CONFIRMED)
-                        : new ArrayList<>(failReasons));
+                boolean targetCloneUntouched = !targetKeys.isEmpty()
+                        ? targetUntouchedClonePairs > 0
+                        : untouchedClonePairs > 0;
+                if (failReasons.isEmpty()) {
+                    reasons.add(targetCloneUntouched && extractOk == 0
+                            ? Reason.EXTRACT_METHOD_NOT_FOUND
+                            : Reason.EXTRACT_METHOD_NOT_CONFIRMED);
+                } else {
+                    reasons.addAll(new ArrayList<>(failReasons));
+                }
                 score = 40; // simple fallback score (not used for decision logic)
             }
 
@@ -1271,6 +1288,23 @@ public final class usefulnessChecker {
                 "Analyzer fallback: " + (msg == null ? "" : msg));
     }
 
+    private static boolean looksLikeNoExtractMethodFound(String beforeSource,
+                                                         String afterSource,
+                                                         Set<String> addedKeys) {
+        if (addedKeys != null && !addedKeys.isEmpty()) return false;
+        return normalizeForNoOpCheck(beforeSource).equals(normalizeForNoOpCheck(afterSource));
+    }
+
+    private static String normalizeForNoOpCheck(String text) {
+        if (text == null || text.isBlank()) return "";
+        StringBuilder normalized = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            if (!Character.isWhitespace(ch)) normalized.append(ch);
+        }
+        return normalized.toString();
+    }
+
 
     private static String summarizeStrategies(EnumMap<Strategy, Integer> counts) {
         if (counts == null || counts.isEmpty()) return "{}";
@@ -1463,6 +1497,26 @@ How to fix it:
 Important constraints:
 - Do not create multiple helpers unnecessarily.
 - Do not delete clones.
+- Only perform Extract Method.
+Follow the required output format for the refactoring task.
+""";
+        }
+
+        if (reasons.contains(Reason.EXTRACT_METHOD_NOT_FOUND)) {
+            return """
+Your previous refactoring was rejected because no Extract Method refactoring was found.
+
+Problem:
+The target clone was left essentially unchanged, and no new extracted helper method was introduced to replace it.
+
+How to fix it:
+- Create one new helper method that contains the shared clone logic.
+- Replace the duplicated statements in both original methods with calls to that helper.
+- Keep only method-specific differences outside the helper.
+
+Important constraints:
+- Do not leave the original clone body unchanged.
+- Do not skip creating the extracted helper.
 - Only perform Extract Method.
 Follow the required output format for the refactoring task.
 """;
