@@ -34,17 +34,64 @@ public class refactoring {
          * This should be provided by the detection agent.
          */
         public String cloneCode;
+        public String cloneCodeA;
+        public String cloneCodeB;
 
         public DetectedClone(String id, List<CloneRange> ranges, String refactorType, String reason) {
             this(id, ranges, refactorType, reason, "");
         }
 
         public DetectedClone(String id, List<CloneRange> ranges, String refactorType, String reason, String cloneCode) {
+            this(id, ranges, refactorType, reason, cloneCode, "", "");
+        }
+
+        public DetectedClone(String id, List<CloneRange> ranges, String refactorType, String reason,
+                             String cloneCode, String cloneCodeA, String cloneCodeB) {
             this.id = id;
             this.ranges = ranges;
             this.refactorType = refactorType;
             this.reason = reason;
             this.cloneCode = (cloneCode == null ? "" : cloneCode);
+            this.cloneCodeA = (cloneCodeA == null ? "" : cloneCodeA);
+            this.cloneCodeB = (cloneCodeB == null ? "" : cloneCodeB);
+        }
+    }
+
+    private static class OccurrenceSpec {
+        public String occurrenceId;
+        public String snippet;
+        public CloneRange preferredRange;
+
+        public OccurrenceSpec(String occurrenceId, String snippet, CloneRange preferredRange) {
+            this.occurrenceId = occurrenceId;
+            this.snippet = snippet == null ? "" : snippet;
+            this.preferredRange = preferredRange;
+        }
+    }
+
+    private static class OccurrenceRewrite {
+        public String occurrenceId;
+        public String replacementCode;
+    }
+
+    private static class PartialRefactorPlan {
+        public String helperMethod;
+        public List<OccurrenceRewrite> occurrenceReplacements;
+    }
+
+    private static class StructuredRefactorOutcome {
+        public boolean recognized;
+        public String newSource;
+        public String error;
+    }
+
+    private static class TextSpan {
+        public int start;
+        public int end;
+
+        public TextSpan(int start, int end) {
+            this.start = start;
+            this.end = end;
         }
     }
 
@@ -140,8 +187,15 @@ public class refactoring {
             return fail(fileName, "LLM caller returned empty output");
         }
 
-        String newSource = extractJavaCodeBlock(rawOutput);
+        StructuredRefactorOutcome structuredOutcome = tryApplyStructuredRefactor(rawOutput, fileSource, clone);
+        String newSource = structuredOutcome == null ? null : structuredOutcome.newSource;
         if (newSource == null) {
+            newSource = extractJavaCodeBlock(rawOutput);
+        }
+        if (newSource == null) {
+            if (structuredOutcome != null && structuredOutcome.recognized && structuredOutcome.error != null && !structuredOutcome.error.isBlank()) {
+                return fail(fileName, "Failed to apply structured refactor output: " + structuredOutcome.error);
+            }
             // Try JSON parsing fallback
             String jsonStr = extractJsonSubstring(rawOutput);
             if (jsonStr != null) {
@@ -315,15 +369,593 @@ public class refactoring {
         sb.append("- Minimize edits outside the target clone regions.\n");
         sb.append("- Do NOT add explanatory prose outside code.\n\n");
 
-        // ===== Output Format (compatible with your extractor) =====
+        List<OccurrenceSpec> occurrences = buildOccurrenceSpecs(clone, fileSource);
+        if (!occurrences.isEmpty()) {
+            sb.append("=== TARGET OCCURRENCES ===\n");
+            sb.append("You must refactor ALL of the following occurrences.\n");
+            for (OccurrenceSpec occurrence : occurrences) {
+                sb.append(occurrence.occurrenceId);
+                if (occurrence.preferredRange != null) {
+                    sb.append(" (approximate lines ")
+                      .append(occurrence.preferredRange.startLine)
+                      .append("-")
+                      .append(occurrence.preferredRange.endLine)
+                      .append(")");
+                }
+                sb.append(":\n");
+                sb.append("```\n").append(occurrence.snippet).append("\n```\n\n");
+            }
+        }
+
+        // ===== Output Format (partial refactor + local reinsertion) =====
         sb.append("=== OUTPUT FORMAT ===\n");
-        sb.append("- Output ONLY ONE Java code block containing the full updated file.\n");
-        sb.append("- The output must contain an actual refactoring of the target clone, not the unchanged original file, unless Extract Method is impossible within this file.\n");
-        sb.append("- Do NOT output JSON.\n");
-        sb.append("- Do NOT output multiple alternatives.\n");
-        sb.append("- Do NOT output any text before or after the code block.\n");
+        sb.append("- Output ONLY a valid JSON object.\n");
+        sb.append("- Do NOT return the whole file.\n");
+        sb.append("- Do NOT use markdown fences.\n");
+        sb.append("- The JSON must have this exact shape:\n");
+        sb.append("{\n");
+        sb.append("  \"helper_method\": \"full private helper method declaration only\",\n");
+        sb.append("  \"occurrence_replacements\": [\n");
+        sb.append("    {\n");
+        sb.append("      \"occurrence_id\": \"OCCURRENCE_1\",\n");
+        sb.append("      \"replacement_code\": \"only the code that should replace that occurrence\"\n");
+        sb.append("    }\n");
+        sb.append("  ]\n");
+        sb.append("}\n");
+        sb.append("- `helper_method` must contain only the extracted helper method, not the class or file.\n");
+        sb.append("- Each `replacement_code` must contain only the replacement for that occurrence, not the surrounding method or file.\n");
+        sb.append("- Include one replacement entry for every listed occurrence.\n");
+        sb.append("- Do NOT omit `occurrence_replacements`, even if all replacements are similar.\n");
+        sb.append("- Do NOT include explanation text before or after the JSON.\n");
 
         return sb.toString();
+    }
+
+    private StructuredRefactorOutcome tryApplyStructuredRefactor(String rawOutput, String fileSource, DetectedClone clone) {
+        StructuredRefactorOutcome outcome = new StructuredRefactorOutcome();
+        String jsonStr = extractJsonSubstring(rawOutput);
+        if (jsonStr == null) return outcome;
+
+        try {
+            JsonObject obj = JsonParser.parseString(jsonStr).getAsJsonObject();
+            boolean looksLikePartialPlan = obj.has("helper_method")
+                    || obj.has("helperMethod")
+                    || obj.has("occurrence_replacements")
+                    || obj.has("occurrenceReplacements")
+                    || obj.has("replacements")
+                    || obj.has("occurrences")
+                    || obj.has("refactored_occurrences");
+            if (!looksLikePartialPlan) return outcome;
+
+            outcome.recognized = true;
+
+            PartialRefactorPlan plan = new PartialRefactorPlan();
+            plan.helperMethod = getString(obj, "helper_method", "helperMethod");
+            JsonArray replacementsJson = getArray(
+                    obj,
+                    "occurrence_replacements",
+                    "occurrenceReplacements",
+                    "replacements",
+                    "occurrences",
+                    "refactored_occurrences",
+                    "refactoredOccurrences"
+            );
+            plan.occurrenceReplacements = parseOccurrenceReplacements(replacementsJson, buildOccurrenceSpecs(clone, fileSource));
+
+            if ((plan.helperMethod == null || plan.helperMethod.isBlank()) && (plan.occurrenceReplacements == null || plan.occurrenceReplacements.isEmpty())) {
+                outcome.error = "Structured JSON was recognized, but both helper_method and occurrence replacements were missing.";
+                return outcome;
+            }
+            outcome.newSource = applyPartialRefactorPlan(fileSource, clone, plan);
+            return outcome;
+        } catch (JsonSyntaxException e) {
+            outcome.error = "Invalid JSON: " + e.getMessage();
+            return outcome;
+        } catch (IllegalStateException e) {
+            outcome.error = e.getMessage();
+            return outcome;
+        }
+    }
+
+    private List<OccurrenceRewrite> parseOccurrenceReplacements(JsonArray arr, List<OccurrenceSpec> orderedSpecs) {
+        List<OccurrenceRewrite> out = new ArrayList<>();
+        if (arr == null) return out;
+        int inferredIndex = 0;
+        for (JsonElement el : arr) {
+            OccurrenceRewrite rewrite = new OccurrenceRewrite();
+            if (el == null || el.isJsonNull()) continue;
+            if (el.isJsonObject()) {
+                JsonObject obj = el.getAsJsonObject();
+                rewrite.occurrenceId = getString(obj, "occurrence_id", "occurrenceId", "id");
+                rewrite.replacementCode = getString(
+                        obj,
+                        "replacement_code",
+                        "replacementCode",
+                        "refactored_code",
+                        "refactoredCode",
+                        "replacement",
+                        "code",
+                        "updated_code",
+                        "updatedCode"
+                );
+            } else if (el.isJsonPrimitive() && el.getAsJsonPrimitive().isString()) {
+                rewrite.replacementCode = el.getAsString();
+            } else {
+                continue;
+            }
+            if ((rewrite.occurrenceId == null || rewrite.occurrenceId.isBlank()) && orderedSpecs != null && inferredIndex < orderedSpecs.size()) {
+                rewrite.occurrenceId = orderedSpecs.get(inferredIndex).occurrenceId;
+            }
+            if (rewrite.occurrenceId == null || rewrite.occurrenceId.isBlank()) continue;
+            if (rewrite.replacementCode == null) rewrite.replacementCode = "";
+            out.add(rewrite);
+            inferredIndex++;
+        }
+        return out;
+    }
+
+    private String applyPartialRefactorPlan(String fileSource, DetectedClone clone, PartialRefactorPlan plan) {
+        List<OccurrenceSpec> specs = buildOccurrenceSpecs(clone, fileSource);
+        if (specs.isEmpty()) {
+            throw new IllegalStateException("No occurrence snippets available for partial refactoring");
+        }
+
+        Map<String, OccurrenceRewrite> rewritesById = new LinkedHashMap<>();
+        if (plan.occurrenceReplacements != null) {
+            for (OccurrenceRewrite rewrite : plan.occurrenceReplacements) {
+                if (rewrite == null || rewrite.occurrenceId == null || rewrite.occurrenceId.isBlank()) continue;
+                rewritesById.put(rewrite.occurrenceId, rewrite);
+            }
+        }
+
+        List<ResolvedReplacement> resolved = new ArrayList<>();
+        List<TextSpan> usedSpans = new ArrayList<>();
+        for (OccurrenceSpec spec : specs) {
+            OccurrenceRewrite rewrite = rewritesById.get(spec.occurrenceId);
+            if (rewrite == null || rewrite.replacementCode == null || rewrite.replacementCode.isBlank()) {
+                throw new IllegalStateException("Missing replacement_code for " + spec.occurrenceId);
+            }
+            TextSpan span = locateOccurrence(fileSource, spec, usedSpans);
+            if (span == null) {
+                throw new IllegalStateException("Could not locate source for " + spec.occurrenceId);
+            }
+            usedSpans.add(span);
+            resolved.add(new ResolvedReplacement(span, rewrite.replacementCode));
+        }
+
+        resolved.sort((a, b) -> Integer.compare(b.span.start, a.span.start));
+        String updated = fileSource;
+        for (ResolvedReplacement replacement : resolved) {
+            String originalText = updated.substring(replacement.span.start, replacement.span.end);
+            String adjusted = reindentLikeOriginal(replacement.newText, originalText);
+            updated = updated.substring(0, replacement.span.start) + adjusted + updated.substring(replacement.span.end);
+        }
+
+        String helperMethod = plan.helperMethod == null ? "" : plan.helperMethod.trim();
+        if (helperMethod.isBlank()) {
+            throw new IllegalStateException("Missing helper_method in partial refactor response");
+        }
+
+        int anchorPosition = resolved.isEmpty() ? -1 : resolved.get(resolved.size() - 1).span.start;
+        int insertPos = findEnclosingTypeInsertionPoint(updated, anchorPosition);
+        String memberIndent = detectMemberIndent(updated, insertPos);
+        String helperBlock = reindentBlock(helperMethod, memberIndent);
+        String insertion = "\n\n" + helperBlock + "\n";
+        return updated.substring(0, insertPos) + insertion + updated.substring(insertPos);
+    }
+
+    private List<OccurrenceSpec> buildOccurrenceSpecs(DetectedClone clone, String fileSource) {
+        List<OccurrenceSpec> specs = new ArrayList<>();
+        if (clone == null) return specs;
+
+        int counter = 1;
+        Set<String> usedKeys = new LinkedHashSet<>();
+        boolean hasCloneCodeA = clone.cloneCodeA != null && !clone.cloneCodeA.isBlank();
+        boolean hasCloneCodeB = clone.cloneCodeB != null && !clone.cloneCodeB.isBlank();
+
+        if (hasCloneCodeA) {
+            CloneRange range = getRange(clone.ranges, 0);
+            String key = clone.cloneCodeA + "::" + rangeKey(range);
+            if (usedKeys.add(key)) {
+                specs.add(new OccurrenceSpec("OCCURRENCE_" + counter++, clone.cloneCodeA, range));
+            }
+        }
+        if (hasCloneCodeB) {
+            CloneRange range = getRange(clone.ranges, 1);
+            String key = clone.cloneCodeB + "::" + rangeKey(range);
+            if (usedKeys.add(key)) {
+                specs.add(new OccurrenceSpec("OCCURRENCE_" + counter++, clone.cloneCodeB, range));
+            }
+        }
+
+        if (clone.ranges != null && !clone.ranges.isEmpty()) {
+            for (int i = 0; i < clone.ranges.size(); i++) {
+                CloneRange range = clone.ranges.get(i);
+                if (i == 0 && hasCloneCodeA) continue;
+                if (i == 1 && hasCloneCodeB) continue;
+
+                String snippet = sliceByLineRange(fileSource, range);
+                if ((snippet == null || snippet.isBlank()) && !hasCloneCodeA && !hasCloneCodeB && clone.cloneCode != null && !clone.cloneCode.isBlank()) {
+                    snippet = clone.cloneCode;
+                }
+                if (snippet == null || snippet.isBlank()) continue;
+
+                String key = snippet + "::" + rangeKey(range);
+                if (usedKeys.add(key)) {
+                    specs.add(new OccurrenceSpec("OCCURRENCE_" + counter++, snippet, range));
+                }
+            }
+        }
+
+        if (specs.isEmpty() && clone.cloneCode != null && !clone.cloneCode.isBlank()) {
+            specs.add(new OccurrenceSpec("OCCURRENCE_1", clone.cloneCode, getRange(clone.ranges, 0)));
+        }
+
+        return specs;
+    }
+
+    private String sliceByLineRange(String source, CloneRange range) {
+        if (source == null || source.isBlank() || range == null) return "";
+        String normalized = normalizeNewlines(source);
+        String[] lines = normalized.split("\n", -1);
+        int start = Math.max(1, range.startLine);
+        int end = Math.max(start, range.endLine);
+        if (lines.length == 0) return "";
+
+        int startIdx = Math.min(lines.length, start) - 1;
+        int endIdx = Math.min(lines.length, end) - 1;
+        if (startIdx < 0 || endIdx < startIdx || startIdx >= lines.length) return "";
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = startIdx; i <= endIdx; i++) {
+            if (i > startIdx) sb.append("\n");
+            sb.append(lines[i]);
+        }
+        return sb.toString();
+    }
+
+    private CloneRange getRange(List<CloneRange> ranges, int index) {
+        if (ranges == null || index < 0 || index >= ranges.size()) return null;
+        return ranges.get(index);
+    }
+
+    private String rangeKey(CloneRange range) {
+        if (range == null) return "";
+        return range.startLine + ":" + range.endLine;
+    }
+
+    private TextSpan locateOccurrence(String source, OccurrenceSpec spec, List<TextSpan> usedSpans) {
+        List<TextSpan> candidates = findExactCandidates(source, spec.snippet);
+        if (candidates.isEmpty()) {
+            candidates = findTrimmedLineCandidates(source, spec.snippet);
+        }
+        if (candidates.isEmpty()) return null;
+
+        int[] lineStarts = computeLineStarts(source);
+        TextSpan best = null;
+        long bestScore = Long.MAX_VALUE;
+        for (TextSpan candidate : candidates) {
+            if (overlapsUsed(candidate, usedSpans)) continue;
+            long score = 0;
+            if (spec.preferredRange != null) {
+                int line = lineOfOffset(lineStarts, candidate.start);
+                score = Math.abs((long) line - spec.preferredRange.startLine);
+            }
+            if (best == null || score < bestScore || (score == bestScore && candidate.start < best.start)) {
+                best = candidate;
+                bestScore = score;
+            }
+        }
+        return best;
+    }
+
+    private boolean overlapsUsed(TextSpan candidate, List<TextSpan> usedSpans) {
+        if (usedSpans == null) return false;
+        for (TextSpan used : usedSpans) {
+            if (used == null) continue;
+            if (candidate.start < used.end && used.start < candidate.end) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<TextSpan> findExactCandidates(String source, String snippet) {
+        List<TextSpan> out = new ArrayList<>();
+        if (source == null || snippet == null || snippet.isBlank()) return out;
+        int from = 0;
+        while (from <= source.length()) {
+            int idx = source.indexOf(snippet, from);
+            if (idx < 0) break;
+            out.add(new TextSpan(idx, idx + snippet.length()));
+            from = idx + Math.max(1, snippet.length());
+        }
+        return out;
+    }
+
+    private List<TextSpan> findTrimmedLineCandidates(String source, String snippet) {
+        List<TextSpan> out = new ArrayList<>();
+        if (source == null || snippet == null || snippet.isBlank()) return out;
+
+        String normalizedSource = normalizeNewlines(source);
+        String normalizedSnippet = normalizeNewlines(snippet);
+        String[] sourceLines = normalizedSource.split("\n", -1);
+        String[] snippetLines = normalizedSnippet.split("\n", -1);
+
+        List<String> needed = new ArrayList<>();
+        for (String line : snippetLines) {
+            String trimmed = line == null ? "" : line.trim();
+            if (!trimmed.isEmpty()) {
+                needed.add(trimmed);
+            }
+        }
+        if (needed.isEmpty()) return out;
+
+        int[] lineStarts = computeLineStarts(normalizedSource);
+        for (int start = 0; start < sourceLines.length; start++) {
+            int iSource = start;
+            int iNeed = 0;
+
+            while (iSource < sourceLines.length && sourceLines[iSource].trim().isEmpty()) iSource++;
+            int candidateStart = iSource;
+
+            while (iSource < sourceLines.length && iNeed < needed.size()) {
+                String trimmed = sourceLines[iSource].trim();
+                if (trimmed.isEmpty()) {
+                    iSource++;
+                    continue;
+                }
+                if (!trimmed.equals(needed.get(iNeed))) {
+                    break;
+                }
+                iSource++;
+                iNeed++;
+            }
+
+            if (iNeed == needed.size()) {
+                int endLine = Math.max(candidateStart, iSource - 1);
+                int startOffset = lineStarts[Math.min(candidateStart, lineStarts.length - 1)];
+                int endOffset = endLine + 1 < lineStarts.length ? lineStarts[endLine + 1] : normalizedSource.length();
+                out.add(new TextSpan(startOffset, endOffset));
+            }
+        }
+        return out;
+    }
+
+    private int[] computeLineStarts(String source) {
+        String normalized = normalizeNewlines(source);
+        List<Integer> starts = new ArrayList<>();
+        starts.add(0);
+        for (int i = 0; i < normalized.length(); i++) {
+            if (normalized.charAt(i) == '\n' && i + 1 <= normalized.length()) {
+                starts.add(i + 1);
+            }
+        }
+        int[] arr = new int[starts.size()];
+        for (int i = 0; i < starts.size(); i++) arr[i] = starts.get(i);
+        return arr;
+    }
+
+    private int lineOfOffset(int[] lineStarts, int offset) {
+        int lo = 0;
+        int hi = lineStarts.length - 1;
+        while (lo <= hi) {
+            int mid = (lo + hi) >>> 1;
+            int start = lineStarts[mid];
+            int next = (mid + 1 < lineStarts.length) ? lineStarts[mid + 1] : Integer.MAX_VALUE;
+            if (offset < start) {
+                hi = mid - 1;
+            } else if (offset >= next) {
+                lo = mid + 1;
+            } else {
+                return mid + 1;
+            }
+        }
+        return Math.max(1, Math.min(lineStarts.length, lo + 1));
+    }
+
+    private int findEnclosingTypeInsertionPoint(String source, int anchorPosition) {
+        if (source == null || source.isEmpty()) return 0;
+        int anchor = anchorPosition >= 0 ? anchorPosition : source.length() - 1;
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("\\b(class|interface|enum|record)\\b[^\\{;]*\\{")
+                .matcher(source);
+
+        int bestClose = -1;
+        int bestSpan = Integer.MAX_VALUE;
+        while (matcher.find()) {
+            int openBrace = source.indexOf('{', matcher.start());
+            if (openBrace < 0) continue;
+            int closeBrace = findMatchingBrace(source, openBrace);
+            if (closeBrace <= openBrace) continue;
+            if (openBrace < anchor && anchor < closeBrace) {
+                int span = closeBrace - openBrace;
+                if (span < bestSpan) {
+                    bestSpan = span;
+                    bestClose = closeBrace;
+                }
+            }
+        }
+
+        if (bestClose >= 0) return bestClose;
+        int fallback = source.lastIndexOf('}');
+        return fallback >= 0 ? fallback : source.length();
+    }
+
+    private int findMatchingBrace(String source, int openBrace) {
+        int depth = 0;
+        boolean inString = false;
+        boolean inChar = false;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+        boolean escaped = false;
+
+        for (int i = openBrace; i < source.length(); i++) {
+            char c = source.charAt(i);
+            char next = i + 1 < source.length() ? source.charAt(i + 1) : '\0';
+
+            if (inLineComment) {
+                if (c == '\n') inLineComment = false;
+                continue;
+            }
+            if (inBlockComment) {
+                if (c == '*' && next == '/') {
+                    inBlockComment = false;
+                    i++;
+                }
+                continue;
+            }
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (inChar) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '\'') {
+                    inChar = false;
+                }
+                continue;
+            }
+
+            if (c == '/' && next == '/') {
+                inLineComment = true;
+                i++;
+                continue;
+            }
+            if (c == '/' && next == '*') {
+                inBlockComment = true;
+                i++;
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+                continue;
+            }
+            if (c == '\'') {
+                inChar = true;
+                continue;
+            }
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) return i;
+            }
+        }
+        return -1;
+    }
+
+    private String detectMemberIndent(String source, int insertPos) {
+        int lineStart = Math.max(0, source.lastIndexOf('\n', Math.max(0, insertPos - 1)) + 1);
+        int i = lineStart;
+        while (i < source.length()) {
+            char c = source.charAt(i);
+            if (c != ' ' && c != '\t') break;
+            i++;
+        }
+        return source.substring(lineStart, i) + "    ";
+    }
+
+    private String reindentLikeOriginal(String newText, String originalText) {
+        String baseIndent = firstNonEmptyIndent(originalText);
+        return reindentBlock(newText, baseIndent);
+    }
+
+    private String reindentBlock(String block, String baseIndent) {
+        if (block == null) return "";
+        String normalized = normalizeNewlines(block).strip();
+        if (normalized.isEmpty()) return "";
+
+        String[] lines = normalized.split("\n", -1);
+        int commonIndent = Integer.MAX_VALUE;
+        for (String line : lines) {
+            if (line.trim().isEmpty()) continue;
+            commonIndent = Math.min(commonIndent, countIndent(line));
+        }
+        if (commonIndent == Integer.MAX_VALUE) commonIndent = 0;
+
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            if (i > 0) sb.append("\n");
+            if (line.trim().isEmpty()) continue;
+            int cut = Math.min(commonIndent, countIndent(line));
+            sb.append(baseIndent).append(line.substring(cut));
+        }
+        return sb.toString();
+    }
+
+    private int countIndent(String line) {
+        int i = 0;
+        while (i < line.length()) {
+            char c = line.charAt(i);
+            if (c != ' ' && c != '\t') break;
+            i++;
+        }
+        return i;
+    }
+
+    private String firstNonEmptyIndent(String text) {
+        if (text == null || text.isEmpty()) return "";
+        String normalized = normalizeNewlines(text);
+        String[] lines = normalized.split("\n", -1);
+        for (String line : lines) {
+            if (!line.trim().isEmpty()) {
+                int indent = countIndent(line);
+                return line.substring(0, indent);
+            }
+        }
+        return "";
+    }
+
+    private String normalizeNewlines(String s) {
+        if (s == null) return "";
+        return s.replace("\r\n", "\n").replace("\r", "\n");
+    }
+
+    private String getString(JsonObject obj, String... keys) {
+        if (obj == null || keys == null) return null;
+        for (String key : keys) {
+            if (key == null || !obj.has(key) || obj.get(key).isJsonNull()) continue;
+            try {
+                return obj.get(key).getAsString();
+            } catch (Throwable ignored) {
+                // ignore and continue
+            }
+        }
+        return null;
+    }
+
+    private JsonArray getArray(JsonObject obj, String... keys) {
+        if (obj == null || keys == null) return null;
+        for (String key : keys) {
+            if (key == null || !obj.has(key) || obj.get(key).isJsonNull()) continue;
+            try {
+                return obj.getAsJsonArray(key);
+            } catch (Throwable ignored) {
+                // ignore and continue
+            }
+        }
+        return null;
+    }
+
+    private static class ResolvedReplacement {
+        public TextSpan span;
+        public String newText;
+
+        public ResolvedReplacement(TextSpan span, String newText) {
+            this.span = span;
+            this.newText = newText == null ? "" : newText;
+        }
     }
 
     private String extractJavaCodeBlock(String raw) {

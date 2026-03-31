@@ -20,6 +20,8 @@ import java.util.stream.Collectors;
  *  - DELEGATION_TO_EXISTING: one clone becomes a thin delegate to an existing method (no new helper required)
  *  - FRAGMENTATION: duplication reduced by splitting logic into multiple shared helpers
  *  - INCOMPLETE_REFACTORING: duplication remains high after a refactoring attempt
+ *  - NON_TARGET_CLONE_REFACTORING: some other clone pair was refactored while another original clone pair remained unchanged
+ *  - EXTRACTION_WITHOUT_CLONE_REPLACEMENT: a helper was added, but the original clone bodies were not replaced with calls
  *
  * Important: This is a conservative, best-effort filter. It should never break the workflow.
  */
@@ -79,6 +81,8 @@ public final class usefulnessChecker {
         CALL_BASED_CLONE_SUBSTITUTION_DETECTED,
         CLONE_REMOVAL_BY_DELEGATION_DETECTED,
         FRAGMENTATION_OF_LOGIC_DETECTED,
+        NON_TARGET_CLONE_REFACTORING_DETECTED,
+        EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED,
 
         EXTRACT_METHOD_NOT_CONFIRMED,
         ANALYZER_FALLBACK
@@ -95,6 +99,8 @@ public final class usefulnessChecker {
         CALL_BASED_CLONE_SUBSTITUTION,
         CLONE_REMOVAL_BY_DELEGATION,
         FRAGMENTATION_OF_LOGIC,
+        NON_TARGET_CLONE_REFACTORING,
+        EXTRACTION_WITHOUT_CLONE_REPLACEMENT,
 
         // Backward-compat / legacy labels (kept to avoid breaking other code paths)
         POST_EXTRACTION_DELETION,
@@ -119,6 +125,18 @@ public final class usefulnessChecker {
         }
     }
 
+    public static final class TargetMethodHint {
+        public final String className;
+        public final String methodName;
+        public final int parameterCount;
+
+        public TargetMethodHint(String className, String methodName, int parameterCount) {
+            this.className = className == null ? "" : className;
+            this.methodName = methodName == null ? "" : methodName;
+            this.parameterCount = parameterCount;
+        }
+    }
+
     /* =============================
      * Main API
      * ============================= */
@@ -128,6 +146,15 @@ public final class usefulnessChecker {
                                           String beforeSource,
                                           String afterSource,
                                           UsefulnessConfig cfg) {
+        return analyze(project, fileName, beforeSource, afterSource, cfg, null);
+    }
+
+    public static UsefulnessResult analyze(Project project,
+                                          String fileName,
+                                          String beforeSource,
+                                          String afterSource,
+                                          UsefulnessConfig cfg,
+                                          List<TargetMethodHint> targetHints) {
         try {
             if (project == null || project.isDisposed()) return null;
             if (cfg == null) cfg = new UsefulnessConfig();
@@ -154,6 +181,9 @@ public final class usefulnessChecker {
             // Identify new methods in AFTER (helpers / fragmentation candidates)
             Set<String> addedKeys = new HashSet<>(afterMethods.keySet());
             addedKeys.removeAll(beforeMethods.keySet());
+
+            LinkedHashSet<String> targetKeys = resolveTargetMethodKeys(beforeMethods, targetHints);
+            List<PairScore> targetPairs = computePairsRestricted(beforeSig, new ArrayList<>(targetKeys), 0.0, cfg.maxPairs);
 
             // Focus mode (preferred): identify the refactoring target methods by looking for
             // >=2 existing (BEFORE) methods that became thin delegates to the same newly added helper in AFTER.
@@ -189,12 +219,17 @@ public final class usefulnessChecker {
             // Focused clonePairs: only consider pairs among the methods that delegate to the same newly added helper.
             // This approximates “analyze only the detection pair”.
             List<PairScore> clonePairs;
-            if (focusKeys != null && focusKeys.size() >= 2) {
-                clonePairs = computePairsRestricted(beforeSig, focusKeys, 0.0, cfg.maxPairs);
+            List<PairScore> allClonePairs = findClonePairs(beforeSig, cfg);
+            if (!targetKeys.isEmpty()) {
+                clonePairs = mergePairLists(targetPairs, allClonePairs, cfg.maxPairs);
+                debugLines.add("targetMethods=" + targetKeys.size() + ", targetPairs=" + targetPairs.size() + ", allClonePairs=" + allClonePairs.size() + ", analyzedClonePairs=" + clonePairs.size());
+            } else if (focusKeys != null && focusKeys.size() >= 2) {
+                List<PairScore> focusedPairs = computePairsRestricted(beforeSig, focusKeys, 0.0, cfg.maxPairs);
+                clonePairs = mergePairLists(focusedPairs, allClonePairs, cfg.maxPairs);
                 debugLines.add("focusHelper=" + (focusHelper == null ? "" : focusHelper) + ", focusMethods=" + focusKeys.size());
-                debugLines.add("clonePairsFound=" + clonePairs.size());
+                debugLines.add("focusedClonePairs=" + focusedPairs.size() + ", allClonePairs=" + allClonePairs.size() + ", analyzedClonePairs=" + clonePairs.size());
             } else {
-                clonePairs = findClonePairs(beforeSig, cfg);
+                clonePairs = allClonePairs;
                 debugLines.add("clonePairsFound=" + clonePairs.size());
             }
 
@@ -225,6 +260,10 @@ public final class usefulnessChecker {
             // STRICT usefulness: ALL pairs must be EXTRACT_METHOD, else NOT useful.
             int analyzed = 0;
             int extractOk = 0;
+            int untouchedClonePairs = 0;
+            int targetExtractOk = 0;
+            int nonTargetExtractOk = 0;
+            int targetUntouchedClonePairs = 0;
             EnumMap<Strategy, Integer> strategyCounts = new EnumMap<>(Strategy.class);
 
             // Track which non-Extract-Method outcomes happened at least once
@@ -233,6 +272,7 @@ public final class usefulnessChecker {
             for (PairScore ps : clonePairs) {
                 if (analyzed >= cfg.maxPairs) break;
                 analyzed++;
+                boolean targetPair = isTargetPair(ps, targetKeys);
 
                 PairOutcome out = evaluatePair(ps, beforeMethods, afterMethods, beforeSig, afterSig, addedKeys, afterPsi, cfg);
 
@@ -255,7 +295,14 @@ public final class usefulnessChecker {
 
                 if (out.strategy == Strategy.EXTRACT_METHOD) {
                     extractOk++;
+                    if (targetPair) targetExtractOk++;
+                    else nonTargetExtractOk++;
                     continue;
+                }
+
+                if (out.untouchedClone) {
+                    untouchedClonePairs++;
+                    if (targetPair) targetUntouchedClonePairs++;
                 }
 
                 // Any non-EXTRACT_METHOD outcome makes the proposal NOT useful.
@@ -266,11 +313,31 @@ public final class usefulnessChecker {
                     case CALL_BASED_CLONE_SUBSTITUTION -> failReasons.add(Reason.CALL_BASED_CLONE_SUBSTITUTION_DETECTED);
                     case CLONE_REMOVAL_BY_DELEGATION -> failReasons.add(Reason.CLONE_REMOVAL_BY_DELEGATION_DETECTED);
                     case FRAGMENTATION_OF_LOGIC -> failReasons.add(Reason.FRAGMENTATION_OF_LOGIC_DETECTED);
+                    case NON_TARGET_CLONE_REFACTORING -> failReasons.add(Reason.NON_TARGET_CLONE_REFACTORING_DETECTED);
+                    case EXTRACTION_WITHOUT_CLONE_REPLACEMENT -> failReasons.add(Reason.EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED);
                     case UNKNOWN -> {
                         // Neutral/indeterminate for this pair; do not penalize the whole proposal.
                     }
                     default -> failReasons.add(Reason.ANALYZER_FALLBACK);
                 }
+            }
+
+            if (!targetKeys.isEmpty()) {
+                if (nonTargetExtractOk >= 1 && targetUntouchedClonePairs > 0
+                        && !failReasons.contains(Reason.EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED)) {
+                    failReasons.add(Reason.NON_TARGET_CLONE_REFACTORING_DETECTED);
+                    strategyCounts.put(
+                            Strategy.NON_TARGET_CLONE_REFACTORING,
+                            strategyCounts.getOrDefault(Strategy.NON_TARGET_CLONE_REFACTORING, 0) + targetUntouchedClonePairs
+                    );
+                }
+            } else if (extractOk >= 1 && untouchedClonePairs > 0
+                    && !failReasons.contains(Reason.EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED)) {
+                failReasons.add(Reason.NON_TARGET_CLONE_REFACTORING_DETECTED);
+                strategyCounts.put(
+                        Strategy.NON_TARGET_CLONE_REFACTORING,
+                        strategyCounts.getOrDefault(Strategy.NON_TARGET_CLONE_REFACTORING, 0) + untouchedClonePairs
+                );
             }
 
             List<Reason> reasons = new ArrayList<>();
@@ -293,6 +360,11 @@ public final class usefulnessChecker {
 
             String notes = "analyzedPairs=" + analyzed +
                     ", extractMethodPairs=" + extractOk +
+                    ", targetExtractMethodPairs=" + targetExtractOk +
+                    ", nonTargetExtractMethodPairs=" + nonTargetExtractOk +
+                    ", untouchedClonePairs=" + untouchedClonePairs +
+                    ", targetUntouchedClonePairs=" + targetUntouchedClonePairs +
+                    ", targetMethods=" + targetKeys.size() +
                     ", addedMethods=" + addedKeys.size() +
                     ", strategies=" + summarizeStrategies(strategyCounts) +
                     ", debug=" + debugLines;
@@ -405,10 +477,16 @@ public final class usefulnessChecker {
     private static final class PairOutcome {
         final Strategy strategy;
         final boolean reducedOrRemoved;
+        final boolean untouchedClone;
 
         PairOutcome(Strategy strategy, boolean reducedOrRemoved) {
+            this(strategy, reducedOrRemoved, false);
+        }
+
+        PairOutcome(Strategy strategy, boolean reducedOrRemoved, boolean untouchedClone) {
             this.strategy = strategy;
             this.reducedOrRemoved = reducedOrRemoved;
+            this.untouchedClone = untouchedClone;
         }
     }
 
@@ -570,13 +648,22 @@ public final class usefulnessChecker {
                     (aDel.isDelegate && intersects(aDel.calleeKeys, addedKeys)) ||
                     (bDel.isDelegate && intersects(bDel.calleeKeys, addedKeys));
 
+            boolean untouchedClone = looksLikeUntouchedClonePair(
+                    aKey, bKey, beforeSig, afterSig, addedKeys, simAfter, aDel, bDel, aCalls, bCalls, cfg
+            );
+            if (looksLikeExtractionWithoutCloneReplacement(
+                    aKey, bKey, beforeSig, afterSig, addedKeys, simAfter, aDel, bDel, aCalls, bCalls, cfg
+            )) {
+                return new PairOutcome(Strategy.EXTRACTION_WITHOUT_CLONE_REPLACEMENT, false, true);
+            }
+
             boolean refactorAttempt = aDel.isDelegate || bDel.isDelegate || (!sharedCalls.isEmpty()) || callsNewHelper;
 
             if (refactorAttempt) {
                 return new PairOutcome(Strategy.INCOMPLETE_REFACTORING, false);
             }
             // Otherwise: still clones, but no evidence of attempt in this proposal; treat as unknown (do not hard-fail globally).
-            return new PairOutcome(Strategy.UNKNOWN, false);
+            return new PairOutcome(Strategy.UNKNOWN, false, untouchedClone);
         }
 
         // Similarity dropped enough => reduced.
@@ -589,6 +676,91 @@ public final class usefulnessChecker {
 
         // Middle region: reduced a bit, but not clear
         return new PairOutcome(Strategy.UNKNOWN, false);
+    }
+
+    private static boolean looksLikeUntouchedClonePair(String aKey,
+                                                       String bKey,
+                                                       Map<String, Sig> beforeSig,
+                                                       Map<String, Sig> afterSig,
+                                                       Set<String> addedKeys,
+                                                       double simAfter,
+                                                       DelegateInfo aDel,
+                                                       DelegateInfo bDel,
+                                                       Set<String> aCalls,
+                                                       Set<String> bCalls,
+                                                       UsefulnessConfig cfg) {
+        if (simAfter < cfg.cloneSimilarityAfterStill) return false;
+        if (aDel != null && aDel.isDelegate) return false;
+        if (bDel != null && bDel.isDelegate) return false;
+        if (intersects(aCalls, addedKeys) || intersects(bCalls, addedKeys)) return false;
+
+        double aSelf = jaccard(beforeSig.get(aKey), afterSig.get(aKey));
+        double bSelf = jaccard(beforeSig.get(bKey), afterSig.get(bKey));
+        return aSelf >= 0.95 && bSelf >= 0.95;
+    }
+
+    private static boolean looksLikeExtractionWithoutCloneReplacement(String aKey,
+                                                                      String bKey,
+                                                                      Map<String, Sig> beforeSig,
+                                                                      Map<String, Sig> afterSig,
+                                                                      Set<String> addedKeys,
+                                                                      double simAfter,
+                                                                      DelegateInfo aDel,
+                                                                      DelegateInfo bDel,
+                                                                      Set<String> aCalls,
+                                                                      Set<String> bCalls,
+                                                                      UsefulnessConfig cfg) {
+        if (addedKeys == null || addedKeys.isEmpty()) return false;
+        if (!looksLikeUntouchedClonePair(aKey, bKey, beforeSig, afterSig, addedKeys, simAfter, aDel, bDel, aCalls, bCalls, cfg)) {
+            return false;
+        }
+
+        double helperThreshold = Math.max(cfg.cloneSimilarityAfterReduced, 0.55);
+        for (String helperKey : addedKeys) {
+            Sig helperSig = afterSig.get(helperKey);
+            if (helperSig == null || helperSig.tokenCount < 3) continue;
+
+            double simA = jaccard(beforeSig.get(aKey), helperSig);
+            double simB = jaccard(beforeSig.get(bKey), helperSig);
+            if ((simA >= helperThreshold && simB >= helperThreshold)
+                    || Math.max(simA, simB) >= cfg.cloneSimilarityBefore) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static LinkedHashSet<String> resolveTargetMethodKeys(Map<String, PsiMethod> beforeMethods,
+                                                                 List<TargetMethodHint> targetHints) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        if (beforeMethods == null || beforeMethods.isEmpty() || targetHints == null || targetHints.isEmpty()) {
+            return out;
+        }
+
+        for (TargetMethodHint hint : targetHints) {
+            if (hint == null || hint.methodName == null || hint.methodName.isBlank()) continue;
+            for (Map.Entry<String, PsiMethod> e : beforeMethods.entrySet()) {
+                PsiMethod method = e.getValue();
+                if (method == null) continue;
+                if (!hint.methodName.equals(method.getName())) continue;
+                int paramCount = method.getParameterList() == null ? 0 : method.getParameterList().getParametersCount();
+                if (paramCount != hint.parameterCount) continue;
+
+                PsiClass owner = method.getContainingClass();
+                String className = owner == null ? "" :
+                        (owner.getQualifiedName() != null ? owner.getQualifiedName() : owner.getName());
+                className = className == null ? "" : className;
+                if (!hint.className.isBlank() && !hint.className.equals(className)) continue;
+
+                out.add(e.getKey());
+            }
+        }
+        return out;
+    }
+
+    private static boolean isTargetPair(PairScore ps, Set<String> targetKeys) {
+        if (ps == null || targetKeys == null || targetKeys.isEmpty()) return false;
+        return targetKeys.contains(ps.aKey) && targetKeys.contains(ps.bKey);
     }
 
 
@@ -842,6 +1014,33 @@ public final class usefulnessChecker {
         int cap = Math.max(1, maxPairs);
         if (pairs.size() > cap) return pairs.subList(0, cap);
         return pairs;
+    }
+
+    private static List<PairScore> mergePairLists(List<PairScore> preferred,
+                                                 List<PairScore> fallback,
+                                                 int maxPairs) {
+        LinkedHashMap<String, PairScore> merged = new LinkedHashMap<>();
+        addUniquePairs(merged, preferred);
+        addUniquePairs(merged, fallback);
+
+        List<PairScore> out = new ArrayList<>(merged.values());
+        int cap = Math.max(1, maxPairs);
+        if (out.size() > cap) return out.subList(0, cap);
+        return out;
+    }
+
+    private static void addUniquePairs(Map<String, PairScore> out, List<PairScore> pairs) {
+        if (out == null || pairs == null) return;
+        for (PairScore pair : pairs) {
+            if (pair == null) continue;
+            out.putIfAbsent(pairKey(pair.aKey, pair.bKey), pair);
+        }
+    }
+
+    private static String pairKey(String aKey, String bKey) {
+        String a = aKey == null ? "" : aKey;
+        String b = bKey == null ? "" : bKey;
+        return (a.compareTo(b) <= 0) ? (a + "::" + b) : (b + "::" + a);
     }
 
     private static double jaccard(Sig a, Sig b) {
@@ -1126,8 +1325,48 @@ Important constraints:
 - Do not make one clone call the other.
 - Do not split logic across multiple helpers.
 - Only perform Extract Method.
+Follow the required output format for the refactoring task.
+""";
+        }
 
-Return exactly one Java code block containing the full updated file.
+        if (reasons.contains(Reason.EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED)) {
+            return """
+Your previous refactoring was rejected because you extracted a helper method but did not replace the original clone with calls to it.
+
+Problem:
+The helper exists, but the original duplicated clone logic still remains in place.
+
+How to fix it:
+- Keep the extracted helper method.
+- Replace the duplicated clone logic in the original methods with calls to that helper.
+- Remove the duplicated statements that were supposed to be extracted.
+
+Important constraints:
+- Do not leave the original clone body unchanged.
+- Do not keep both the full clone and the extracted helper.
+- Only perform Extract Method.
+Follow the required output format for the refactoring task.
+""";
+        }
+
+        if (reasons.contains(Reason.NON_TARGET_CLONE_REFACTORING_DETECTED)) {
+            return """
+Your previous refactoring was rejected because it appears to refactor a different clone pair while leaving the target clone unchanged.
+
+Problem:
+Some clone-related changes were made in the file, but the original target clone pair still remains essentially unchanged.
+
+How to fix it:
+- Focus on the original target clone pair.
+- Extract the shared logic from that target pair into one helper.
+- Replace the target clone occurrences with calls to the helper.
+- Avoid refactoring unrelated clone pairs unless they are part of the same target duplication.
+
+Important constraints:
+- Do not leave the target clone unchanged.
+- Do not switch to a different duplicated region.
+- Only perform Extract Method on the intended target clone.
+Follow the required output format for the refactoring task.
 """;
         }
 
@@ -1147,8 +1386,7 @@ Important constraints:
 - Do not delete clone methods.
 - Do not merge them.
 - Only perform Extract Method.
-
-Return exactly one Java code block containing the full updated file.
+Follow the required output format for the refactoring task.
 """;
         }
 
@@ -1168,8 +1406,7 @@ Important constraints:
 - Do not delete clones.
 - Do not substitute one clone with another.
 - Only perform Extract Method.
-
-Return exactly one Java code block containing the full updated file.
+Follow the required output format for the refactoring task.
 """;
         }
 
@@ -1188,8 +1425,7 @@ Important constraints:
 - Do not make one clone call the other.
 - Do not delete clones.
 - Only perform Extract Method.
-
-Return exactly one Java code block containing the full updated file.
+Follow the required output format for the refactoring task.
 """;
         }
 
@@ -1209,8 +1445,7 @@ Important constraints:
 - Do not rely on delegation alone.
 - Do not make one clone call the other.
 - Only perform Extract Method.
-
-Return exactly one Java code block containing the full updated file.
+Follow the required output format for the refactoring task.
 """;
         }
 
@@ -1229,8 +1464,7 @@ Important constraints:
 - Do not create multiple helpers unnecessarily.
 - Do not delete clones.
 - Only perform Extract Method.
-
-Return exactly one Java code block containing the full updated file.
+Follow the required output format for the refactoring task.
 """;
         }
 
@@ -1250,8 +1484,7 @@ Important constraints:
 - Do not delete clones.
 - Do not split logic across helpers.
 - Only perform Extract Method.
-
-Return exactly one Java code block containing the full updated file.
+Follow the required output format for the refactoring task.
 """;
         }
 

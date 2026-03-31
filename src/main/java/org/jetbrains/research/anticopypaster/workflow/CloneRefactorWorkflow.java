@@ -1,4 +1,17 @@
 package org.jetbrains.research.anticopypaster.workflow;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.definitionForReason;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.extractUsefulnessDebugText;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.parseWrapperNamesFromUsefulnessDebug;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.previewOneLine;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.cancelAwareViewer;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.closeQuietly;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.logStage;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.openLogWriter;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.openViewer;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.showNotification;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.teeViewer;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.throwIfCancelled;
+
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiManager;
@@ -72,64 +85,6 @@ import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 
 public final class CloneRefactorWorkflow {
-    // ===== Log persistence helpers =====
-    private static final DateTimeFormatter LOG_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
-
-    private static String sanitizeForFilename(String s) {
-        if (s == null) return "unknown";
-        String t = s.trim();
-        if (t.isEmpty()) return "unknown";
-        // Replace anything unsafe for filenames
-        t = t.replaceAll("[^a-zA-Z0-9._-]+", "_");
-        // Avoid overly-long filenames
-        if (t.length() > 80) t = t.substring(0, 80);
-        return t;
-    }
-
-    private static BufferedWriter openLogWriter(Project project, String targetFileName, String modelName) {
-        try {
-            String basePath = project == null ? null : project.getBasePath();
-            if (basePath == null || basePath.isBlank()) return null;
-
-            File dir = new File(basePath, ".anticopypaster" + File.separator + "logs");
-            if (!dir.exists()) dir.mkdirs();
-
-            String ts = LocalDateTime.now().format(LOG_TS_FMT);
-            String safeFile = sanitizeForFilename(targetFileName);
-            String safeModel = sanitizeForFilename(modelName);
-            File out = new File(dir, safeFile + "." + safeModel + "." + ts + ".log");
-
-            return Files.newBufferedWriter(out.toPath(), StandardCharsets.UTF_8);
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    private static void closeQuietly(Closeable c) {
-        try {
-            if (c != null) c.close();
-        } catch (Throwable ignored) {}
-    }
-
-    private static Consumer<String> teeViewer(Consumer<String> viewer, BufferedWriter logWriter) {
-        return (line) -> {
-            if (line == null) return;
-            // 1) Viewer
-            try {
-                if (viewer != null) viewer.accept(line);
-            } catch (Throwable ignored) {}
-            // 2) Log file
-            try {
-                if (logWriter != null) {
-                    logWriter.write(line);
-                    if (!line.endsWith("\n")) logWriter.write("\n");
-                    logWriter.flush();
-                }
-            } catch (Throwable ignored) {}
-        };
-    }
-
-
     private static final String REFACTOR_RAG_DB_RESOURCE = "rag/refactor_database.csv";
 
     // RAG retrieval tuning
@@ -204,139 +159,6 @@ public final class CloneRefactorWorkflow {
         logStage(viewer, "WORKFLOW", "CANCELLED by user (viewer closed; process/thread interrupted)");
     }
 
-    private static java.util.function.Consumer<String> cancelAwareViewer(java.util.function.Consumer<String> viewer) {
-        if (viewer == null) return null;
-        return (msg) -> {
-            if (isCancelled()) return;
-            try { viewer.accept(msg); } catch (Throwable ignored) {}
-        };
-    }
-
-    private static void throwIfCancelled(java.util.function.Consumer<String> viewer) {
-        if (isCancelled() || Thread.currentThread().isInterrupted()) {
-            throw new RuntimeException("CANCELLED");
-        }
-    }
-
-    private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
-
-    /** Open (or reuse) a console tab and return a writer for streaming lines into it. */
-    private static Consumer<String> openViewer(Project project, String title) {
-        final java.util.concurrent.atomic.AtomicReference<ConsoleView> consoleRef = new java.util.concurrent.atomic.AtomicReference<>();
-        final java.util.concurrent.atomic.AtomicReference<java.util.function.Consumer<String>> writerRef = new java.util.concurrent.atomic.AtomicReference<>();
-
-        Runnable createOrReuse = () -> {
-            ToolWindowManager twm = ToolWindowManager.getInstance(project);
-            ToolWindow toolWindow = twm.getToolWindow(ToolWindowId.RUN);
-            if (toolWindow == null) {
-                toolWindow = twm.getToolWindow("AntiCopyPaster");
-                if (toolWindow == null) {
-                    toolWindow = twm.registerToolWindow(RegisterToolWindowTask.notClosable("AntiCopyPaster"));
-                }
-            }
-
-            toolWindow.setTitleActions(java.util.List.of(
-                    new com.intellij.openapi.actionSystem.AnAction(
-                            "Stop Workflow",
-                            "Stop current workflow",
-                            com.intellij.icons.AllIcons.Actions.Suspend
-                    ) {
-                        @Override
-                        public void actionPerformed(com.intellij.openapi.actionSystem.AnActionEvent e) {
-                            java.util.function.Consumer<String> w = writerRef.get();
-                            cancelWorkflow(w);
-                        }
-                    }
-            ));
-
-            var cm = toolWindow.getContentManager();
-            ConsoleView console = CONSOLE_BY_TITLE.get(title);
-            Content content = cm.findContent(title);
-
-            if (console == null || content == null) {
-                console = TextConsoleBuilderFactory.getInstance().createBuilder(project).getConsole();
-
-                javax.swing.JPanel wrapper = new javax.swing.JPanel(new java.awt.BorderLayout());
-                wrapper.add(console.getComponent(), java.awt.BorderLayout.CENTER);
-
-                Content newContent = ContentFactory.getInstance().createContent(wrapper, title, true);
-
-// If the user closes the tab via the content's close button, cancel the workflow too.
-                try {
-                    com.intellij.openapi.util.Disposer.register(newContent, () -> {
-                        java.util.function.Consumer<String> w = writerRef.get();
-                        cancelWorkflow(w);
-                    });
-                } catch (Throwable ignored) {}
-
-                if (content != null) cm.removeContent(content, true);
-                cm.addContent(newContent);
-                cm.setSelectedContent(newContent);
-                CONSOLE_BY_TITLE.put(title, console);
-            } else {
-                console.clear();
-                cm.setSelectedContent(content);
-            }
-
-            toolWindow.activate(null);
-            consoleRef.set(CONSOLE_BY_TITLE.get(title));
-        };
-
-        if (ApplicationManager.getApplication().isDispatchThread()) {
-            createOrReuse.run();
-        } else {
-            ApplicationManager.getApplication().invokeAndWait(createOrReuse);
-        }
-
-        // Throttled EDT printing
-        final java.util.concurrent.ConcurrentLinkedQueue<String> queue = new java.util.concurrent.ConcurrentLinkedQueue<>();
-        final java.util.concurrent.atomic.AtomicBoolean scheduled = new java.util.concurrent.atomic.AtomicBoolean(false);
-
-        // Avoid self-reference initialization issues by storing the runnable in a reference.
-        final java.util.concurrent.atomic.AtomicReference<Runnable> flushRef = new java.util.concurrent.atomic.AtomicReference<>();
-
-        Runnable flush = () -> {
-            scheduled.set(false);
-            ConsoleView c = consoleRef.get();
-            if (c == null) return;
-
-            StringBuilder sb = new StringBuilder();
-            String s;
-            int maxLines = 200;
-            while (maxLines-- > 0 && (s = queue.poll()) != null) {
-                sb.append(s);
-                if (!s.endsWith("\n")) sb.append('\n');
-            }
-            if (sb.length() > 0) {
-                c.print(sb.toString(), ConsoleViewContentType.NORMAL_OUTPUT);
-            }
-
-            // If more remains, schedule another flush (use flushRef to avoid self-reference warnings)
-            if (!queue.isEmpty() && scheduled.compareAndSet(false, true)) {
-                Runnable next = flushRef.get();
-                if (next != null) {
-                    ApplicationManager.getApplication().invokeLater(next, ModalityState.any());
-                }
-            }
-        };
-
-        flushRef.set(flush);
-
-        Consumer<String> writer = line -> {
-            if (line == null) return;
-            if (isCancelled()) return;
-            queue.add(line);
-            if (scheduled.compareAndSet(false, true)) {
-                ApplicationManager.getApplication().invokeLater(flushRef.get(), ModalityState.any());
-            }
-        };
-
-        writerRef.set(writer);
-
-        return writer;
-    }
-
-
     public static void run(Project project, List<VirtualFile> targets) {
         run(project, targets, null);
     }
@@ -400,7 +222,10 @@ public final class CloneRefactorWorkflow {
                 } catch (Throwable ignored) {}
 
                 logWriter = openLogWriter(project, fileName, modelNameForLog);
-                Consumer<String> baseViewer = cancelAwareViewer(openViewer(project, "Clone Workflow Output"));
+                Consumer<String> baseViewer = cancelAwareViewer(
+                        openViewer(project, "Clone Workflow Output", CloneRefactorWorkflow::cancelWorkflow, CloneRefactorWorkflow::isCancelled),
+                        CloneRefactorWorkflow::isCancelled
+                );
                 Consumer<String> viewer = teeViewer(baseViewer, logWriter);
 
                 _LAST_PROJECT_FOR_TESTS = project;
@@ -447,10 +272,10 @@ public final class CloneRefactorWorkflow {
                 LLM = LlmClientFactory.fromProjectSettings(project, viewer);
 
                 logStage(viewer, "START", fileName);
-                notify(project, "[Clone] Workflow started for: " + fileName, NotificationType.INFORMATION);
+                showNotification(project, "[Clone] Workflow started for: " + fileName, NotificationType.INFORMATION);
 
                 if (LLM instanceof NoopLlmClient) {
-                    notify(project,
+                    showNotification(project,
                             "[Clone] LLM is not configured (missing/invalid provider settings or API key). LLM calls will return empty and detection will always be 'no clones'. Configure provider/model/API key in Settings.",
                             NotificationType.ERROR);
                 }
@@ -470,7 +295,7 @@ public final class CloneRefactorWorkflow {
                         return resp == null ? "" : resp;
                     } catch (Exception e) {
                         logStage(viewer, "LLM", "exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-                        notify(project, "[Clone] LLM call failed: " + e.getMessage(), NotificationType.ERROR);
+                        showNotification(project, "[Clone] LLM call failed: " + e.getMessage(), NotificationType.ERROR);
                         return "";
                     }
                 };
@@ -549,7 +374,7 @@ public final class CloneRefactorWorkflow {
                     // If still no clones after fallback, stop.
                     if (det == null || det.clones == null || det.clones.isEmpty()) {
                         logStage(viewer, "DETECTION", "no clones (after PSI fallback)");
-                        notify(project, "[Clone] No clones detected in: " + fileName, NotificationType.INFORMATION);
+                        showNotification(project, "[Clone] No clones detected in: " + fileName, NotificationType.INFORMATION);
                         return;
                     }
                 }
@@ -567,7 +392,7 @@ public final class CloneRefactorWorkflow {
                 if (detectedCloneCount < minimumCloneCount) {
                     logStage(viewer, "DETECTION", "stopped: detected clone range count " + detectedCloneCount +
                             " is smaller than minimumCloneCount=" + minimumCloneCount + " for Clone_multiagent. This parameter is set by the user in the settings and can be adjusted based on your needs.");
-                    notify(project,
+                    showNotification(project,
                             "[Clone] Only " + detectedCloneCount + " clone range(s) detected in: " + fileName +
                                     ". Need at least " + minimumCloneCount + " to continue.",
                             NotificationType.INFORMATION);
@@ -576,7 +401,7 @@ public final class CloneRefactorWorkflow {
 
                 detection.DetectedClone clone = det.clones.get(0);
                 logStage(viewer, "DETECTION", "clone found: " + clone.id);
-                notify(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
+                showNotification(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
 
                 final java.util.List<CloneMethodSnapshot> watchedCloneMethods = captureCloneMethodSnapshots(project, vf, clone, viewer);
                 trackedDocument = FileDocumentManager.getInstance().getDocument(vf);
@@ -588,7 +413,7 @@ public final class CloneRefactorWorkflow {
                             if (isCancelled()) return;
                             String changedMethod = findModifiedCloneMethod(project, vf, listenerSnapshots);
                             if (changedMethod != null) {
-                                CloneRefactorWorkflow.notify(project,
+                                showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethod,
                                         NotificationType.WARNING);
                                 cancelWorkflow(viewer);
@@ -628,14 +453,14 @@ public final class CloneRefactorWorkflow {
                 /* ---------- Retry Loop ---------- */
                 for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                         if (isCancelled()) {
-                            notify(project, "[Clone] Cancelled by user.", NotificationType.WARNING);
+                            showNotification(project, "[Clone] Cancelled by user.", NotificationType.WARNING);
                             return;
                         }
 
                     String changedMethodAtAttemptStart = findModifiedCloneMethod(project, vf, watchedCloneMethods);
                         if (changedMethodAtAttemptStart != null) {
                             logStage(viewer, "WATCH", "stopped before attempt because cloned method changed: " + changedMethodAtAttemptStart);
-                            notify(project,
+                            showNotification(project,
                                     "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodAtAttemptStart,
                                     NotificationType.WARNING);
                             cancelWorkflow(viewer);
@@ -667,15 +492,17 @@ public final class CloneRefactorWorkflow {
                                 );
 
 
-                        if (rr == null || rr.newSource == null || rr.newSource.isBlank()) {
-                            String failReason;
-                            if (rr == null) {
-                                failReason = "Refactor agent returned null result.";
-                            } else if (rr.newSource == null) {
-                                failReason = "Refactor agent returned null newSource.";
-                            } else {
-                                failReason = "Refactor agent returned empty newSource.";
-                            }
+	                        if (rr == null || rr.newSource == null || rr.newSource.isBlank()) {
+	                            String failReason;
+	                            if (rr == null) {
+	                                failReason = "Refactor agent returned null result.";
+	                            } else if (rr.message != null && !rr.message.isBlank()) {
+	                                failReason = rr.message;
+	                            } else if (rr.newSource == null) {
+	                                failReason = "Refactor agent returned null newSource.";
+	                            } else {
+	                                failReason = "Refactor agent returned empty newSource.";
+	                            }
 
                             feedback = "Refactor produced empty or invalid output. " + failReason;
                             logStage(viewer, "REFACTOR", "failed: " + failReason);
@@ -688,7 +515,7 @@ public final class CloneRefactorWorkflow {
                                 }
                             } catch (Throwable ignored) {}
 
-                            notify(project,
+                            showNotification(project,
                                     "[Clone] Refactor failed (attempt " + attempt + "/" + maxAttempts + ") for: " + fileName +
                                             "\nReason: " + failReason +
                                             llmHint +
@@ -727,15 +554,18 @@ public final class CloneRefactorWorkflow {
                         // If the refactoring is not useful, we treat the attempt as failed and retry.
                         boolean isUseful = true;
 
-                        if (wholeMethod != null) {
-                            usefulnessChecker.UsefulnessResult urBeforeCompile =
-                                    usefulnessChecker.analyze(
-                                            project,
-                                            fileName,
-                                            currentSource,
-                                            proposedSource,
-                                            new usefulnessChecker.UsefulnessConfig()
-                                    );
+	                        if (wholeMethod != null) {
+	                            java.util.List<usefulnessChecker.TargetMethodHint> targetMethodHints =
+	                                    buildUsefulnessTargetHints(watchedCloneMethods);
+	                            usefulnessChecker.UsefulnessResult urBeforeCompile =
+	                                    usefulnessChecker.analyze(
+	                                            project,
+	                                            fileName,
+	                                            currentSource,
+	                                            proposedSource,
+	                                            new usefulnessChecker.UsefulnessConfig(),
+	                                            targetMethodHints
+	                                    );
 
                             if (urBeforeCompile != null && !urBeforeCompile.isUseful) {
                                 boolean overridden = false;
@@ -757,7 +587,7 @@ public final class CloneRefactorWorkflow {
                                 isUseful = false;
                                 String msg = "Not useful refactoring proposal: reasons=" + urBeforeCompile.reasons;
                                 logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
-                                notify(project,
+                                showNotification(project,
                                         "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
                                                 "for: " + fileName + "\n \n" +
                                                 "Reason:\n" +
@@ -839,7 +669,7 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                                     String msg = "Not useful refactoring proposal: strategy=" + frBeforeCompile.strategy +
                                              ", reasons=" + frBeforeCompile.reasons;
                                     logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
-                                    notify(project,
+                                    showNotification(project,
                                             "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
                                                     "for: " + fileName + "\n \n" +
                                                     "Reason:\n" +
@@ -906,7 +736,7 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                         String changedMethodBeforeCompile = findModifiedCloneMethod(project, vf, watchedCloneMethods);
                         if (changedMethodBeforeCompile != null) {
                             logStage(viewer, "WATCH", "stopped before compile because cloned method changed: " + changedMethodBeforeCompile);
-                            notify(project,
+                            showNotification(project,
                                     "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeCompile,
                                     NotificationType.WARNING);
                             cancelWorkflow(viewer);
@@ -932,7 +762,7 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                         File patchedOutDir;
                         String compileLog;
                         try {
-                            throwIfCancelled(viewer);
+                            throwIfCancelled(CloneRefactorWorkflow::isCancelled);
                             patchedOutDir = compileProposedSourceToTemp(project, ioFile, fileName, proposedSource, ideCp);
                             _LAST_PATCHED_CLASSES_DIR = patchedOutDir == null ? null : patchedOutDir.getAbsolutePath();
                             compileLog = "BUILD SUCCESS\n";
@@ -952,12 +782,12 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                         if (cr == null || !"compile_ok".equals(cr.status)) {
                             feedback = cr == null ? "Compilation failed." : cr.summary;
                             logStage(viewer, "COMPILE", "failed: " + feedback);
-                            notify(project, "[Clone] Compilation failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
+                            showNotification(project, "[Clone] Compilation failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
                             continue;
                         }
 
                         logStage(viewer, "COMPILE", "ok (isolated)");
-                        notify(project, "Compilation successful: Ready to run (attempt " + attempt + ") for: " + fileName, NotificationType.INFORMATION);
+                        showNotification(project, "Compilation successful: Ready to run (attempt " + attempt + ") for: " + fileName, NotificationType.INFORMATION);
 
                         /* ===== Test ===== */
                         // Resolve target FQN from the proposed source (PSI still reflects the original file until we apply).
@@ -1003,7 +833,7 @@ Your refactoring is not useful. You must actually remove or significantly reduce
 
                         if (targetFqn == null || targetFqn.isBlank()) {
                             feedback = "Test skipped: target class FQN could not be resolved.";
-                            notify(project, "[Clone] Test skipped (attempt " + attempt + ") for: " + fileName + " (cannot resolve class FQN)", NotificationType.WARNING);
+                            showNotification(project, "[Clone] Test skipped (attempt " + attempt + ") for: " + fileName + " (cannot resolve class FQN)", NotificationType.WARNING);
                             continue;
                         }
 
@@ -1018,14 +848,14 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                         String changedMethodBeforeTest = findModifiedCloneMethod(project, vf, watchedCloneMethods);
                         if (changedMethodBeforeTest != null) {
                             logStage(viewer, "WATCH", "stopped before test because cloned method changed: " + changedMethodBeforeTest);
-                            notify(project,
+                            showNotification(project,
                                     "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeTest,
                                     NotificationType.WARNING);
                             cancelWorkflow(viewer);
                             return;
                         }
 
-                        throwIfCancelled(viewer);
+                        throwIfCancelled(CloneRefactorWorkflow::isCancelled);
                         testing.TestResult tr =
                                 testAgent.runAndSummarize(
                                         treq,
@@ -1046,7 +876,7 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                             String changedMethodBeforeApply = findModifiedCloneMethod(project, vf, watchedCloneMethods);
                             if (changedMethodBeforeApply != null) {
                                 logStage(viewer, "WATCH", "stopped before apply because cloned method changed: " + changedMethodBeforeApply);
-                                notify(project,
+                                showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeApply,
                                         NotificationType.WARNING);
                                 cancelWorkflow(viewer);
@@ -1058,10 +888,10 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                                 currentSource = proposedSource;
                                 Files.writeString(ioFile.toPath(), currentSource, StandardCharsets.UTF_8);
                                 logStage(viewer, "REFACTOR", "applied after verification");
-                                notify(project, "[Clone] Tests passed. Refactor applied for: " + fileName, NotificationType.INFORMATION);
+                                showNotification(project, "[Clone] Tests passed. Refactor applied for: " + fileName, NotificationType.INFORMATION);
                             } else {
                                 logStage(viewer, "REFACTOR", "verified but not applied (user cancelled)");
-                                notify(project, "[Clone] Tests passed but changes were not applied (user cancelled): " + fileName, NotificationType.WARNING);
+                                showNotification(project, "[Clone] Tests passed but changes were not applied (user cancelled): " + fileName, NotificationType.WARNING);
                             }
 
                             logStage(viewer, "WORKFLOW", "SUCCESS");
@@ -1074,20 +904,20 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                                 (tr.summary != null ? tr.summary : tr.raw);
 
                         logStage(viewer, "TEST", "failed");
-                        notify(project, "[Clone] Tests failed (attempt " + attempt + ") for: " + fileName, NotificationType.WARNING);
+                        showNotification(project, "[Clone] Tests failed (attempt " + attempt + ") for: " + fileName, NotificationType.WARNING);
                 }
 
                 logStage(viewer, "WORKFLOW", "FAILED after " + maxAttempts + " retries");
-                notify(project, "[Clone] Workflow failed after " + maxAttempts + " retries for: " + vf.getName(), NotificationType.ERROR);
+                showNotification(project, "[Clone] Workflow failed after " + maxAttempts + " retries for: " + vf.getName(), NotificationType.ERROR);
 
             } catch (Exception e) {
                 if (isCancelled() || Thread.currentThread().isInterrupted()
                         || (e.getMessage() != null && e.getMessage().contains("CANCELLED"))) {
-                    notify(project, "Operation cancelled by user.", NotificationType.WARNING);
+                    showNotification(project, "Operation cancelled by user.", NotificationType.WARNING);
                     return;
                 }
                 e.printStackTrace();
-                notify(project, "[Clone] Workflow crashed: " + e.getMessage(), NotificationType.ERROR);
+                showNotification(project, "[Clone] Workflow crashed: " + e.getMessage(), NotificationType.ERROR);
             } finally {
                 if (trackedDocument != null && cloneMethodChangeListener != null) {
                     try {
@@ -1101,36 +931,6 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                 closeQuietly(logWriter);
             }
         });
-    }
-
-    // ---- Notification helpers ----
-
-    /**
-     * Escapes HTML special characters for safe notification rendering.
-     */
-    private static String escapeHtml(String s) {
-        if (s == null) return "";
-        String t = s;
-        t = t.replace("&", "&amp;");
-        t = t.replace("<", "&lt;");
-        t = t.replace(">", "&gt;");
-        t = t.replace("\"", "&quot;");
-        return t;
-    }
-
-    /**
-     * Helper for sending notifications (with HTML line break support for multi-line messages).
-     */
-    private static void notify(Project project, String message, NotificationType type) {
-        String content = message == null ? "" : message;
-        // IntelliJ notifications often collapse consecutive newlines in plain text.
-        // Use HTML with <br/> to preserve line breaks (including blank lines).
-        if (content.contains("\n")) {
-            content = escapeHtml(content).replace("\n", "<br/>");
-            content = "<html>" + content + "</html>";
-        }
-        Notification n = new Notification("AntiCopyPaster", "Clone Refactoring", content, type);
-        Notifications.Bus.notify(n, project);
     }
 
     // ---- Snippet classification helpers (whole method vs fragment) ----
@@ -1334,72 +1134,6 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         } catch (Throwable t) {
             return null;
         }
-    }
-
-    private static String extractUsefulnessDebugText(Object ur) {
-        try {
-            if (ur == null) return "";
-
-            // Try common field names
-            String[] fieldNames = new String[]{"debug", "debugLines", "debugLine", "pairDebug", "details", "debugInfo"};
-            for (String fn : fieldNames) {
-                try {
-                    java.lang.reflect.Field f = ur.getClass().getField(fn);
-                    Object v = f.get(ur);
-                    String s = stringifyDebugValue(v);
-                    if (s != null && !s.isBlank()) return s;
-                } catch (Throwable ignored) {}
-                try {
-                    java.lang.reflect.Field f = ur.getClass().getDeclaredField(fn);
-                    f.setAccessible(true);
-                    Object v = f.get(ur);
-                    String s = stringifyDebugValue(v);
-                    if (s != null && !s.isBlank()) return s;
-                } catch (Throwable ignored) {}
-            }
-
-            // Try common getters
-            String[] getterNames = new String[]{"getDebug", "getDebugLines", "getDetails", "debug", "debugLines"};
-            for (String mn : getterNames) {
-                try {
-                    java.lang.reflect.Method m = ur.getClass().getMethod(mn);
-                    Object v = m.invoke(ur);
-                    String s = stringifyDebugValue(v);
-                    if (s != null && !s.isBlank()) return s;
-                } catch (Throwable ignored) {}
-            }
-
-            // Fall back to notes (often contains debug-ish info)
-            try {
-                java.lang.reflect.Field f = ur.getClass().getField("notes");
-                Object v = f.get(ur);
-                String s = stringifyDebugValue(v);
-                if (s != null && !s.isBlank()) return s;
-            } catch (Throwable ignored) {}
-            try {
-                java.lang.reflect.Field f = ur.getClass().getDeclaredField("notes");
-                f.setAccessible(true);
-                Object v = f.get(ur);
-                String s = stringifyDebugValue(v);
-                if (s != null && !s.isBlank()) return s;
-            } catch (Throwable ignored) {}
-
-            return String.valueOf(ur);
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
-    private static String stringifyDebugValue(Object v) {
-        if (v == null) return "";
-        if (v instanceof String) return (String) v;
-        if (v instanceof java.util.List) {
-            java.util.List<?> lst = (java.util.List<?>) v;
-            if (lst.isEmpty()) return "";
-            Object first = lst.get(0);
-            return first == null ? "" : String.valueOf(first);
-        }
-        return String.valueOf(v);
     }
 
     /* ============================================================
@@ -2408,13 +2142,24 @@ Your refactoring is not useful. You must actually remove or significantly reduce
 
     // NOTE: RAG retrieval uses clone code (via buildRefactorRagQueryText) when available; ranges here are only for agent context.
     private static refactoring.DetectedClone convertClone(detection.DetectedClone c) {
+        String representative = "";
+        if (c != null) {
+            if (c.cloneCodeA != null && !c.cloneCodeA.isBlank()) {
+                representative = c.cloneCodeA;
+            } else if (c.cloneCodeB != null && !c.cloneCodeB.isBlank()) {
+                representative = c.cloneCodeB;
+            }
+        }
         return new refactoring.DetectedClone(
                 c.id,
                 c.ranges.stream()
                         .map(r -> new refactoring.CloneRange(r.startLine, r.endLine))
                         .toList(),
                 c.refactorType,
-                c.reason
+                c.reason,
+                representative,
+                c.cloneCodeA,
+                c.cloneCodeB
         );
     }
 
@@ -2492,17 +2237,6 @@ Your refactoring is not useful. You must actually remove or significantly reduce
             return sb.toString().strip();
         } catch (Throwable ignored) {
             return "";
-        }
-    }
-
-    private static void logStage(String stage, String msg) {
-        System.out.printf(Locale.ROOT, "[%s] %s%n", stage, msg);
-    }
-
-    private static void logStage(Consumer<String> viewer, String stage, String msg) {
-        logStage(stage, msg);
-        if (viewer != null) {
-            viewer.accept("[" + stage + "] " + (msg == null ? "" : msg));
         }
     }
 
@@ -2803,38 +2537,6 @@ Your refactoring is not useful. You must actually remove or significantly reduce
             return new String[]{a == null ? "" : a.strip(), b == null ? "" : b.strip()};
         } catch (Throwable t) {
             return new String[]{"", ""};
-        }
-    }
-
-    private static String previewOneLine(String s, int max) {
-        if (s == null) return "";
-        String v = s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n").strip();
-        if (v.length() > max) v = v.substring(0, max) + "...";
-        return v;
-    }
-
-    private static String[] parseWrapperNamesFromUsefulnessDebug(String debugText) {
-        try {
-            if (debugText == null || debugText.isBlank()) return null;
-
-            String s = debugText;
-
-            if (s == null) return null;
-
-            // ...#rotate(double) <-> ...#rotate_Cloned(double)
-            java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("#([A-Za-z_][\\w$]*)\\s*\\([^)]*\\)\\s*<->\\s*[^#]*#([A-Za-z_][\\w$]*)\\s*\\(")
-                    .matcher(s);
-
-            if (!m.find()) return null;
-
-            String a = m.group(1);
-            String b = m.group(2);
-            if (a == null || a.isBlank() || b == null || b.isBlank()) return null;
-
-            return new String[]{a, b};
-        } catch (Throwable t) {
-            return null;
         }
     }
 
@@ -3184,56 +2886,6 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         }
     }
 
-    private static String definitionForReason(Object reasonObj) {
-        if (reasonObj == null) return "No definition available.";
-
-        // Normalize different reason types into a single string.
-        String reason;
-        try {
-            if (reasonObj instanceof java.util.List) {
-                java.util.List<?> lst = (java.util.List<?>) reasonObj;
-                StringBuilder sb = new StringBuilder();
-                for (Object it : lst) {
-                    if (it == null) continue;
-                    if (sb.length() > 0) sb.append(", ");
-                    sb.append(String.valueOf(it));
-                }
-                reason = sb.toString();
-            } else {
-                reason = String.valueOf(reasonObj);
-            }
-        } catch (Throwable t) {
-            reason = String.valueOf(reasonObj);
-        }
-
-        if (reason == null || reason.isBlank()) return "No definition available.";
-        String r = reason.toLowerCase(java.util.Locale.ROOT);
-
-        if (r.contains("incomplete")) {
-            return "The refactoring modifies the code, but most of the duplicated logic still remains in the original methods.";
-        }
-        if (r.contains("excessive")) {
-            return "The extracted method includes statements beyond the intended cloned fragment.";
-        }
-        if ((r.contains("post") && r.contains("deletion")) || r.contains("post-extraction") || r.contains("post_extraction")) {
-            return "A helper method is introduced, but only one clone is replaced by a call, while the other clone is deleted.";
-        }
-        if ((r.contains("direct") && r.contains("removal")) || r.contains("delete_clone") || r.contains("delete clone")) {
-            return "One clone instance is deleted without introducing a shared abstraction.";
-        }
-        if ((r.contains("call") && r.contains("substitution")) || r.contains("existing method") || r.contains("reuse")) {
-            return "One clone is replaced by a call to an existing method instead of extracting a new shared abstraction.";
-        }
-        if (r.contains("fragment")) {
-            return "The duplicated logic is split into several small methods without consolidating it into one shared abstraction.";
-        }
-        if (r.contains("delegation") || r.contains("delegate")) {
-            return "The original method is modified to delegate behavior, and the clone calls this modified method instead of a new abstraction.";
-        }
-
-        return "The refactoring does not properly remove duplication or introduce a correct shared abstraction. Please ensure both clones delegate to a newly extracted helper method.";
-    }
-
     /**
      * Copy a bundled JAR resource to a stable per-project location so IntelliJ libraries do not break
      * when OS temp directories are cleaned.
@@ -3402,9 +3054,9 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         }
     }
 
-    private static java.util.List<CloneMethodSnapshot> captureCloneMethodSnapshots(
-            Project project,
-            VirtualFile vf,
+	    private static java.util.List<CloneMethodSnapshot> captureCloneMethodSnapshots(
+	            Project project,
+	            VirtualFile vf,
             detection.DetectedClone clone,
             Consumer<String> viewer
     ) {
@@ -3435,8 +3087,26 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         } catch (Throwable t) {
             logStage(viewer, "WATCH", "failed to capture cloned method snapshots: " + t.getMessage());
         }
-        return new java.util.ArrayList<>(out.values());
-    }
+	        return new java.util.ArrayList<>(out.values());
+	    }
+
+	    private static java.util.List<usefulnessChecker.TargetMethodHint> buildUsefulnessTargetHints(
+	            java.util.List<CloneMethodSnapshot> snapshots
+	    ) {
+	        java.util.ArrayList<usefulnessChecker.TargetMethodHint> out = new java.util.ArrayList<>();
+	        if (snapshots == null || snapshots.isEmpty()) return out;
+
+	        java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+	        for (CloneMethodSnapshot snapshot : snapshots) {
+	            if (snapshot == null) continue;
+	            String className = snapshot.className == null ? "" : snapshot.className;
+	            String methodName = snapshot.methodName == null ? "" : snapshot.methodName;
+	            String key = className + "#" + methodName + "#" + snapshot.parameterCount;
+	            if (!seen.add(key)) continue;
+	            out.add(new usefulnessChecker.TargetMethodHint(className, methodName, snapshot.parameterCount));
+	        }
+	        return out;
+	    }
 
 
     private static String findModifiedCloneMethod(Project project,
