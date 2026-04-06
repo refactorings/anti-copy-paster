@@ -56,12 +56,22 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
         usageState.onPaste();
     }
 
+    public void refactoringAccepted() {
+        usageState.refactoringAccepted();
+    }
+
+    public void refactoringCancelled() {
+        usageState.refactoringCancelled();
+    }
+
     public static class PluginState {
         public int notificationCount = 0;
         public int extractMethodAppliedCount = 0;
         public int extractMethodRejectedCount = 0;
         public int copyCount = 0;
         public int pasteCount = 0;
+        public int refactoringAcceptedCount = 0;
+        public int refactoringCancelledCount = 0;
         public long lastTransmissionTime = 0;
 
         public void notification() {
@@ -84,7 +94,25 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
             pasteCount += 1;
         }
 
-        public void saveToMongoDB(Project project) { AntiCopyPasterTelemetry.saveStatistics(project, notificationCount, extractMethodAppliedCount, extractMethodRejectedCount, copyCount, pasteCount); }
+        public void refactoringAccepted() {
+            refactoringAcceptedCount += 1;
+        }
+
+        public void refactoringCancelled() {
+            refactoringCancelledCount += 1;
+        }
+
+        public void saveToMongoDB(Project project) {
+            AntiCopyPasterTelemetry.saveStatistics(
+                    project,
+                    notificationCount,
+                    extractMethodAppliedCount,
+                    extractMethodRejectedCount,
+                    copyCount,
+                    pasteCount,
+                    refactoringAcceptedCount,
+                    refactoringCancelledCount
+            );
+        }
     }
 }
-

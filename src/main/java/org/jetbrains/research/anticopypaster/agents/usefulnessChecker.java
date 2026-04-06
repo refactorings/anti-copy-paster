@@ -85,7 +85,6 @@ public final class usefulnessChecker {
         EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED,
 
         EXTRACT_METHOD_NOT_FOUND,
-        EXTRACT_METHOD_NOT_CONFIRMED,
         ANALYZER_FALLBACK
     }
 
@@ -263,7 +262,7 @@ public final class usefulnessChecker {
                 return new UsefulnessResult(
                         false,
                         45,
-                        List.of(Reason.EXTRACT_METHOD_NOT_CONFIRMED),
+                        List.of(Reason.EXTRACT_METHOD_NOT_FOUND),
                         confirm.notes
                 );
             }
@@ -363,13 +362,8 @@ public final class usefulnessChecker {
                 reasons.add(Reason.EXTRACT_METHOD_CONFIRMED);
                 score = 100;
             } else {
-                boolean targetCloneUntouched = !targetKeys.isEmpty()
-                        ? targetUntouchedClonePairs > 0
-                        : untouchedClonePairs > 0;
                 if (failReasons.isEmpty()) {
-                    reasons.add(targetCloneUntouched && extractOk == 0
-                            ? Reason.EXTRACT_METHOD_NOT_FOUND
-                            : Reason.EXTRACT_METHOD_NOT_CONFIRMED);
+                    reasons.add(Reason.EXTRACT_METHOD_NOT_FOUND);
                 } else {
                     reasons.addAll(new ArrayList<>(failReasons));
                 }
@@ -1352,7 +1346,7 @@ How to fix it:
 - Extract the full shared duplicated logic into exactly one helper method.
 - Remove duplicated statements from the original methods.
 - Keep only method-specific differences in each method.
-- Make both methods call the helper.
+- Make all original target clone methods call the helper.
 
 Important constraints:
 - Do not delete either clone method.
@@ -1406,15 +1400,15 @@ Follow the required output format for the refactoring task.
 
         if (reasons.contains(Reason.POST_EXTRACTION_CLONE_DELETION_DETECTED)) {
             return """
-Your previous refactoring was rejected because one clone method was deleted after extraction.
+Your previous refactoring was rejected because one or more target clone methods were deleted after extraction.
 
 Problem:
-A valid Extract Method refactoring must preserve both original clone methods.
+A valid Extract Method refactoring must preserve all original target clone methods.
 
 How to fix it:
-- Restore both original methods.
+- Restore all original target clone methods.
 - Keep the helper method.
-- Make both methods call the helper.
+- Make all original target clone methods call the helper.
 
 Important constraints:
 - Do not delete clone methods.
@@ -1434,7 +1428,7 @@ Duplication was removed by deleting code, not by Extract Method.
 How to fix it:
 - Restore removed clone logic.
 - Extract shared logic into one helper.
-- Make both methods call the helper.
+- Make all original target clone methods call the helper.
 
 Important constraints:
 - Do not delete clones.
@@ -1453,7 +1447,7 @@ This is call-based substitution, not Extract Method.
 
 How to fix it:
 - Introduce one new helper method with shared logic.
-- Make both methods call the helper instead of each other.
+- Make all original target clone methods call the helper instead of each other.
 
 Important constraints:
 - Do not make one clone call the other.
@@ -1468,11 +1462,11 @@ Follow the required output format for the refactoring task.
 Your previous refactoring was rejected because duplication was handled by delegation instead of proper extraction.
 
 Problem:
-One method became a delegate, but no clear shared helper is used by both methods.
+One or more target clone methods became delegates, but no clear shared helper is used by all target clone methods.
 
 How to fix it:
 - Extract shared logic into one new helper.
-- Make both methods call the same helper.
+- Make all target clone methods call the same helper.
 - Keep method-specific differences.
 
 Important constraints:
@@ -1492,7 +1486,7 @@ Shared logic was split instead of extracted as a single unit.
 
 How to fix it:
 - Combine shared logic into one helper method.
-- Make both methods call that helper.
+- Make all target clone methods call that helper.
 
 Important constraints:
 - Do not create multiple helpers unnecessarily.
@@ -1511,32 +1505,12 @@ The target clone was left essentially unchanged, and no new extracted helper met
 
 How to fix it:
 - Create one new helper method that contains the shared clone logic.
-- Replace the duplicated statements in both original methods with calls to that helper.
+- Replace the duplicated statements in all original target clone methods with calls to that helper.
 - Keep only method-specific differences outside the helper.
 
 Important constraints:
 - Do not leave the original clone body unchanged.
 - Do not skip creating the extracted helper.
-- Only perform Extract Method.
-Follow the required output format for the refactoring task.
-""";
-        }
-
-        if (reasons.contains(Reason.EXTRACT_METHOD_NOT_CONFIRMED)) {
-            return """
-Your previous refactoring was rejected because Extract Method structure was not clearly identified.
-
-Problem:
-The shared logic extraction is unclear or inconsistent.
-
-How to fix it:
-- Create one helper method with shared logic.
-- Make both methods call it.
-- Keep only method-specific differences outside.
-
-Important constraints:
-- Do not delete clones.
-- Do not split logic across helpers.
 - Only perform Extract Method.
 Follow the required output format for the refactoring task.
 """;

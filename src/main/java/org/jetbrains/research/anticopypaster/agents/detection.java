@@ -297,6 +297,7 @@ public class detection {
         public List<CloneRange> ranges;
         public String refactorType;
         public String reason;
+        public List<String> cloneCodes;
         public String cloneCodeA;
         public String cloneCodeB;
     }
@@ -387,11 +388,12 @@ public class detection {
         StringBuilder prompt = new StringBuilder();
         prompt.append("You are an expert code clone detection assistant.\n");
         prompt.append("Analyze the following Java source code from a single file named '").append(fileName).append("'.\n");
-        prompt.append("Your task is to check whether the user's pasted snippet has clones elsewhere within this same file only.\n");
-        prompt.append("You MUST focus on the pasted snippet and find other code regions in the file that are clones of it.\n");
+        prompt.append("Your task is to exhaustively find every non-trivial clone of the user's pasted snippet within this same file only.\n");
+        prompt.append("You MUST focus on the pasted snippet and enumerate all other code regions in the file that are clones of it.\n");
         prompt.append("Do NOT report clones that do not involve the pasted snippet.\n");
         prompt.append("Ignore only truly trivial single-line repetitions.\n");
         prompt.append("Do not reject short, method-level, symmetric, or small-substitution clones merely because only a few identifiers, literals, casts, or method names differ.\n");
+        prompt.append("Do not stop after finding the first match. Keep searching until you have listed all relevant matches involving the pasted snippet.\n");
         if (snippetStartLine > 0 && snippetEndLine > 0) {
             prompt.append("The pasted snippet is located in this file around lines ")
                   .append(snippetStartLine).append(" to ").append(snippetEndLine).append(".\n");
@@ -432,20 +434,25 @@ public class detection {
             prompt.append("'''\n\n");
             prompt.append("IMPORTANT CONSTRAINTS:\n");
             prompt.append("1) Every clone you report MUST involve the pasted snippet occurrence in this file.\n");
-            prompt.append("2) Focus on structural similarity, even when a few identifiers, literals, casts, method names, or API calls differ.\n");
+            prompt.append("2) Return ALL non-trivial matching occurrences related to the pasted snippet, not just one example match.\n");
             if (snippetStartLine > 0 && snippetEndLine > 0) {
-                prompt.append("3) In \"ranges\", include at least two ranges. One range SHOULD overlap the pasted snippet's approximate location (around lines ")
-                      .append(snippetStartLine).append(" to ").append(snippetEndLine).append("), and at least one other range SHOULD be a matching clone region elsewhere in the file.\n");
+                prompt.append("3) In \"ranges\", include every matching range for that clone class in this file. One range SHOULD overlap the pasted snippet's approximate location (around lines ")
+                      .append(snippetStartLine).append(" to ").append(snippetEndLine).append("), and all other matching ranges elsewhere in the file SHOULD also be included.\n");
             } else {
-                prompt.append("3) In \"ranges\", include at least two ranges. One range SHOULD correspond to the pasted snippet occurrence in the file, and at least one other range SHOULD be a matching clone region elsewhere in the file.\n");
+                prompt.append("3) In \"ranges\", include every matching range for that clone class in this file. One range SHOULD correspond to the pasted snippet occurrence in the file, and all other matching ranges elsewhere in the file SHOULD also be included.\n");
             }
-            prompt.append("4) Prefer returning the pasted snippet occurrence as cloneCodeA and a matching region as cloneCodeB, both copied verbatim from fileSource when possible.\n");
-            prompt.append("5) cloneCodeA and cloneCodeB do not need to be textually identical. Small substitutions still count as a valid clone.\n");
-            prompt.append("6) If no reasonably similar code is found, output status \"no_clones\" with an empty clones list.\n\n");
+            prompt.append("4) If there are multiple distinct clone classes involving the pasted snippet, return multiple objects in \"clones\".\n");
+            prompt.append("5) Focus on structural similarity, even when a few identifiers, literals, casts, method names, or API calls differ.\n");
+            prompt.append("6) Return cloneCodes as an array of verbatim code snippets aligned with ranges. cloneCodes[i] must correspond to ranges[i].\n");
+            prompt.append("7) Prefer returning the pasted snippet occurrence as cloneCodeA and one representative matching region as cloneCodeB, but still include ALL occurrence snippets in cloneCodes.\n");
+            prompt.append("8) cloneCodes entries do not need to be textually identical. Small substitutions still count as a valid clone.\n");
+            prompt.append("9) If no reasonably similar code is found, output status \"no_clones\" with an empty clones list.\n\n");
         }
-        prompt.append("IMPORTANT: For each detected clone, include cloneCodeA and cloneCodeB as verbatim copies from the provided fileSource when possible. They may differ slightly and still form a valid clone pair.\n");
-        prompt.append("- Do NOT rewrite, reformat, rename variables, or add missing context when copying cloneCodeA and cloneCodeB from fileSource.\n");
+        prompt.append("IMPORTANT: For each detected clone, include cloneCodes for ALL listed ranges as verbatim copies from the provided fileSource when possible.\n");
+        prompt.append("- Do NOT rewrite, reformat, rename variables, or add missing context when copying cloneCodes from fileSource.\n");
         prompt.append("- A clone may still be valid even when the two regions differ slightly in identifiers, literals, casts, or one method call.\n");
+        prompt.append("- A single clone object may have more than two ranges, and if so you should include all of them.\n");
+        prompt.append("- If you can identify three or more matching occurrences of the same pasted snippet clone class in this file, all of them must appear in \"ranges\".\n");
         prompt.append("Output ONLY a valid JSON object with the following structure:\n");
         prompt.append("{\n");
         prompt.append("  \"status\": \"found_clones\" or \"no_clones\",\n");
@@ -453,9 +460,10 @@ public class detection {
         prompt.append("  \"clones\": [\n");
         prompt.append("    {\n");
         prompt.append("      \"id\": \"unique_clone_id\",\n");
-        prompt.append("      \"ranges\": [ { \"startLine\": int, \"endLine\": int }, ... ],\n");
+        prompt.append("      \"ranges\": [ { \"startLine\": int, \"endLine\": int }, ... all matching ranges for this clone class ... ],\n");
+        prompt.append("      \"cloneCodes\": [ \"verbatim occurrence code aligned with ranges[0]\", \"verbatim occurrence code aligned with ranges[1]\", ... ],\n");
         prompt.append("      \"refactorType\": \"extracted_method\" or \"extracted_class\" or other string,\n");
-        prompt.append("      \"reason\": \"explanation of why this clone was detected\",\n");
+        prompt.append("      \"reason\": \"explanation of why this clone was detected and why all listed ranges belong to the same clone class\",\n");
         prompt.append("      \"cloneCodeA\": \"pasted-snippet occurrence copied verbatim from fileSource when possible; may differ slightly from cloneCodeB and still be valid\",\n");
         prompt.append("      \"cloneCodeB\": \"matching clone region copied verbatim from fileSource when possible; may differ slightly from cloneCodeA and still be valid\"\n");
         prompt.append("    },\n");
@@ -484,8 +492,19 @@ public class detection {
             } else {
                 for (DetectedClone c : result.clones) {
                     if (c == null) continue;
+                    if (c.cloneCodes == null) c.cloneCodes = new ArrayList<>();
                     if (c.cloneCodeA == null) c.cloneCodeA = "";
                     if (c.cloneCodeB == null) c.cloneCodeB = "";
+                    if (c.cloneCodes.isEmpty()) {
+                        if (!c.cloneCodeA.isBlank()) c.cloneCodes.add(c.cloneCodeA);
+                        if (!c.cloneCodeB.isBlank()) c.cloneCodes.add(c.cloneCodeB);
+                    }
+                    if (c.cloneCodeA.isBlank() && !c.cloneCodes.isEmpty()) {
+                        c.cloneCodeA = c.cloneCodes.get(0) == null ? "" : c.cloneCodes.get(0);
+                    }
+                    if (c.cloneCodeB.isBlank() && c.cloneCodes.size() > 1) {
+                        c.cloneCodeB = c.cloneCodes.get(1) == null ? "" : c.cloneCodes.get(1);
+                    }
                     if (c.id == null || c.id.isBlank()) {
                         c.id = "clone_" + UUID.randomUUID().toString().replace("-", "").toLowerCase(Locale.ROOT);
                     }

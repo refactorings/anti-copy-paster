@@ -25,10 +25,15 @@ import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.event.DocumentListener;
 
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiStatement;
 import com.intellij.psi.util.PsiTreeUtil;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
@@ -82,12 +87,14 @@ import com.intellij.diff.DiffRequestPanel;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.ui.DialogWrapper;
+import com.intellij.openapi.ui.Messages;
 import javax.swing.*;
 import org.jetbrains.research.anticopypaster.llm.LlmClient;
 import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
 import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 public final class CloneRefactorWorkflow {
     private static final String REFACTOR_RAG_DB_RESOURCE = "rag/refactor_database.csv";
@@ -174,6 +181,14 @@ public final class CloneRefactorWorkflow {
 
         // Fallback: read from disk.
         return Files.readString(ioFile.toPath(), StandardCharsets.UTF_8);
+    }
+
+    private static void logFeedbackToRefactorAgent(Consumer<String> viewer,
+                                                   String feedback,
+                                                   boolean feedbackOnlyPrompt) {
+        if (feedback == null || feedback.isBlank()) return;
+        String mode = feedbackOnlyPrompt ? "feedback-only" : "combined";
+        logStage(viewer, "FEEDBACK", "sending feedback to refactor agent (mode=" + mode + "):\n" + feedback);
     }
 
     /* ============================================================
@@ -279,11 +294,14 @@ public final class CloneRefactorWorkflow {
                 Function<String, String> llmCaller = prompt -> {
                     try {
                         String resp = LLM.complete(prompt);
-                        // lightweight debug: show if model is returning nothing
+                        String full = resp == null ? "" : resp;
                         String preview = resp == null ? "null" : resp.strip();
                         if (preview.length() > 300) preview = preview.substring(0, 300) + "...";
                         logStage(viewer, "LLM", "response preview: " + preview.replace("\n", "\\n"));
-                        return resp == null ? "" : resp;
+                        logStage(viewer, "LLM", "full response begin");
+                        viewer.accept(full);
+                        logStage(viewer, "LLM", "full response end");
+                        return full;
                     } catch (Exception e) {
                         logStage(viewer, "LLM", "exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
                         showNotification(project, "[Clone] LLM call failed: " + e.getMessage(), NotificationType.ERROR);
@@ -334,6 +352,7 @@ public final class CloneRefactorWorkflow {
                                 detection.DetectedClone psiClone = new detection.DetectedClone();
                                 psiClone.id = "psi_fallback_same_file";
                                 psiClone.ranges = new java.util.ArrayList<>();
+                                psiClone.cloneCodes = new java.util.ArrayList<>();
 
                                 for (Object cc : cands) {
                                     if (cc == null) continue;
@@ -347,7 +366,11 @@ public final class CloneRefactorWorkflow {
                                     setIntField(range, sLine, "startLine", "start", "fromLine", "start_line", "startline");
                                     setIntField(range, eLine, "endLine", "end", "toLine", "end_line", "endline");
                                     psiClone.ranges.add(range);
+                                    String cloneCode = getStringField(cc, "cloneCode", "code", "snippet", "text");
+                                    psiClone.cloneCodes.add(cloneCode == null ? "" : cloneCode);
                                 }
+                                if (psiClone.cloneCodes.size() > 0) psiClone.cloneCodeA = psiClone.cloneCodes.get(0);
+                                if (psiClone.cloneCodes.size() > 1) psiClone.cloneCodeB = psiClone.cloneCodes.get(1);
 
                                 det = new detection.DetectionResult();
                                 det.clones = new java.util.ArrayList<>();
@@ -370,6 +393,9 @@ public final class CloneRefactorWorkflow {
                     }
                 }
 
+                det.clones = resolveDetectedCloneRangesWithPsi(project, vf, originalSource, det.clones, viewer);
+                det.clones = mergeOverlappingDetectedClones(originalSource, det.clones, viewer);
+
                 int detectedCloneCount = 1;
                 if (det.clones != null) {
                     for (detection.DetectedClone c : det.clones) {
@@ -379,6 +405,7 @@ public final class CloneRefactorWorkflow {
                     }
                 }
                 logStage(viewer, "DETECTION", "detected clone range count=" + detectedCloneCount);
+                logStage(viewer, "DETECTION", "detected clone class count=" + det.clones.size());
 
                 if (detectedCloneCount < minimumCloneCount) {
                     logStage(viewer, "DETECTION", "stopped: detected clone range count " + detectedCloneCount +
@@ -390,8 +417,17 @@ public final class CloneRefactorWorkflow {
                     return;
                 }
 
-                detection.DetectedClone clone = det.clones.get(0);
-                logStage(viewer, "DETECTION", "clone found: " + clone.id);
+                detection.DetectedClone clone = chooseCloneToRefactor(project, vf, det.clones, viewer);
+                if (clone == null) {
+                    showNotification(project, "[Clone] Clone selection cancelled for: " + fileName, NotificationType.WARNING);
+                    return;
+                }
+
+                clone = chooseCloneRangesToRefactor(project, vf, originalSource, clone, viewer);
+                if (clone == null) {
+                    showNotification(project, "[Clone] Clone range selection cancelled for: " + fileName, NotificationType.WARNING);
+                    return;
+                }
                 showNotification(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
 
                 final java.util.List<CloneMethodSnapshot> watchedCloneMethods = captureCloneMethodSnapshots(project, vf, clone, viewer);
@@ -440,6 +476,7 @@ public final class CloneRefactorWorkflow {
 
                 String currentSource = originalSource;
                 String feedback = null;
+                boolean useFeedbackOnlyPrompt = false;
 
                 /* ---------- Retry Loop ---------- */
                 for (int attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -463,24 +500,37 @@ public final class CloneRefactorWorkflow {
                         /* ===== Refactor ===== */
                         // Prepend refactor few-shot examples (RAG) to the feedback for the refactor agent.
                         // This keeps the agent signature unchanged while still injecting few-shot context.
-                        String combinedFeedback = "";
-                        if (refactorRagGuidance != null && !refactorRagGuidance.isBlank()) {
-                            combinedFeedback += refactorRagGuidance.strip() + "\n\n";
-                        }
-                        if (feedback != null && !feedback.isBlank()) {
-                            combinedFeedback += "[PREVIOUS_FEEDBACK]\n" + feedback.strip() + "\n";
-                        }
-                        String feedbackForRefactor = combinedFeedback.isBlank() ? null : combinedFeedback;
+                        refactoring.RefactorResult rr;
+                        refactoring.DetectedClone refactorClone = convertClone(clone);
+                        if (useFeedbackOnlyPrompt && feedback != null && !feedback.isBlank()) {
+                            logStage(viewer, "REFACTOR", "retry mode: feedback-only prompt");
+                            logFeedbackToRefactorAgent(viewer, feedback, true);
+                            rr = refactorAgent.refactorWithPrompt(
+                                    fileName,
+                                    currentSource,
+                                    refactorClone,
+                                    feedback,
+                                    llmCaller
+                            );
+                        } else {
+                            String combinedFeedback = "";
+                            if (refactorRagGuidance != null && !refactorRagGuidance.isBlank()) {
+                                combinedFeedback += refactorRagGuidance.strip() + "\n\n";
+                            }
+                            if (feedback != null && !feedback.isBlank()) {
+                                combinedFeedback += "[PREVIOUS_FEEDBACK]\n" + feedback.strip() + "\n";
+                            }
+                            String feedbackForRefactor = combinedFeedback.isBlank() ? null : combinedFeedback;
+                            logFeedbackToRefactorAgent(viewer, feedback, false);
 
-
-                        refactoring.RefactorResult rr =
-                                refactorAgent.refactorFile(
-                                        fileName,
-                                        currentSource,
-                                        convertClone(clone),
-                                        feedbackForRefactor,
-                                        llmCaller
-                                );
+                            rr = refactorAgent.refactorFile(
+                                    fileName,
+                                    currentSource,
+                                    refactorClone,
+                                    feedbackForRefactor,
+                                    llmCaller
+                            );
+                        }
 
 
 	                        if (rr == null || rr.newSource == null || rr.newSource.isBlank()) {
@@ -496,6 +546,7 @@ public final class CloneRefactorWorkflow {
 	                            }
 
                             feedback = "Refactor produced empty or invalid output. " + failReason;
+                            useFeedbackOnlyPrompt = false;
                             logStage(viewer, "REFACTOR", "failed: " + failReason);
 
                             // Try to give a helpful hint for the most common cause: LLM returned empty due to misconfiguration.
@@ -561,13 +612,13 @@ public final class CloneRefactorWorkflow {
                             if (urBeforeCompile != null && !urBeforeCompile.isUseful) {
                                 boolean overridden = false;
                                 try {
-                                    if (containsReasonName(urBeforeCompile.reasons, "EXTRACT_METHOD_NOT_CONFIRMED")) {
+                                    if (containsReasonName(urBeforeCompile.reasons, "EXTRACT_METHOD_NOT_FOUND")) {
                                         String[] wrappers = parseWrapperNamesFromUsefulnessDebug(extractUsefulnessDebugText(urBeforeCompile));
                                         if (wrappers != null && wrappers.length == 2
                                                 && looksLikeValidExtractMethodDelegation(currentSource, proposedSource, wrappers[0], wrappers[1])) {
                                             overridden = true;
                                             isUseful = true;
-                                            logStage(viewer, "USEFUL", "override: both wrappers delegate to the same extracted helper (EXTRACT_METHOD_NOT_CONFIRMED)");
+                                            logStage(viewer, "USEFUL", "override: both wrappers delegate to the same extracted helper");
                                         }
                                     }
                                 } catch (Throwable ignored) {
@@ -593,7 +644,13 @@ public final class CloneRefactorWorkflow {
 	                                        proposedSource,
 	                                        watchedCloneMethods
 	                                );
-	                                String feedbackPrompt = usefulnessChecker.buildFeedbackPrompt(urBeforeCompile.reasons);
+	                                String feedbackPrompt = buildUsefulnessFeedbackPrompt(
+	                                        project,
+	                                        fileName,
+	                                        proposedSource,
+	                                        urBeforeCompile.reasons,
+	                                        watchedCloneMethods
+	                                );
 	                                String reasonsText = String.valueOf(urBeforeCompile.reasons);
 	                                String reasonDefinition = definitionForReason(urBeforeCompile.reasons);
 	                                String notesText = (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank())
@@ -623,6 +680,7 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 	                                        notesText,
 	                                        feedbackPrompt == null ? "" : feedbackPrompt
 	                                );
+                                    useFeedbackOnlyPrompt = true;
                             }
                             } else if (urBeforeCompile != null) {
                                 logStage(viewer, "USEFUL", "ok (before compile): score=" + urBeforeCompile.score +
@@ -643,11 +701,13 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                                         : new FragmentUsefulnessAnalyzer.LineRange(rB.startLine, rB.endLine);
 
                                 String[] ab = extractCloneCodeABFromReason(clone.reason);
-                                String codeA = ab[0];
-                                String codeB = ab[1];
+                                java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, currentSource);
+                                String codeA = cloneCodes.size() > 0 ? firstNonBlank(cloneCodes.get(0), ab[0]) : ab[0];
+                                String codeB = cloneCodes.size() > 1 ? firstNonBlank(cloneCodes.get(1), ab[1]) : ab[1];
 
                                 // Fallbacks: if detection didn't embed code blocks, use the pasted snippet as A.
                                 if (codeA == null || codeA.isBlank()) codeA = pastedSnippet == null ? "" : pastedSnippet;
+                                if ((codeB == null || codeB.isBlank()) && cloneCodes.size() > 1) codeB = cloneCodes.get(1);
 
                                 FragmentUsefulnessAnalyzer.UsefulnessResult frBeforeCompile =
                                         FragmentUsefulnessAnalyzer.analyze(
@@ -713,13 +773,14 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 
 	[REVISION_INSTRUCTION]
 	Your refactoring is not useful. You must actually remove or significantly reduce the duplicated fragment in BOTH places. Avoid incomplete refactoring, deleting one side, or delegating only one side.
-	""".formatted(
+		""".formatted(
 	                                            focusedProposedCode,
 	                                            reasonsText,
 	                                            strategyText,
 	                                            reasonDefinition == null ? "" : reasonDefinition,
 	                                            notesText
 	                                    );
+                                        useFeedbackOnlyPrompt = true;
                                 } else if (frBeforeCompile != null) {
                                     logStage(viewer, "USEFUL", "ok(FRAGMENT, before compile): strategy=" + frBeforeCompile.strategy + ", score=" + frBeforeCompile.score +
                                             (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes)));
@@ -791,6 +852,7 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 
                         if (cr == null || !"compile_ok".equals(cr.status)) {
                             feedback = cr == null ? "Compilation failed." : cr.summary;
+                            useFeedbackOnlyPrompt = false;
                             logStage(viewer, "COMPILE", "failed: " + feedback);
                             showNotification(project, "[Clone] Compilation failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
                             continue;
@@ -843,6 +905,7 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 
                         if (targetFqn == null || targetFqn.isBlank()) {
                             feedback = "Test skipped: target class FQN could not be resolved.";
+                            useFeedbackOnlyPrompt = false;
                             showNotification(project, "[Clone] Test skipped (attempt " + attempt + ") for: " + fileName + " (cannot resolve class FQN)", NotificationType.WARNING);
                             continue;
                         }
@@ -895,11 +958,13 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                             // Now that compile+test passed, ask user whether to apply the refactor to the real file.
                             boolean applyNow = showDiffAndConfirmApply(project, fileName, currentSource, proposedSource);
                             if (applyNow) {
+                                AntiCopyPasterUsageStatistics.getInstance(project).refactoringAccepted();
                                 currentSource = proposedSource;
                                 Files.writeString(ioFile.toPath(), currentSource, StandardCharsets.UTF_8);
                                 logStage(viewer, "REFACTOR", "applied after verification");
                                 showNotification(project, "[Clone] Tests passed. Refactor applied for: " + fileName, NotificationType.INFORMATION);
                             } else {
+                                AntiCopyPasterUsageStatistics.getInstance(project).refactoringCancelled();
                                 logStage(viewer, "REFACTOR", "verified but not applied (user cancelled)");
                                 showNotification(project, "[Clone] Tests passed but changes were not applied (user cancelled): " + fileName, NotificationType.WARNING);
                             }
@@ -912,6 +977,7 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 
                         feedback = tr == null ? "Tests failed." :
                                 (tr.summary != null ? tr.summary : tr.raw);
+                        useFeedbackOnlyPrompt = false;
 
                         logStage(viewer, "TEST", "failed");
                         showNotification(project, "[Clone] Tests failed (attempt " + attempt + ") for: " + fileName, NotificationType.WARNING);
@@ -1039,6 +1105,32 @@ Your previous refactoring attempt was rejected by the usefulness checker.
         return -1;
     }
 
+    private static String getStringField(Object obj, String... names) {
+        if (obj == null || names == null) return null;
+        Class<?> cls = obj.getClass();
+        for (String n : names) {
+            if (n == null || n.isBlank()) continue;
+            try {
+                java.lang.reflect.Field f = cls.getField(n);
+                Object v = f.get(obj);
+                if (v != null) return String.valueOf(v);
+            } catch (Throwable ignored) {}
+            try {
+                java.lang.reflect.Field f = cls.getDeclaredField(n);
+                f.setAccessible(true);
+                Object v = f.get(obj);
+                if (v != null) return String.valueOf(v);
+            } catch (Throwable ignored) {}
+            try {
+                String mname = "get" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
+                java.lang.reflect.Method m = cls.getMethod(mname);
+                Object v = m.invoke(obj);
+                if (v != null) return String.valueOf(v);
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
     private static void setIntField(Object obj, int value, String... names) {
         if (obj == null || names == null) return;
         Class<?> cls = obj.getClass();
@@ -1150,7 +1242,10 @@ Your previous refactoring attempt was rejected by the usefulness checker.
     private static refactoring.DetectedClone convertClone(detection.DetectedClone c) {
         String representative = "";
         if (c != null) {
-            if (c.cloneCodeA != null && !c.cloneCodeA.isBlank()) {
+            java.util.List<String> cloneCodes = getDetectedCloneCodes(c, null);
+            if (!cloneCodes.isEmpty() && cloneCodes.get(0) != null && !cloneCodes.get(0).isBlank()) {
+                representative = cloneCodes.get(0);
+            } else if (c.cloneCodeA != null && !c.cloneCodeA.isBlank()) {
                 representative = c.cloneCodeA;
             } else if (c.cloneCodeB != null && !c.cloneCodeB.isBlank()) {
                 representative = c.cloneCodeB;
@@ -1164,6 +1259,7 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                 c.refactorType,
                 c.reason,
                 representative,
+                getDetectedCloneCodes(c, null),
                 c.cloneCodeA,
                 c.cloneCodeB
         );
@@ -1243,6 +1339,715 @@ Your previous refactoring attempt was rejected by the usefulness checker.
             return sb.toString().strip();
         } catch (Throwable ignored) {
             return "";
+        }
+    }
+
+    private static final class CloneSelectionOption {
+        final detection.DetectedClone clone;
+        final String label;
+        final String details;
+
+        CloneSelectionOption(detection.DetectedClone clone, String label, String details) {
+            this.clone = clone;
+            this.label = label == null ? "<unknown clone>" : label;
+            this.details = details == null ? "" : details;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    private static final class CloneRangeSelectionOption {
+        final int rangeIndex;
+        final detection.CloneRange range;
+        final String label;
+        final String details;
+        final String snippet;
+        final String uniqueKey;
+
+        CloneRangeSelectionOption(int rangeIndex,
+                                  detection.CloneRange range,
+                                  String label,
+                                  String details,
+                                  String snippet,
+                                  String uniqueKey) {
+            this.rangeIndex = rangeIndex;
+            this.range = range;
+            this.label = label == null ? "<unknown occurrence>" : label;
+            this.details = details == null ? "" : details;
+            this.snippet = snippet == null ? "" : snippet;
+            this.uniqueKey = uniqueKey == null ? "" : uniqueKey;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    private static detection.DetectedClone chooseCloneToRefactor(Project project,
+                                                                 VirtualFile vf,
+                                                                 java.util.List<detection.DetectedClone> clones,
+                                                                 Consumer<String> viewer) {
+        if (clones == null || clones.isEmpty()) return null;
+
+        java.util.ArrayList<CloneSelectionOption> options = new java.util.ArrayList<>();
+        int ordinal = 1;
+        for (detection.DetectedClone clone : clones) {
+            if (clone == null) continue;
+            CloneSelectionOption option = buildCloneSelectionOption(project, vf, clone, ordinal++);
+            options.add(option);
+            logStage(viewer, "DETECTION", "clone candidate: " + option.label);
+        }
+
+        if (options.isEmpty()) return null;
+        if (options.size() == 1) {
+            CloneSelectionOption only = options.get(0);
+            logStage(viewer, "DETECTION", "single clone group after merge; skipping group chooser: " + only.label);
+            return only.clone;
+        }
+        for (int i = 0; i < options.size(); i++) {
+            CloneSelectionOption option = options.get(i);
+            previewCloneRangeInEditor(project, vf, getRepresentativeRange(option.clone));
+            int choice = showSequentialChoiceDialog(
+                    project,
+                    "Refactor Clone Candidate",
+                    buildSequentialClonePrompt(option, i + 1, options.size()),
+                    "Refactor This Clone",
+                    (i + 1) < options.size() ? "Next Clone" : "Skip",
+                    "Cancel"
+            );
+            if (choice == Messages.CANCEL) {
+                logStage(viewer, "DETECTION", "clone selection cancelled");
+                return null;
+            }
+            if (choice == Messages.YES) {
+                logStage(viewer, "DETECTION", "selected clone: " + option.label);
+                return option.clone;
+            }
+        }
+
+        logStage(viewer, "DETECTION", "no clone candidate selected");
+        return null;
+    }
+
+    private static detection.DetectedClone chooseCloneRangesToRefactor(Project project,
+                                                                       VirtualFile vf,
+                                                                       String fileSource,
+                                                                       detection.DetectedClone clone,
+                                                                       Consumer<String> viewer) {
+        if (clone == null || clone.ranges == null || clone.ranges.size() <= 1) return clone;
+
+        java.util.LinkedHashMap<String, CloneRangeSelectionOption> uniqueOptions = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < clone.ranges.size(); i++) {
+            CloneRangeSelectionOption option = buildCloneRangeSelectionOption(project, vf, fileSource, clone, i);
+            if (option == null) continue;
+            if (uniqueOptions.containsKey(option.uniqueKey)) continue;
+            uniqueOptions.put(option.uniqueKey, option);
+            logStage(viewer, "DETECTION", "clone range candidate: " + option.label);
+        }
+        java.util.ArrayList<CloneRangeSelectionOption> options = new java.util.ArrayList<>(uniqueOptions.values());
+        if (options.size() <= 1) return clone;
+
+        java.util.ArrayList<CloneRangeSelectionOption> selected = new java.util.ArrayList<>();
+        for (int i = 0; i < options.size(); i++) {
+            CloneRangeSelectionOption option = options.get(i);
+            previewCloneRangeInEditor(project, vf, option.range);
+            int choice = showSequentialChoiceDialog(
+                    project,
+                    "Select Clone Occurrence",
+                    buildSequentialRangePrompt(option, i + 1, options.size(), selected.size()),
+                    "Include This Clone",
+                    "Exclude This Clone",
+                    "Cancel"
+            );
+            if (choice == Messages.CANCEL) {
+                logStage(viewer, "DETECTION", "clone range selection cancelled");
+                return null;
+            }
+            if (choice == Messages.YES) {
+                selected.add(option);
+            }
+        }
+
+        if (selected.size() < 2) {
+            showNotification(project,
+                    "[Clone] Need at least two clone occurrences to refactor, but only " + selected.size() + " were selected.",
+                    NotificationType.WARNING);
+            logStage(viewer, "DETECTION", "clone range selection rejected: selected=" + selected.size());
+            return null;
+        }
+
+        detection.DetectedClone selectedClone = buildSelectedCloneFromRanges(clone, selected, fileSource);
+        logStage(viewer, "DETECTION", "selected clone ranges: " + summarizeSelectedRangeLabels(selected));
+        return selectedClone;
+    }
+
+    private static CloneSelectionOption buildCloneSelectionOption(Project project,
+                                                                  VirtualFile vf,
+                                                                  detection.DetectedClone clone,
+                                                                  int ordinal) {
+        java.util.List<CloneMethodSnapshot> snapshots = captureCloneMethodSnapshots(project, vf, clone, null);
+        String methodSummary = summarizeCloneMethods(snapshots);
+        String rangeSummary = summarizeCloneRanges(clone == null ? null : clone.ranges);
+
+        String label = "Clone " + ordinal;
+        if (!methodSummary.isBlank()) {
+            label += ": " + methodSummary;
+        }
+        if (!rangeSummary.isBlank()) {
+            label += " [" + rangeSummary + "]";
+        }
+
+        java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, null);
+        String[] ab = extractCloneCodeABFromReason(clone == null ? null : clone.reason);
+        String cloneCodeA = !cloneCodes.isEmpty() ? firstNonBlank(cloneCodes.get(0), ab[0]) : firstNonBlank(clone == null ? null : clone.cloneCodeA, ab[0]);
+        String cloneCodeB = cloneCodes.size() > 1 ? firstNonBlank(cloneCodes.get(1), ab[1]) : firstNonBlank(clone == null ? null : clone.cloneCodeB, ab[1]);
+
+        StringBuilder details = new StringBuilder();
+        details.append("ID: ").append(clone == null || clone.id == null || clone.id.isBlank() ? "<unknown>" : clone.id).append("\n");
+        if (!methodSummary.isBlank()) {
+            details.append("Methods: ").append(methodSummary).append("\n");
+        }
+        if (!rangeSummary.isBlank()) {
+            details.append("Ranges: ").append(rangeSummary).append("\n");
+        }
+        if (clone != null && clone.refactorType != null && !clone.refactorType.isBlank()) {
+            details.append("Suggested refactor type: ").append(clone.refactorType).append("\n");
+        }
+
+        String reasonPreview = previewOneLine(clone == null ? "" : clone.reason, 320);
+        if (reasonPreview != null && !reasonPreview.isBlank()) {
+            details.append("\nReason preview:\n").append(reasonPreview).append("\n");
+        }
+
+        String codeAPreview = previewCodeForSelection(cloneCodeA);
+        if (!codeAPreview.isBlank()) {
+            details.append("\nClone A preview:\n").append(codeAPreview).append("\n");
+        }
+
+        String codeBPreview = previewCodeForSelection(cloneCodeB);
+        if (!codeBPreview.isBlank()) {
+            details.append("\nClone B preview:\n").append(codeBPreview).append("\n");
+        }
+
+        return new CloneSelectionOption(clone, label, details.toString().trim());
+    }
+
+    private static String summarizeCloneMethods(java.util.List<CloneMethodSnapshot> snapshots) {
+        if (snapshots == null || snapshots.isEmpty()) return "";
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        for (CloneMethodSnapshot snapshot : snapshots) {
+            if (snapshot == null || snapshot.displayName == null || snapshot.displayName.isBlank()) continue;
+            names.add(snapshot.displayName);
+        }
+        return String.join(" <-> ", names);
+    }
+
+    private static String summarizeCloneRanges(java.util.List<detection.CloneRange> ranges) {
+        if (ranges == null || ranges.isEmpty()) return "";
+        java.util.ArrayList<String> parts = new java.util.ArrayList<>();
+        for (detection.CloneRange range : ranges) {
+            if (range == null) continue;
+            parts.add(range.startLine + "-" + range.endLine);
+        }
+        return String.join(", ", parts);
+    }
+
+    private static String previewCodeForSelection(String code) {
+        if (code == null || code.isBlank()) return "";
+        String normalized = code.replace("\r\n", "\n").replace("\r", "\n").strip();
+        if (normalized.length() > 800) {
+            normalized = normalized.substring(0, 800) + "\n...<truncated>...";
+        }
+        return normalized;
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) return first;
+        if (second != null && !second.isBlank()) return second;
+        return "";
+    }
+
+    private static String buildSequentialClonePrompt(CloneSelectionOption option, int ordinal, int total) {
+        if (option == null) return "Refactor this clone?";
+        StringBuilder sb = new StringBuilder();
+        sb.append("Clone candidate ").append(ordinal).append("/").append(total).append("\n\n");
+        sb.append(option.label);
+        sb.append("\n\nThe clone code has been highlighted in the editor.");
+        sb.append("\n\nDo you want to refactor this clone?");
+        return sb.toString();
+    }
+
+    private static String buildSequentialRangePrompt(CloneRangeSelectionOption option,
+                                                     int ordinal,
+                                                     int total,
+                                                     int currentSelectedCount) {
+        if (option == null) return "Include this clone occurrence?";
+        StringBuilder sb = new StringBuilder();
+        sb.append("Clone occurrence ").append(ordinal).append("/").append(total).append("\n");
+        sb.append("Currently selected: ").append(currentSelectedCount).append("\n\n");
+        sb.append(option.label);
+        sb.append("\n\nThis clone occurrence has been highlighted in the editor.");
+        sb.append("\n\nInclude this clone occurrence in the refactoring?");
+        return sb.toString();
+    }
+
+    private static int showSequentialChoiceDialog(Project project,
+                                                  String title,
+                                                  String message,
+                                                  String yesText,
+                                                  String noText,
+                                                  String cancelText) {
+        final java.util.concurrent.atomic.AtomicInteger out = new java.util.concurrent.atomic.AtomicInteger(Messages.CANCEL);
+        Runnable ui = () -> {
+            try {
+                int choice = Messages.showYesNoCancelDialog(
+                        project,
+                        message == null ? "" : message,
+                        title == null ? "Clone Refactoring" : title,
+                        yesText == null ? "Yes" : yesText,
+                        noText == null ? "No" : noText,
+                        cancelText == null ? "Cancel" : cancelText,
+                        Messages.getQuestionIcon()
+                );
+                out.set(choice);
+            } catch (Throwable ignored) {
+                out.set(Messages.CANCEL);
+            }
+        };
+
+        if (ApplicationManager.getApplication().isDispatchThread()) {
+            ui.run();
+        } else {
+            ApplicationManager.getApplication().invokeAndWait(ui);
+        }
+        return out.get();
+    }
+
+    private static detection.CloneRange getRepresentativeRange(detection.DetectedClone clone) {
+        if (clone == null || clone.ranges == null || clone.ranges.isEmpty()) return null;
+        return clone.ranges.get(0);
+    }
+
+    private static void previewCloneRangeInEditor(Project project,
+                                                  VirtualFile vf,
+                                                  detection.CloneRange range) {
+        if (project == null || project.isDisposed() || vf == null || range == null) return;
+        Runnable ui = () -> {
+            try {
+                OpenFileDescriptor descriptor = new OpenFileDescriptor(project, vf, Math.max(0, range.startLine - 1), 0);
+                Editor editor = FileEditorManager.getInstance(project).openTextEditor(descriptor, true);
+                if (editor == null) return;
+
+                Document doc = editor.getDocument();
+                if (doc == null || doc.getLineCount() <= 0) return;
+
+                int startLine = Math.max(0, Math.min(range.startLine - 1, doc.getLineCount() - 1));
+                int endLine = Math.max(startLine, Math.min(range.endLine - 1, doc.getLineCount() - 1));
+                int startOffset = doc.getLineStartOffset(startLine);
+                int endOffset = doc.getLineEndOffset(endLine);
+
+                editor.getSelectionModel().setSelection(startOffset, endOffset);
+                editor.getCaretModel().moveToOffset(startOffset);
+                editor.getScrollingModel().scrollToCaret(ScrollType.CENTER);
+            } catch (Throwable ignored) {
+            }
+        };
+
+        if (ApplicationManager.getApplication().isDispatchThread()) {
+            ui.run();
+        } else {
+            ApplicationManager.getApplication().invokeAndWait(ui);
+        }
+    }
+
+    private static java.util.List<String> getDetectedCloneCodes(detection.DetectedClone clone, String fileSource) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        if (clone == null) return out;
+
+        if (clone.cloneCodes != null) {
+            for (String code : clone.cloneCodes) {
+                out.add(code == null ? "" : code);
+            }
+        }
+
+        if (out.isEmpty()) {
+            if (clone.cloneCodeA != null && !clone.cloneCodeA.isBlank()) out.add(clone.cloneCodeA);
+            if (clone.cloneCodeB != null && !clone.cloneCodeB.isBlank()) out.add(clone.cloneCodeB);
+        }
+
+        int rangeCount = clone.ranges == null ? 0 : clone.ranges.size();
+        while (out.size() < rangeCount) {
+            detection.CloneRange range = (clone.ranges == null || out.size() >= clone.ranges.size()) ? null : clone.ranges.get(out.size());
+            out.add(range == null ? "" : sliceSourceByCloneRange(fileSource, range));
+        }
+        return out;
+    }
+
+    private static String getDetectedCloneCodeAt(detection.DetectedClone clone,
+                                                 int rangeIndex,
+                                                 String fileSource) {
+        java.util.List<String> codes = getDetectedCloneCodes(clone, fileSource);
+        if (rangeIndex >= 0 && rangeIndex < codes.size()) {
+            return codes.get(rangeIndex) == null ? "" : codes.get(rangeIndex);
+        }
+        return "";
+    }
+
+    private static CloneRangeSelectionOption buildCloneRangeSelectionOption(Project project,
+                                                                            VirtualFile vf,
+                                                                            String fileSource,
+                                                                            detection.DetectedClone clone,
+                                                                            int rangeIndex) {
+        if (clone == null || clone.ranges == null || rangeIndex < 0 || rangeIndex >= clone.ranges.size()) return null;
+        detection.CloneRange range = clone.ranges.get(rangeIndex);
+        if (range == null) return null;
+
+        PsiMethod method = findMethodContainingLine(project, vf, range.startLine);
+        if (method == null) method = findMethodContainingLine(project, vf, range.endLine);
+        String displayName = method == null ? "<unknown method>" : buildMethodDisplayName(method);
+        String uniqueKey = range.startLine + ":" + range.endLine;
+
+        String snippet = firstNonBlank(getDetectedCloneCodeAt(clone, rangeIndex, fileSource), sliceSourceByCloneRange(fileSource, range));
+        String label = "Occurrence " + (rangeIndex + 1) + ": " + displayName + " [" + range.startLine + "-" + range.endLine + "]";
+        StringBuilder details = new StringBuilder();
+        details.append("Method: ").append(displayName).append("\n");
+        details.append("Lines: ").append(range.startLine).append("-").append(range.endLine).append("\n");
+
+        String snippetPreview = previewCodeForSelection(snippet);
+        if (!snippetPreview.isBlank()) {
+            details.append("\nCode preview:\n").append(snippetPreview);
+        }
+
+        return new CloneRangeSelectionOption(rangeIndex, range, label, details.toString().trim(), snippet, uniqueKey);
+    }
+
+    private static String buildRangeSelectionDetails(java.util.List<CloneRangeSelectionOption> selected) {
+        if (selected == null || selected.isEmpty()) {
+            return "No ranges selected.";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Selected occurrences: ").append(selected.size()).append("\n\n");
+        for (CloneRangeSelectionOption option : selected) {
+            if (option == null) continue;
+            sb.append(option.label).append("\n");
+            if (option.details != null && !option.details.isBlank()) {
+                sb.append(option.details).append("\n");
+            }
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private static detection.DetectedClone buildSelectedCloneFromRanges(detection.DetectedClone original,
+                                                                        java.util.List<CloneRangeSelectionOption> selected,
+                                                                        String fileSource) {
+        detection.DetectedClone clone = new detection.DetectedClone();
+        clone.id = (original == null || original.id == null || original.id.isBlank())
+                ? "selected_clone"
+                : original.id + "_selected";
+        clone.refactorType = original == null ? null : original.refactorType;
+        clone.reason = original == null ? null : original.reason;
+        clone.ranges = new java.util.ArrayList<>();
+        clone.cloneCodes = new java.util.ArrayList<>();
+
+        java.util.ArrayList<CloneRangeSelectionOption> ordered = new java.util.ArrayList<>(selected);
+        ordered.sort(java.util.Comparator.comparingInt(o -> o.rangeIndex));
+
+        for (CloneRangeSelectionOption option : ordered) {
+            if (option == null || option.range == null) continue;
+            detection.CloneRange copy = new detection.CloneRange();
+            copy.startLine = option.range.startLine;
+            copy.endLine = option.range.endLine;
+            clone.ranges.add(copy);
+            clone.cloneCodes.add(firstNonBlank(option.snippet, sliceSourceByCloneRange(fileSource, option.range)));
+        }
+
+        clone.cloneCodeA = clone.cloneCodes.isEmpty() ? "" : clone.cloneCodes.get(0);
+        clone.cloneCodeB = clone.cloneCodes.size() > 1 ? clone.cloneCodes.get(1) : "";
+        return clone;
+    }
+
+    private static detection.CloneRange getRangeAt(java.util.List<CloneRangeSelectionOption> options, int index) {
+        if (options == null || index < 0 || index >= options.size()) return null;
+        CloneRangeSelectionOption option = options.get(index);
+        return option == null ? null : option.range;
+    }
+
+    private static String summarizeSelectedRangeLabels(java.util.List<CloneRangeSelectionOption> selected) {
+        if (selected == null || selected.isEmpty()) return "";
+        java.util.ArrayList<String> labels = new java.util.ArrayList<>();
+        for (CloneRangeSelectionOption option : selected) {
+            if (option == null || option.label == null || option.label.isBlank()) continue;
+            labels.add(option.label);
+        }
+        return String.join(" | ", labels);
+    }
+
+    private static String sliceSourceByCloneRange(String fileSource, detection.CloneRange range) {
+        try {
+            if (fileSource == null || fileSource.isBlank() || range == null) return "";
+            String[] lines = fileSource.replace("\r\n", "\n").replace("\r", "\n").split("\n", -1);
+            if (lines.length == 0) return "";
+            int start = Math.max(1, range.startLine);
+            int end = Math.max(start, range.endLine);
+            int startIdx = Math.min(lines.length, start) - 1;
+            int endIdx = Math.min(lines.length, end) - 1;
+            if (startIdx < 0 || endIdx < startIdx) return "";
+            StringBuilder sb = new StringBuilder();
+            for (int i = startIdx; i <= endIdx; i++) {
+                sb.append(lines[i]).append("\n");
+            }
+            return sb.toString().strip();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    private static java.util.List<detection.DetectedClone> resolveDetectedCloneRangesWithPsi(Project project,
+                                                                                              VirtualFile vf,
+                                                                                              String fileSource,
+                                                                                              java.util.List<detection.DetectedClone> clones,
+                                                                                              Consumer<String> viewer) {
+        if (clones == null || clones.isEmpty()) return java.util.Collections.emptyList();
+
+        java.util.ArrayList<detection.DetectedClone> resolved = new java.util.ArrayList<>();
+        int changedCloneCount = 0;
+        for (detection.DetectedClone clone : clones) {
+            detection.DetectedClone adjusted = resolveSingleDetectedCloneWithPsi(project, vf, fileSource, clone);
+            resolved.add(adjusted);
+
+            String beforeSummary = summarizeCloneRanges(clone == null ? null : clone.ranges);
+            String afterSummary = summarizeCloneRanges(adjusted == null ? null : adjusted.ranges);
+            if (!java.util.Objects.equals(beforeSummary, afterSummary)) {
+                changedCloneCount++;
+                String cloneId = clone == null || clone.id == null || clone.id.isBlank() ? "<unknown>" : clone.id;
+                logStage(viewer, "DETECTION", "psi-resolved clone ranges for " + cloneId + ": [" + beforeSummary + "] -> [" + afterSummary + "]");
+            }
+        }
+
+        if (changedCloneCount > 0) {
+            logStage(viewer, "DETECTION", "psi-resolved clone ranges: " + changedCloneCount + "/" + resolved.size() + " clone group(s)");
+        }
+        return resolved;
+    }
+
+    private static detection.DetectedClone resolveSingleDetectedCloneWithPsi(Project project,
+                                                                             VirtualFile vf,
+                                                                             String fileSource,
+                                                                             detection.DetectedClone clone) {
+        if (clone == null) return null;
+
+        detection.DetectedClone adjusted = new detection.DetectedClone();
+        adjusted.id = clone.id;
+        adjusted.refactorType = clone.refactorType;
+        adjusted.reason = clone.reason;
+        adjusted.cloneCodes = new java.util.ArrayList<>();
+        adjusted.ranges = new java.util.ArrayList<>();
+
+        java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, fileSource);
+        int occurrenceCount = Math.max(
+                cloneCodes.size(),
+                clone.ranges == null ? 0 : clone.ranges.size()
+        );
+
+        for (int i = 0; i < occurrenceCount; i++) {
+            detection.CloneRange rawRange = (clone.ranges == null || i >= clone.ranges.size()) ? null : clone.ranges.get(i);
+            String snippet = i < cloneCodes.size() ? cloneCodes.get(i) : "";
+            detection.CloneRange resolvedRange = resolveCloneRangeWithPsi(project, vf, fileSource, snippet, rawRange);
+            if (resolvedRange != null) {
+                adjusted.ranges.add(resolvedRange);
+                adjusted.cloneCodes.add(snippet == null ? "" : snippet);
+            }
+        }
+
+        adjusted.cloneCodeA = adjusted.cloneCodes.isEmpty() ? "" : adjusted.cloneCodes.get(0);
+        adjusted.cloneCodeB = adjusted.cloneCodes.size() > 1 ? adjusted.cloneCodes.get(1) : "";
+        return adjusted;
+    }
+
+    private static detection.CloneRange resolveCloneRangeWithPsi(Project project,
+                                                                 VirtualFile vf,
+                                                                 String fileSource,
+                                                                 String snippet,
+                                                                 detection.CloneRange rawRange) {
+        PsiMethod rawHostMethod = findMethodContainingCloneRange(project, vf, rawRange);
+        if (rawHostMethod != null) {
+            detection.CloneRange fragmentRange = findFragmentRangeInMethod(project, vf, rawHostMethod, fileSource, snippet, rawRange);
+            if (fragmentRange != null) {
+                return fragmentRange;
+            }
+            if (rawRange != null) {
+                return copyCloneRange(rawRange);
+            }
+
+            int[] methodLines = elementLineRange(project, vf, rawHostMethod);
+            if (methodLines != null) {
+                detection.CloneRange methodRange = new detection.CloneRange();
+                methodRange.startLine = methodLines[0];
+                methodRange.endLine = methodLines[1];
+                return methodRange;
+            }
+        }
+
+        PsiMethod method = findMethodForCloneSnippet(project, vf, fileSource, snippet, rawRange);
+        if (method != null) {
+            detection.CloneRange fragmentRange = findFragmentRangeInMethod(project, vf, method, fileSource, snippet, rawRange);
+            if (fragmentRange != null) {
+                return fragmentRange;
+            }
+            int[] methodLines = elementLineRange(project, vf, method);
+            if (methodLines != null) {
+                detection.CloneRange methodRange = new detection.CloneRange();
+                methodRange.startLine = methodLines[0];
+                methodRange.endLine = methodLines[1];
+                return methodRange;
+            }
+        }
+        return copyCloneRange(rawRange);
+    }
+
+    private static detection.CloneRange copyCloneRange(detection.CloneRange range) {
+        if (range == null) return null;
+        detection.CloneRange copy = new detection.CloneRange();
+        copy.startLine = range.startLine;
+        copy.endLine = range.endLine;
+        return copy;
+    }
+
+    private static java.util.List<detection.DetectedClone> mergeOverlappingDetectedClones(String fileSource,
+                                                                                           java.util.List<detection.DetectedClone> clones,
+                                                                                           Consumer<String> viewer) {
+        if (clones == null || clones.isEmpty()) return java.util.Collections.emptyList();
+
+        java.util.ArrayList<detection.DetectedClone> working = new java.util.ArrayList<>();
+        for (detection.DetectedClone clone : clones) {
+            if (clone != null) working.add(clone);
+        }
+        if (working.size() <= 1) return working;
+
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            outer:
+            for (int i = 0; i < working.size(); i++) {
+                for (int j = i + 1; j < working.size(); j++) {
+                    if (detectedClonesOverlap(working.get(i), working.get(j))) {
+                        detection.DetectedClone merged = mergeDetectedClonePair(fileSource, working.get(i), working.get(j));
+                        working.set(i, merged);
+                        working.remove(j);
+                        changed = true;
+                        break outer;
+                    }
+                }
+            }
+        }
+
+        if (working.size() != clones.size()) {
+            logStage(viewer, "DETECTION", "merged overlapping clone groups: " + clones.size() + " -> " + working.size());
+        }
+        return working;
+    }
+
+    private static boolean detectedClonesOverlap(detection.DetectedClone first, detection.DetectedClone second) {
+        if (first == null || second == null || first.ranges == null || second.ranges == null) return false;
+        for (detection.CloneRange left : first.ranges) {
+            for (detection.CloneRange right : second.ranges) {
+                if (cloneRangesOverlap(left, right)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean cloneRangesOverlap(detection.CloneRange left, detection.CloneRange right) {
+        if (left == null || right == null) return false;
+        return left.startLine <= right.endLine && left.endLine >= right.startLine;
+    }
+
+    private static detection.DetectedClone mergeDetectedClonePair(String fileSource,
+                                                                  detection.DetectedClone first,
+                                                                  detection.DetectedClone second) {
+        detection.DetectedClone merged = new detection.DetectedClone();
+        merged.id = mergeCloneIds(first, second);
+        merged.refactorType = firstNonBlank(first == null ? null : first.refactorType, second == null ? null : second.refactorType);
+        merged.reason = mergeCloneReasons(first, second);
+        java.util.ArrayList<MergedCloneOccurrence> mergedOccurrences = mergeCloneOccurrences(fileSource, first, second);
+        merged.ranges = new java.util.ArrayList<>();
+        merged.cloneCodes = new java.util.ArrayList<>();
+        for (MergedCloneOccurrence occurrence : mergedOccurrences) {
+            if (occurrence == null || occurrence.range == null) continue;
+            merged.ranges.add(occurrence.range);
+            merged.cloneCodes.add(occurrence.code == null ? "" : occurrence.code);
+        }
+        merged.cloneCodeA = merged.cloneCodes.isEmpty() ? "" : merged.cloneCodes.get(0);
+        merged.cloneCodeB = merged.cloneCodes.size() > 1 ? merged.cloneCodes.get(1) : "";
+        return merged;
+    }
+
+    private static String mergeCloneIds(detection.DetectedClone first, detection.DetectedClone second) {
+        String a = first == null ? "" : first.id;
+        String b = second == null ? "" : second.id;
+        if (a == null || a.isBlank()) return b == null ? "" : b;
+        if (b == null || b.isBlank()) return a;
+        if (a.equals(b)) return a;
+        return a + "__" + b;
+    }
+
+    private static String mergeCloneReasons(detection.DetectedClone first, detection.DetectedClone second) {
+        java.util.LinkedHashSet<String> parts = new java.util.LinkedHashSet<>();
+        if (first != null && first.reason != null && !first.reason.isBlank()) parts.add(first.reason.strip());
+        if (second != null && second.reason != null && !second.reason.isBlank()) parts.add(second.reason.strip());
+        return String.join("\n\n", parts);
+    }
+
+    private static java.util.ArrayList<MergedCloneOccurrence> mergeCloneOccurrences(String fileSource,
+                                                                                     detection.DetectedClone first,
+                                                                                     detection.DetectedClone second) {
+        java.util.LinkedHashMap<String, MergedCloneOccurrence> unique = new java.util.LinkedHashMap<>();
+        addCloneOccurrences(unique, first, fileSource);
+        addCloneOccurrences(unique, second, fileSource);
+        java.util.ArrayList<MergedCloneOccurrence> out = new java.util.ArrayList<>(unique.values());
+        out.sort((a, b) -> {
+            int cmp = Integer.compare(a.range.startLine, b.range.startLine);
+            return cmp != 0 ? cmp : Integer.compare(a.range.endLine, b.range.endLine);
+        });
+        return out;
+    }
+
+    private static void addCloneOccurrences(java.util.Map<String, MergedCloneOccurrence> out,
+                                            detection.DetectedClone clone,
+                                            String fileSource) {
+        if (out == null || clone == null || clone.ranges == null) return;
+        java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, fileSource);
+        for (int i = 0; i < clone.ranges.size(); i++) {
+            detection.CloneRange range = clone.ranges.get(i);
+            if (range == null) continue;
+            String key = range.startLine + ":" + range.endLine;
+            String code = i < cloneCodes.size() ? cloneCodes.get(i) : "";
+            if (out.containsKey(key)) {
+                MergedCloneOccurrence existing = out.get(key);
+                if (existing != null && (existing.code == null || existing.code.isBlank()) && code != null && !code.isBlank()) {
+                    existing.code = code;
+                }
+                continue;
+            }
+            detection.CloneRange copy = new detection.CloneRange();
+            copy.startLine = range.startLine;
+            copy.endLine = range.endLine;
+            out.put(key, new MergedCloneOccurrence(copy, code));
+        }
+    }
+
+    private static final class MergedCloneOccurrence {
+        private final detection.CloneRange range;
+        private String code;
+
+        private MergedCloneOccurrence(detection.CloneRange range, String code) {
+            this.range = range;
+            this.code = code == null ? "" : code;
         }
     }
 
@@ -1340,6 +2145,47 @@ Your previous refactoring attempt was rejected by the usefulness checker.
         }
     }
 
+    private static String buildUsefulnessFeedbackPrompt(Project project,
+                                                        String fileName,
+                                                        String proposedSource,
+                                                        java.util.List<usefulnessChecker.Reason> reasons,
+                                                        java.util.List<CloneMethodSnapshot> snapshots) {
+        if (!containsReasonName(reasons, "POST_EXTRACTION_CLONE_DELETION_DETECTED")) {
+            return usefulnessChecker.buildFeedbackPrompt(reasons);
+        }
+
+        java.util.List<String> missingMethods = findMissingTargetMethodDisplayNames(project, fileName, proposedSource, snapshots);
+        StringBuilder missingText = new StringBuilder();
+        if (!missingMethods.isEmpty()) {
+            missingText.append("\n\nMissing target clone methods in the proposed source:\n");
+            for (String name : missingMethods) {
+                if (name == null || name.isBlank()) continue;
+                missingText.append("- ").append(name).append("\n");
+            }
+            while (missingText.length() > 0 && Character.isWhitespace(missingText.charAt(missingText.length() - 1))) {
+                missingText.setLength(missingText.length() - 1);
+            }
+        }
+
+        return """
+Your previous refactoring was rejected because one or more target clone methods were deleted after extraction.
+
+Problem:
+A valid Extract Method refactoring must preserve all original target clone methods.%s
+
+How to fix it:
+- Restore every missing target clone method.
+- Keep the helper method.
+- Make all original target clone methods call the helper.
+
+Important constraints:
+- Do not delete target clone methods.
+- Do not merge them.
+- Only perform Extract Method.
+Follow the required output format for the refactoring task.
+""".formatted(missingText);
+    }
+
     private static void appendFocusedMethodSection(StringBuilder sb,
                                                    String title,
                                                    java.util.LinkedHashSet<String> keys,
@@ -1380,6 +2226,29 @@ Your previous refactoring attempt was rejected by the usefulness checker.
         for (CloneMethodSnapshot snapshot : snapshots) {
             if (snapshot == null) continue;
             out.add(buildMethodTrackingKey(snapshot.className, snapshot.methodName, snapshot.parameterCount));
+        }
+        return out;
+    }
+
+    private static java.util.List<String> findMissingTargetMethodDisplayNames(Project project,
+                                                                              String fileName,
+                                                                              String proposedSource,
+                                                                              java.util.List<CloneMethodSnapshot> snapshots) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        try {
+            if (project == null || project.isDisposed() || proposedSource == null || proposedSource.isBlank()) return out;
+            java.util.LinkedHashSet<String> targetKeys = collectTargetMethodKeys(snapshots);
+            if (targetKeys.isEmpty()) return out;
+
+            PsiJavaFile afterPsi = parseInMemoryJavaFile(project, fileName, proposedSource);
+            java.util.LinkedHashMap<String, PsiMethod> afterMethods = collectAllMethodsByTrackingKey(afterPsi);
+            for (String key : targetKeys) {
+                if (key == null || key.isBlank()) continue;
+                if (afterMethods.containsKey(key)) continue;
+                String displayName = findSnapshotDisplayName(snapshots, key);
+                out.add((displayName == null || displayName.isBlank()) ? key : displayName);
+            }
+        } catch (Throwable ignored) {
         }
         return out;
     }
@@ -1751,9 +2620,299 @@ Your previous refactoring attempt was rejected by the usefulness checker.
         }
     }
 
+    private static boolean methodContainsSnippet(PsiMethod method, String snippet) {
+        if (method == null || snippet == null || snippet.isBlank()) return false;
+        try {
+            String rawSnippet = snippet.strip();
+            String rawSnippetNoBraces = stripOuterBraces(rawSnippet);
+            String normalizedSnippet = normalizeForMatch(rawSnippet);
+            String normalizedSnippetNoBraces = normalizeForMatch(rawSnippetNoBraces);
+
+            String methodText = method.getText();
+            if (methodText != null && !methodText.isBlank()) {
+                if (methodText.contains(rawSnippet)) return true;
+                if (!rawSnippetNoBraces.isBlank() && methodText.contains(rawSnippetNoBraces)) return true;
+
+                String normalizedMethodText = normalizeForMatch(methodText);
+                if (!normalizedSnippet.isBlank() && normalizedMethodText.contains(normalizedSnippet)) return true;
+                if (!normalizedSnippetNoBraces.isBlank() && normalizedMethodText.contains(normalizedSnippetNoBraces)) return true;
+            }
+
+            PsiElement body = method.getBody();
+            String bodyText = body == null ? "" : body.getText();
+            if (!bodyText.isBlank()) {
+                if (bodyText.contains(rawSnippet)) return true;
+                if (!rawSnippetNoBraces.isBlank() && bodyText.contains(rawSnippetNoBraces)) return true;
+
+                String normalizedBodyText = normalizeForMatch(bodyText);
+                if (!normalizedSnippet.isBlank() && normalizedBodyText.contains(normalizedSnippet)) return true;
+                if (!normalizedSnippetNoBraces.isBlank() && normalizedBodyText.contains(normalizedSnippetNoBraces)) return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private static boolean textMatchesSnippet(String candidateText, String snippet) {
+        if (candidateText == null || candidateText.isBlank() || snippet == null || snippet.isBlank()) return false;
+
+        String rawSnippet = snippet.strip();
+        String rawSnippetNoBraces = stripOuterBraces(rawSnippet);
+        String normalizedSnippet = normalizeForMatch(rawSnippet);
+        String normalizedSnippetNoBraces = normalizeForMatch(rawSnippetNoBraces);
+        String normalizedCandidate = normalizeForMatch(candidateText);
+
+        if (candidateText.contains(rawSnippet)) return true;
+        if (!rawSnippetNoBraces.isBlank() && candidateText.contains(rawSnippetNoBraces)) return true;
+        if (!normalizedSnippet.isBlank() && normalizedCandidate.equals(normalizedSnippet)) return true;
+        if (!normalizedSnippetNoBraces.isBlank() && normalizedCandidate.equals(normalizedSnippetNoBraces)) return true;
+        if (!normalizedSnippet.isBlank() && normalizedCandidate.contains(normalizedSnippet)) return true;
+        return !normalizedSnippetNoBraces.isBlank() && normalizedCandidate.contains(normalizedSnippetNoBraces);
+    }
+
+    private static boolean snippetMatchesWholeMethod(PsiMethod method, String snippet) {
+        if (method == null || snippet == null || snippet.isBlank()) return false;
+        String methodText = method.getText();
+        PsiCodeBlock body = method.getBody();
+        String bodyText = body == null ? "" : body.getText();
+        return textMatchesSnippet(methodText, snippet)
+                || textMatchesSnippet(bodyText, snippet)
+                || textMatchesSnippet(stripOuterBraces(bodyText), snippet);
+    }
+
+    private static detection.CloneRange offsetLineRange(Project project,
+                                                        VirtualFile vf,
+                                                        int startOffset,
+                                                        int endOffset) {
+        try {
+            if (project == null || project.isDisposed() || vf == null) return null;
+            Document doc = FileDocumentManager.getInstance().getDocument(vf);
+            if (doc == null) return null;
+
+            int safeStart = Math.max(0, Math.min(startOffset, doc.getTextLength()));
+            int safeEnd = Math.max(safeStart, Math.min(endOffset, doc.getTextLength()));
+            detection.CloneRange range = new detection.CloneRange();
+            range.startLine = doc.getLineNumber(safeStart) + 1;
+            range.endLine = doc.getLineNumber(Math.max(safeStart, safeEnd - 1)) + 1;
+            return range;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static PsiMethod findMethodContainingCloneRange(Project project,
+                                                            VirtualFile vf,
+                                                            detection.CloneRange range) {
+        if (range == null) return null;
+        PsiMethod start = findMethodContainingLine(project, vf, range.startLine);
+        PsiMethod end = findMethodContainingLine(project, vf, range.endLine);
+        if (start != null && end != null) {
+            String startKey = buildMethodTrackingKey(start);
+            String endKey = buildMethodTrackingKey(end);
+            if (startKey.equals(endKey)) return start;
+        }
+        return start != null ? start : end;
+    }
+
+    private static detection.CloneRange findFragmentRangeInMethod(Project project,
+                                                                  VirtualFile vf,
+                                                                  PsiMethod method,
+                                                                  String fileSource,
+                                                                  String snippet,
+                                                                  detection.CloneRange rawRange) {
+        if (method == null || snippet == null || snippet.isBlank()) return null;
+
+        if (snippetMatchesWholeMethod(method, snippet)) {
+            int[] methodLines = elementLineRange(project, vf, method);
+            if (methodLines != null) {
+                detection.CloneRange methodRange = new detection.CloneRange();
+                methodRange.startLine = methodLines[0];
+                methodRange.endLine = methodLines[1];
+                return methodRange;
+            }
+        }
+
+        PsiRangeCandidate best = findBestStatementSequenceCandidate(project, vf, method, fileSource, snippet, rawRange);
+        PsiRangeCandidate single = findBestSingleElementCandidate(project, vf, method, snippet, rawRange);
+        if (isBetterPsiRangeCandidate(single, best)) {
+            best = single;
+        }
+        return best == null ? null : best.range;
+    }
+
+    private static PsiRangeCandidate findBestStatementSequenceCandidate(Project project,
+                                                                        VirtualFile vf,
+                                                                        PsiMethod method,
+                                                                        String fileSource,
+                                                                        String snippet,
+                                                                        detection.CloneRange rawRange) {
+        if (method == null || fileSource == null || fileSource.isBlank() || snippet == null || snippet.isBlank()) return null;
+
+        PsiRangeCandidate best = null;
+        java.util.Collection<PsiCodeBlock> blocks = PsiTreeUtil.findChildrenOfType(method, PsiCodeBlock.class);
+        for (PsiCodeBlock block : blocks) {
+            if (block == null) continue;
+            PsiStatement[] statements = block.getStatements();
+            for (int start = 0; start < statements.length; start++) {
+                for (int end = start; end < statements.length; end++) {
+                    PsiStatement first = statements[start];
+                    PsiStatement last = statements[end];
+                    if (first == null || last == null) continue;
+
+                    int startOffset = first.getTextRange().getStartOffset();
+                    int endOffset = last.getTextRange().getEndOffset();
+                    if (startOffset < 0 || endOffset <= startOffset || endOffset > fileSource.length()) continue;
+
+                    String candidateText = fileSource.substring(startOffset, endOffset);
+                    if (!textMatchesSnippet(candidateText, snippet)) continue;
+
+                    detection.CloneRange range = offsetLineRange(project, vf, startOffset, endOffset);
+                    PsiRangeCandidate candidate = buildPsiRangeCandidate(range, rawRange);
+                    if (isBetterPsiRangeCandidate(candidate, best)) {
+                        best = candidate;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    private static PsiRangeCandidate findBestSingleElementCandidate(Project project,
+                                                                    VirtualFile vf,
+                                                                    PsiMethod method,
+                                                                    String snippet,
+                                                                    detection.CloneRange rawRange) {
+        if (method == null || snippet == null || snippet.isBlank()) return null;
+
+        PsiRangeCandidate best = null;
+        for (PsiElement element : PsiTreeUtil.findChildrenOfAnyType(method, PsiStatement.class, PsiCodeBlock.class)) {
+            if (element == null) continue;
+            if (element instanceof PsiCodeBlock && element == method.getBody()) continue;
+            if (!textMatchesSnippet(element.getText(), snippet)) continue;
+
+            int[] lines = elementLineRange(project, vf, element);
+            if (lines == null) continue;
+
+            detection.CloneRange range = new detection.CloneRange();
+            range.startLine = lines[0];
+            range.endLine = lines[1];
+            PsiRangeCandidate candidate = buildPsiRangeCandidate(range, rawRange);
+            if (isBetterPsiRangeCandidate(candidate, best)) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private static PsiRangeCandidate buildPsiRangeCandidate(detection.CloneRange range,
+                                                            detection.CloneRange preferredRange) {
+        if (range == null) return null;
+        int distance = preferredRange == null
+                ? 0
+                : Math.abs(range.startLine - preferredRange.startLine) + Math.abs(range.endLine - preferredRange.endLine);
+        int span = Math.max(0, range.endLine - range.startLine);
+        return new PsiRangeCandidate(range, distance, span);
+    }
+
+    private static boolean isBetterPsiRangeCandidate(PsiRangeCandidate candidate,
+                                                     PsiRangeCandidate best) {
+        if (candidate == null) return false;
+        if (best == null) return true;
+        if (candidate.distanceScore != best.distanceScore) {
+            return candidate.distanceScore < best.distanceScore;
+        }
+        if (candidate.spanScore != best.spanScore) {
+            return candidate.spanScore < best.spanScore;
+        }
+        if (candidate.range.startLine != best.range.startLine) {
+            return candidate.range.startLine < best.range.startLine;
+        }
+        return candidate.range.endLine < best.range.endLine;
+    }
+
+    private static final class PsiRangeCandidate {
+        private final detection.CloneRange range;
+        private final int distanceScore;
+        private final int spanScore;
+
+        private PsiRangeCandidate(detection.CloneRange range, int distanceScore, int spanScore) {
+            this.range = range;
+            this.distanceScore = distanceScore;
+            this.spanScore = spanScore;
+        }
+    }
+
+    private static PsiMethod findMethodForCloneSnippet(Project project,
+                                                       VirtualFile vf,
+                                                       String fileSource,
+                                                       String snippet,
+                                                       detection.CloneRange preferredRange) {
+        try {
+            if (project == null || project.isDisposed() || vf == null) return null;
+            if (snippet == null || snippet.isBlank()) return null;
+
+            PsiMethod preferredHost = findMethodContainingCloneRange(project, vf, preferredRange);
+            if (preferredHost != null && (methodContainsSnippet(preferredHost, snippet) || snippetMatchesWholeMethod(preferredHost, snippet))) {
+                return preferredHost;
+            }
+
+            PsiMethod exactWhole = findWholeMethodCoveredBySnippet(project, vf, fileSource, snippet);
+            if (exactWhole != null) return exactWhole;
+
+            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+            if (!(psiFile instanceof PsiJavaFile)) return null;
+
+            PsiMethod best = null;
+            long bestScore = Long.MAX_VALUE;
+            for (PsiMethod method : PsiTreeUtil.findChildrenOfType(psiFile, PsiMethod.class)) {
+                if (!methodContainsSnippet(method, snippet)) continue;
+
+                long score = 0L;
+                if (preferredRange != null) {
+                    int[] methodLines = elementLineRange(project, vf, method);
+                    if (methodLines != null) {
+                        int deltaStart = Math.abs(methodLines[0] - preferredRange.startLine);
+                        int deltaEnd = Math.abs(methodLines[1] - preferredRange.endLine);
+                        score = (long) deltaStart + deltaEnd;
+                    }
+                }
+
+                if (best == null || score < bestScore) {
+                    best = method;
+                    bestScore = score;
+                }
+            }
+            return best;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static void addCloneMethodSnapshot(java.util.Map<String, CloneMethodSnapshot> out,
+                                               Project project,
+                                               PsiMethod method,
+                                               Consumer<String> viewer) {
+        try {
+            if (out == null || project == null || project.isDisposed() || method == null) return;
+
+            String key = buildMethodTrackingKey(method);
+            if (out.containsKey(key)) return;
+
+            SmartPsiElementPointer<PsiMethod> ptr = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(method);
+            String displayName = buildMethodDisplayName(method);
+            String className = getMethodClassName(method);
+            String methodName = method.getName();
+            int parameterCount = method.getParameterList().getParametersCount();
+            String baselineBodyText = normalizeMethodBodyText(getMethodBodyText(method));
+            out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, baselineBodyText, displayName));
+            logStage(viewer, "WATCH", "tracking cloned method: " + displayName);
+        } catch (Throwable t) {
+            logStage(viewer, "WATCH", "failed to snapshot cloned method: " + t.getMessage());
+        }
+    }
+
 	    private static java.util.List<CloneMethodSnapshot> captureCloneMethodSnapshots(
-	            Project project,
-	            VirtualFile vf,
+		            Project project,
+		            VirtualFile vf,
             detection.DetectedClone clone,
             Consumer<String> viewer
     ) {
@@ -1763,27 +2922,34 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                 return new java.util.ArrayList<>();
             }
 
-            for (detection.CloneRange range : clone.ranges) {
-                if (range == null) continue;
+            String fileSource = "";
+	            try {
+	                Document doc = FileDocumentManager.getInstance().getDocument(vf);
+	                if (doc != null) fileSource = doc.getText();
+	            } catch (Throwable ignored) {}
 
-                PsiMethod method = findMethodContainingLine(project, vf, range.startLine);
-                if (method == null) method = findMethodContainingLine(project, vf, range.endLine);
-                if (method == null) continue;
+	            java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, fileSource);
+	            int occurrenceCount = Math.max(
+	                    cloneCodes.size(),
+	                    clone.ranges == null ? 0 : clone.ranges.size()
+	            );
+	            for (int i = 0; i < occurrenceCount; i++) {
+	                detection.CloneRange range = (clone.ranges == null || i >= clone.ranges.size()) ? null : clone.ranges.get(i);
+	                String code = i < cloneCodes.size() ? cloneCodes.get(i) : "";
 
-                String key = buildMethodTrackingKey(method);
-                if (out.containsKey(key)) continue;
-                SmartPsiElementPointer<PsiMethod> ptr = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(method);
-                String displayName = buildMethodDisplayName(method);
-                String className = getMethodClassName(method);
-                String methodName = method.getName();
-                int parameterCount = method.getParameterList().getParametersCount();
-                String baselineBodyText = normalizeMethodBodyText(getMethodBodyText(method));
-                out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, baselineBodyText, displayName));
-//                logStage(viewer, "WATCH", "tracking cloned method: " + displayName);
-            }
-        } catch (Throwable t) {
-            logStage(viewer, "WATCH", "failed to capture cloned method snapshots: " + t.getMessage());
-        }
+	                PsiMethod method = findMethodForCloneSnippet(project, vf, fileSource, code, range);
+	                if (method == null && range != null) {
+	                    method = findMethodContainingLine(project, vf, range.startLine);
+	                }
+	                if (method == null && range != null) {
+	                    method = findMethodContainingLine(project, vf, range.endLine);
+	                }
+	                if (method == null) continue;
+	                addCloneMethodSnapshot(out, project, method, viewer);
+	            }
+	        } catch (Throwable t) {
+	            logStage(viewer, "WATCH", "failed to capture cloned method snapshots: " + t.getMessage());
+	        }
 	        return new java.util.ArrayList<>(out.values());
 	    }
 

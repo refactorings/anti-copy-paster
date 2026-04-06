@@ -133,7 +133,6 @@ public final class FragmentUsefulnessAnalyzer {
         EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED,
         EXCESSIVE_REFACTORING_DETECTED,
         EXTRACT_METHOD_NOT_FOUND,
-        EXTRACT_METHOD_NOT_CONFIRMED,
         ANALYZER_FALLBACK
     }
 
@@ -331,7 +330,7 @@ public final class FragmentUsefulnessAnalyzer {
                     (outcome.debug.isBlank() ? "" : (", debug=" + outcome.debug));
 
             if (outcome.strategy != Strategy.EXTRACT_METHOD) {
-                Reason reason = outcome.reason == null ? Reason.EXTRACT_METHOD_NOT_CONFIRMED : outcome.reason;
+                Reason reason = outcome.reason == null ? Reason.EXTRACT_METHOD_NOT_FOUND : outcome.reason;
                 return new UsefulnessResult(false, outcome.score, outcome.strategy, List.of(reason), notes);
             }
 
@@ -681,7 +680,7 @@ public final class FragmentUsefulnessAnalyzer {
         if (relocationReliable && simAfter <= cfg.cloneSimilarityAfterReduced) {
             return new PairOutcome(
                     Strategy.UNKNOWN,
-                    Reason.EXTRACT_METHOD_NOT_CONFIRMED,
+                    Reason.EXTRACT_METHOD_NOT_FOUND,
                     null,
                     false,
                     45,
@@ -691,7 +690,7 @@ public final class FragmentUsefulnessAnalyzer {
 
         return new PairOutcome(
                 Strategy.UNKNOWN,
-                Reason.EXTRACT_METHOD_NOT_CONFIRMED,
+                Reason.EXTRACT_METHOD_NOT_FOUND,
                 null,
                 false,
                 40,

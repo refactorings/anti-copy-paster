@@ -514,6 +514,7 @@ final class WorkflowJavaBuildSupport {
             cmd.add("-Dtest_dir=" + testDir.getAbsolutePath());
             cmd.add("-Dreport_dir=" + reportDir.getAbsolutePath());
             cmd.add("-Dsandbox=false");
+            cmd.add("-Djunit_check=FALSE");
             cmd.add("-Dtestability_transformation=false");
             cmd.add("-DTT=false");
 

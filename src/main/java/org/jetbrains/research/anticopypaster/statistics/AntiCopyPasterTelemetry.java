@@ -170,7 +170,14 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
         return Unit.INSTANCE;
     }
 
-    public static void saveStatistics(Project project, int notificationCount, int extractMethodAppliedCount, int extractMethodRejectedCount, int copyCount, int pasteCount) {
+    public static void saveStatistics(Project project,
+                                      int notificationCount,
+                                      int extractMethodAppliedCount,
+                                      int extractMethodRejectedCount,
+                                      int copyCount,
+                                      int pasteCount,
+                                      int refactoringAcceptedCount,
+                                      int refactoringCancelledCount) {
         //Get password and username from PasswordSafe
         getUsernameAndPassword(project);
 
@@ -190,7 +197,9 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
                     .append("extractMethodAppliedCount", extractMethodAppliedCount)
                     .append("extractMethodRejectedCount", extractMethodRejectedCount)
                     .append("copyCount", copyCount)
-                    .append("pasteCount", pasteCount);
+                    .append("pasteCount", pasteCount)
+                    .append("refactoringAcceptedCount", refactoringAcceptedCount)
+                    .append("refactoringCancelledCount", refactoringCancelledCount);
 
             statisticsCollection.updateOne(query, new Document("$set", updatedDocument), new UpdateOptions().upsert(true));
         } catch (MongoException e) {

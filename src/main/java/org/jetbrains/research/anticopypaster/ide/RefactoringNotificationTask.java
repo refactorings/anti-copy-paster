@@ -175,12 +175,15 @@ public class RefactoringNotificationTask extends TimerTask {
                             Messages.getInformationIcon());
 
             //result is equal to 0 if a user accepted the suggestion and clicked on OK button, 1 otherwise
+            AntiCopyPasterUsageStatistics usageStatistics =
+                    AntiCopyPasterUsageStatistics.getInstance(event.getProject());
             if (result == MessageConstants.OK) {
                 new ExtractionTask(event).run();
-
-                AntiCopyPasterUsageStatistics.getInstance(event.getProject()).extractMethodApplied();
+                usageStatistics.extractMethodApplied();
+                usageStatistics.refactoringAccepted();
             } else {
-                AntiCopyPasterUsageStatistics.getInstance(event.getProject()).extractMethodRejected();
+                usageStatistics.extractMethodRejected();
+                usageStatistics.refactoringCancelled();
             }
         };
     }

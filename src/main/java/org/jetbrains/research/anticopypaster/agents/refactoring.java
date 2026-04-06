@@ -34,6 +34,7 @@ public class refactoring {
          * This should be provided by the detection agent.
          */
         public String cloneCode;
+        public List<String> cloneCodes;
         public String cloneCodeA;
         public String cloneCodeB;
 
@@ -42,18 +43,30 @@ public class refactoring {
         }
 
         public DetectedClone(String id, List<CloneRange> ranges, String refactorType, String reason, String cloneCode) {
-            this(id, ranges, refactorType, reason, cloneCode, "", "");
+            this(id, ranges, refactorType, reason, cloneCode, List.of(), "", "");
         }
 
         public DetectedClone(String id, List<CloneRange> ranges, String refactorType, String reason,
                              String cloneCode, String cloneCodeA, String cloneCodeB) {
+            this(id, ranges, refactorType, reason, cloneCode, List.of(), cloneCodeA, cloneCodeB);
+        }
+
+        public DetectedClone(String id, List<CloneRange> ranges, String refactorType, String reason,
+                             String cloneCode, List<String> cloneCodes, String cloneCodeA, String cloneCodeB) {
             this.id = id;
             this.ranges = ranges;
             this.refactorType = refactorType;
             this.reason = reason;
             this.cloneCode = (cloneCode == null ? "" : cloneCode);
+            this.cloneCodes = cloneCodes == null ? new ArrayList<>() : new ArrayList<>(cloneCodes);
             this.cloneCodeA = (cloneCodeA == null ? "" : cloneCodeA);
             this.cloneCodeB = (cloneCodeB == null ? "" : cloneCodeB);
+            if (this.cloneCodeA.isBlank() && !this.cloneCodes.isEmpty()) {
+                this.cloneCodeA = this.cloneCodes.get(0) == null ? "" : this.cloneCodes.get(0);
+            }
+            if (this.cloneCodeB.isBlank() && this.cloneCodes.size() > 1) {
+                this.cloneCodeB = this.cloneCodes.get(1) == null ? "" : this.cloneCodes.get(1);
+            }
         }
     }
 
@@ -124,6 +137,21 @@ public class refactoring {
         return refactorFile(null, fileName, fileSource, clone, ragExamples, llmCaller);
     }
 
+    public RefactorResult refactorWithPrompt(String fileName,
+                                             String fileSource,
+                                             DetectedClone clone,
+                                             String prompt,
+                                             Function<String, String> llmCaller) {
+        if (clone == null) {
+            return fail(fileName, "DetectedClone is null");
+        }
+        if (prompt == null || prompt.isBlank()) {
+            return fail(fileName, "Prompt is empty");
+        }
+        String revisionPrompt = buildFeedbackRevisionPrompt(fileName, fileSource, clone, prompt);
+        return executePrompt(fileName, fileSource, clone, revisionPrompt, llmCaller);
+    }
+
     /**
      * Refactor with optional in-agent RAG.
      * If `ragExamples` is empty, we will build a few-shot bundle using RagService and `clone.cloneCode` as the query.
@@ -151,12 +179,19 @@ public class refactoring {
         }
 
         String prompt = buildRefactorPrompt(fileName, fileSource, clone, rag);
+        return executePrompt(fileName, fileSource, clone, prompt, llmCaller);
+    }
+
+    private RefactorResult executePrompt(String fileName,
+                                         String fileSource,
+                                         DetectedClone clone,
+                                         String prompt,
+                                         Function<String, String> llmCaller) {
         String rawOutput;
 
         try {
             rawOutput = llmCaller.apply(prompt);
 
-            // Persist full LLM output to a temp file so it won't be lost in the console scroll.
             String dumpPath = "";
             try {
                 java.io.File f = java.io.File.createTempFile("acp_llm_output_", ".txt");
@@ -169,7 +204,6 @@ public class refactoring {
 
             System.out.println("========== [LLM_OUTPUT_SAVED] " + dumpPath + " ==========");
 
-            // Still print a short header+tail preview for quick sanity checks.
             try {
                 if (rawOutput != null) {
                     int headLen = Math.min(600, rawOutput.length());
@@ -183,7 +217,6 @@ public class refactoring {
             return fail(fileName, "LLM caller threw exception: " + e.getMessage());
         }
 
-        // DEBUG: log raw LLM output length and a short preview
         try {
             System.out.println("[DEBUG][REFACTOR] raw LLM output length = " + rawOutput.length());
             int previewLen = Math.min(800, rawOutput.length());
@@ -211,7 +244,6 @@ public class refactoring {
             newSource = extractJavaCodeBlock(rawOutput);
         }
         if (newSource == null) {
-            // Try JSON parsing fallback
             String jsonStr = extractJsonSubstring(rawOutput);
             if (jsonStr != null) {
                 try {
@@ -426,6 +458,88 @@ public class refactoring {
         return sb.toString();
     }
 
+    private String buildFeedbackRevisionPrompt(String fileName,
+                                               String fileSource,
+                                               DetectedClone clone,
+                                               String feedback) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("You are revising a previous Java Extract Method refactoring attempt.\n");
+        sb.append("The previous attempt was rejected by the usefulness checker.\n");
+        sb.append("Use the feedback below as the PRIMARY instruction for the retry.\n");
+        sb.append("Do not explain your reasoning. Do not describe the issue. Output ONLY the required JSON object.\n\n");
+
+        sb.append("=== FEEDBACK ===\n");
+        sb.append(feedback == null ? "" : feedback.trim()).append("\n\n");
+
+        sb.append("=== WORKING SET (Single File Only) ===\n");
+        sb.append("File name: ").append(fileName).append("\n");
+        sb.append("You may ONLY modify this file.\n");
+        sb.append("```\n").append(fileSource).append("\n```\n\n");
+
+        sb.append("=== CLONE CONTEXT ===\n");
+        sb.append("Clone ID: ").append(clone.id).append("\n");
+        if (clone.ranges != null && !clone.ranges.isEmpty()) {
+            sb.append("Approximate target clone ranges:\n");
+            for (CloneRange range : clone.ranges) {
+                sb.append("- lines ").append(range.startLine)
+                        .append(" to ").append(range.endLine).append("\n");
+            }
+            sb.append("\n");
+        }
+        if (clone.cloneCode != null && !clone.cloneCode.trim().isEmpty()) {
+            sb.append("Representative clone snippet:\n");
+            sb.append("```\n").append(clone.cloneCode).append("\n```\n\n");
+        }
+
+        List<OccurrenceSpec> occurrences = buildOccurrenceSpecs(clone, fileSource);
+        if (!occurrences.isEmpty()) {
+            sb.append("=== TARGET OCCURRENCES ===\n");
+            sb.append("You must refactor ALL of these occurrences.\n");
+            for (OccurrenceSpec occurrence : occurrences) {
+                sb.append(occurrence.occurrenceId);
+                if (occurrence.preferredRange != null) {
+                    sb.append(" (approximate lines ")
+                            .append(occurrence.preferredRange.startLine)
+                            .append("-")
+                            .append(occurrence.preferredRange.endLine)
+                            .append(")");
+                }
+                sb.append(":\n");
+                sb.append("```\n").append(occurrence.snippet).append("\n```\n\n");
+            }
+        }
+
+        sb.append("=== STRICT REQUIREMENTS ===\n");
+        sb.append("- Apply Extract Method only.\n");
+        sb.append("- Follow the usefulness feedback above exactly.\n");
+        sb.append("- Modify only this file.\n");
+        sb.append("- Preserve package/imports and public API.\n");
+        sb.append("- Replace all target occurrences with helper calls.\n");
+        sb.append("- Do not return prose, analysis, markdown fences, or partial method sketches.\n\n");
+
+        sb.append("=== OUTPUT FORMAT ===\n");
+        sb.append("- Output ONLY a valid JSON object.\n");
+        sb.append("- Do NOT return the whole file.\n");
+        sb.append("- Do NOT use markdown fences.\n");
+        sb.append("- The JSON must have this exact shape:\n");
+        sb.append("{\n");
+        sb.append("  \"helper_method\": \"full private helper method declaration only\",\n");
+        sb.append("  \"occurrence_replacements\": [\n");
+        sb.append("    {\n");
+        sb.append("      \"occurrence_id\": \"OCCURRENCE_1\",\n");
+        sb.append("      \"replacement_code\": \"only the code that should replace that occurrence\"\n");
+        sb.append("    }\n");
+        sb.append("  ]\n");
+        sb.append("}\n");
+        sb.append("- `helper_method` must contain only the extracted helper method, not the class or file.\n");
+        sb.append("- Each `replacement_code` must contain only the replacement for that occurrence.\n");
+        sb.append("- Include one replacement entry for every listed occurrence.\n");
+        sb.append("- Do NOT include explanation text before or after the JSON.\n");
+
+        return sb.toString();
+    }
+
     private StructuredRefactorOutcome tryApplyStructuredRefactor(String rawOutput, String fileSource, DetectedClone clone) {
         StructuredRefactorOutcome outcome = new StructuredRefactorOutcome();
         String jsonStr = extractJsonSubstring(rawOutput);
@@ -569,40 +683,26 @@ public class refactoring {
 
         int counter = 1;
         Set<String> usedKeys = new LinkedHashSet<>();
-        boolean hasCloneCodeA = clone.cloneCodeA != null && !clone.cloneCodeA.isBlank();
-        boolean hasCloneCodeB = clone.cloneCodeB != null && !clone.cloneCodeB.isBlank();
+        List<String> orderedCloneCodes = collectOrderedCloneCodes(clone, fileSource);
+        int occurrenceCount = Math.max(
+                orderedCloneCodes.size(),
+                clone.ranges == null ? 0 : clone.ranges.size()
+        );
 
-        if (hasCloneCodeA) {
-            CloneRange range = getRange(clone.ranges, 0);
-            String key = clone.cloneCodeA + "::" + rangeKey(range);
-            if (usedKeys.add(key)) {
-                specs.add(new OccurrenceSpec("OCCURRENCE_" + counter++, clone.cloneCodeA, range));
+        for (int i = 0; i < occurrenceCount; i++) {
+            CloneRange range = getRange(clone.ranges, i);
+            String snippet = i < orderedCloneCodes.size() ? orderedCloneCodes.get(i) : "";
+            if ((snippet == null || snippet.isBlank()) && range != null) {
+                snippet = sliceByLineRange(fileSource, range);
             }
-        }
-        if (hasCloneCodeB) {
-            CloneRange range = getRange(clone.ranges, 1);
-            String key = clone.cloneCodeB + "::" + rangeKey(range);
-            if (usedKeys.add(key)) {
-                specs.add(new OccurrenceSpec("OCCURRENCE_" + counter++, clone.cloneCodeB, range));
+            if ((snippet == null || snippet.isBlank()) && clone.cloneCode != null && !clone.cloneCode.isBlank()) {
+                snippet = clone.cloneCode;
             }
-        }
+            if (snippet == null || snippet.isBlank()) continue;
 
-        if (clone.ranges != null && !clone.ranges.isEmpty()) {
-            for (int i = 0; i < clone.ranges.size(); i++) {
-                CloneRange range = clone.ranges.get(i);
-                if (i == 0 && hasCloneCodeA) continue;
-                if (i == 1 && hasCloneCodeB) continue;
-
-                String snippet = sliceByLineRange(fileSource, range);
-                if ((snippet == null || snippet.isBlank()) && !hasCloneCodeA && !hasCloneCodeB && clone.cloneCode != null && !clone.cloneCode.isBlank()) {
-                    snippet = clone.cloneCode;
-                }
-                if (snippet == null || snippet.isBlank()) continue;
-
-                String key = snippet + "::" + rangeKey(range);
-                if (usedKeys.add(key)) {
-                    specs.add(new OccurrenceSpec("OCCURRENCE_" + counter++, snippet, range));
-                }
+            String key = snippet + "::" + rangeKey(range);
+            if (usedKeys.add(key)) {
+                specs.add(new OccurrenceSpec("OCCURRENCE_" + counter++, snippet, range));
             }
         }
 
@@ -610,8 +710,30 @@ public class refactoring {
             specs.add(new OccurrenceSpec("OCCURRENCE_1", clone.cloneCode, getRange(clone.ranges, 0)));
         }
 
-        recalibrateOccurrenceSpecs(specs, fileSource);
         return specs;
+    }
+
+    private List<String> collectOrderedCloneCodes(DetectedClone clone, String fileSource) {
+        List<String> out = new ArrayList<>();
+        if (clone == null) return out;
+
+        if (clone.cloneCodes != null) {
+            for (String code : clone.cloneCodes) {
+                out.add(code == null ? "" : code);
+            }
+        }
+
+        if (out.isEmpty()) {
+            if (clone.cloneCodeA != null && !clone.cloneCodeA.isBlank()) out.add(clone.cloneCodeA);
+            if (clone.cloneCodeB != null && !clone.cloneCodeB.isBlank()) out.add(clone.cloneCodeB);
+        }
+
+        int rangeCount = clone.ranges == null ? 0 : clone.ranges.size();
+        while (out.size() < rangeCount) {
+            CloneRange range = getRange(clone.ranges, out.size());
+            out.add(range == null ? "" : sliceByLineRange(fileSource, range));
+        }
+        return out;
     }
 
     private void recalibrateOccurrenceSpecs(List<OccurrenceSpec> specs, String fileSource) {
@@ -1099,7 +1221,7 @@ public class refactoring {
     private String extractJavaCodeBlock(String raw) {
         if (raw == null) return null;
         String javaFence = extractFencedCodeBlock(raw, "java");
-        if (javaFence != null && !javaFence.isBlank()) {
+        if (looksLikeJavaSource(javaFence)) {
             return javaFence;
         }
 
