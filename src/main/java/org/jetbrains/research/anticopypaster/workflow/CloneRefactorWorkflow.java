@@ -33,6 +33,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiParameter;
 import com.intellij.psi.PsiStatement;
 import com.intellij.psi.util.PsiTreeUtil;
 import java.util.concurrent.atomic.AtomicReference;
@@ -1459,8 +1460,8 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                     project,
                     "Select Clone Occurrence",
                     buildSequentialRangePrompt(option, i + 1, options.size(), selected.size()),
-                    "Include This Clone",
-                    "Exclude This Clone",
+                    "Include",
+                    "Exclude",
                     "Cancel"
             );
             if (choice == Messages.CANCEL) {
@@ -2488,6 +2489,7 @@ Follow the required output format for the refactoring task.
         final String className;
         final String methodName;
         final int parameterCount;
+        final String exactMethodKey;
         final String baselineBodyText;
         final String displayName;
 
@@ -2495,12 +2497,14 @@ Follow the required output format for the refactoring task.
                             String className,
                             String methodName,
                             int parameterCount,
+                            String exactMethodKey,
                             String baselineBodyText,
                             String displayName) {
             this.pointer = pointer;
             this.className = className == null ? "<no-class>" : className;
             this.methodName = methodName == null ? "<unknown>" : methodName;
             this.parameterCount = parameterCount;
+            this.exactMethodKey = exactMethodKey == null ? "" : exactMethodKey;
             this.baselineBodyText = baselineBodyText == null ? "" : baselineBodyText;
             this.displayName = displayName == null ? "<unknown>" : displayName;
         }
@@ -2522,6 +2526,29 @@ Follow the required output format for the refactoring task.
                 : (cls.getQualifiedName() != null ? cls.getQualifiedName() : cls.getName());
         if (className == null || className.isBlank()) className = "<no-class>";
         return className + "#" + method.getName() + "#" + method.getParameterList().getParametersCount();
+    }
+
+    private static String buildUsefulnessMethodKey(PsiMethod method) {
+        if (method == null) return "<unknown>";
+        PsiClass cls = method.getContainingClass();
+        String className = cls == null ? "<no-class>"
+                : (cls.getQualifiedName() != null ? cls.getQualifiedName() : cls.getName());
+        if (className == null || className.isBlank()) className = "<no-class>";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(className).append("#").append(method.getName()).append("(");
+        try {
+            PsiParameter[] parameters = method.getParameterList() == null
+                    ? new PsiParameter[0]
+                    : method.getParameterList().getParameters();
+            for (int i = 0; i < parameters.length; i++) {
+                if (i > 0) sb.append(",");
+                sb.append(parameters[i].getType().getCanonicalText());
+            }
+        } catch (Throwable ignored) {
+        }
+        sb.append(")");
+        return sb.toString();
     }
 
     private static String getMethodClassName(PsiMethod method) {
@@ -2902,8 +2929,9 @@ Follow the required output format for the refactoring task.
             String className = getMethodClassName(method);
             String methodName = method.getName();
             int parameterCount = method.getParameterList().getParametersCount();
+            String exactMethodKey = buildUsefulnessMethodKey(method);
             String baselineBodyText = normalizeMethodBodyText(getMethodBodyText(method));
-            out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, baselineBodyText, displayName));
+            out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, exactMethodKey, baselineBodyText, displayName));
             logStage(viewer, "WATCH", "tracking cloned method: " + displayName);
         } catch (Throwable t) {
             logStage(viewer, "WATCH", "failed to snapshot cloned method: " + t.getMessage());
@@ -2964,9 +2992,11 @@ Follow the required output format for the refactoring task.
 	            if (snapshot == null) continue;
 	            String className = snapshot.className == null ? "" : snapshot.className;
 	            String methodName = snapshot.methodName == null ? "" : snapshot.methodName;
-	            String key = className + "#" + methodName + "#" + snapshot.parameterCount;
+	            String key = snapshot.exactMethodKey == null || snapshot.exactMethodKey.isBlank()
+	                    ? (className + "#" + methodName + "#" + snapshot.parameterCount)
+	                    : snapshot.exactMethodKey;
 	            if (!seen.add(key)) continue;
-	            out.add(new usefulnessChecker.TargetMethodHint(className, methodName, snapshot.parameterCount));
+	            out.add(new usefulnessChecker.TargetMethodHint(className, methodName, snapshot.parameterCount, snapshot.exactMethodKey));
 	        }
 	        return out;
 	    }

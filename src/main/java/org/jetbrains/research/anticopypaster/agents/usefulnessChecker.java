@@ -129,11 +129,17 @@ public final class usefulnessChecker {
         public final String className;
         public final String methodName;
         public final int parameterCount;
+        public final String methodKey;
 
         public TargetMethodHint(String className, String methodName, int parameterCount) {
+            this(className, methodName, parameterCount, "");
+        }
+
+        public TargetMethodHint(String className, String methodName, int parameterCount, String methodKey) {
             this.className = className == null ? "" : className;
             this.methodName = methodName == null ? "" : methodName;
             this.parameterCount = parameterCount;
+            this.methodKey = methodKey == null ? "" : methodKey;
         }
     }
 
@@ -750,6 +756,17 @@ public final class usefulnessChecker {
 
         for (TargetMethodHint hint : targetHints) {
             if (hint == null || hint.methodName == null || hint.methodName.isBlank()) continue;
+            if (!hint.methodKey.isBlank() && beforeMethods.containsKey(hint.methodKey)) {
+                out.add(hint.methodKey);
+                continue;
+            }
+            if (!hint.methodKey.isBlank()) {
+                String matchedKey = findMethodKeyMatchingHint(beforeMethods.keySet(), hint.methodKey);
+                if (matchedKey != null && !matchedKey.isBlank()) {
+                    out.add(matchedKey);
+                    continue;
+                }
+            }
             for (Map.Entry<String, PsiMethod> e : beforeMethods.entrySet()) {
                 PsiMethod method = e.getValue();
                 if (method == null) continue;
@@ -767,6 +784,74 @@ public final class usefulnessChecker {
             }
         }
         return out;
+    }
+
+    private static String findMethodKeyMatchingHint(Set<String> methodKeys, String hintMethodKey) {
+        if (methodKeys == null || methodKeys.isEmpty() || hintMethodKey == null || hintMethodKey.isBlank()) return null;
+        for (String methodKey : methodKeys) {
+            if (methodKeysMatchForTargetHint(methodKey, hintMethodKey)) {
+                return methodKey;
+            }
+        }
+        return null;
+    }
+
+    private static boolean methodKeysMatchForTargetHint(String methodKey, String hintMethodKey) {
+        if (methodKey == null || methodKey.isBlank() || hintMethodKey == null || hintMethodKey.isBlank()) return false;
+        if (methodKey.equals(hintMethodKey)) return true;
+
+        int methodParamsStart = methodKey.indexOf('(');
+        int hintParamsStart = hintMethodKey.indexOf('(');
+        int methodParamsEnd = methodKey.lastIndexOf(')');
+        int hintParamsEnd = hintMethodKey.lastIndexOf(')');
+        if (methodParamsStart < 0 || hintParamsStart < 0 || methodParamsEnd < methodParamsStart || hintParamsEnd < hintParamsStart) {
+            return false;
+        }
+
+        String methodPrefix = methodKey.substring(0, methodParamsStart);
+        String hintPrefix = hintMethodKey.substring(0, hintParamsStart);
+        if (!methodPrefix.equals(hintPrefix)) return false;
+
+        List<String> methodParams = splitSignatureParameters(methodKey.substring(methodParamsStart + 1, methodParamsEnd));
+        List<String> hintParams = splitSignatureParameters(hintMethodKey.substring(hintParamsStart + 1, hintParamsEnd));
+        if (methodParams.size() != hintParams.size()) return false;
+
+        for (int i = 0; i < methodParams.size(); i++) {
+            if (!normalizeTypeForHintMatch(methodParams.get(i)).equals(normalizeTypeForHintMatch(hintParams.get(i)))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static List<String> splitSignatureParameters(String paramsText) {
+        if (paramsText == null || paramsText.isBlank()) return List.of();
+
+        List<String> params = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int genericDepth = 0;
+
+        for (int i = 0; i < paramsText.length(); i++) {
+            char ch = paramsText.charAt(i);
+            if (ch == '<') genericDepth++;
+            else if (ch == '>' && genericDepth > 0) genericDepth--;
+
+            if (ch == ',' && genericDepth == 0) {
+                params.add(current.toString());
+                current.setLength(0);
+                continue;
+            }
+            current.append(ch);
+        }
+
+        params.add(current.toString());
+        return params;
+    }
+
+    private static String normalizeTypeForHintMatch(String typeName) {
+        if (typeName == null || typeName.isBlank()) return "";
+        String compact = typeName.replaceAll("\\s+", "");
+        return compact.replaceAll("(?:[A-Za-z_$][\\w$]*\\.)+([A-Za-z_$][\\w$]*)", "$1");
     }
 
     private static boolean isTargetPair(PairScore ps, Set<String> targetKeys) {
