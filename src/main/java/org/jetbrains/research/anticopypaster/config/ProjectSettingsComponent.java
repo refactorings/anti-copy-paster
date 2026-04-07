@@ -1476,35 +1476,47 @@ public class ProjectSettingsComponent {
     void validateApiKeyPrefix() {
         if (!apiKeyPanel.isVisible()) return;
 
-        String apiKey = new String(agentApiKey.getPassword()).trim();
-        String provider = (String) llmProviderComboBox.getSelectedItem();
-        boolean mismatch = false;
-
-        if (provider != null && !apiKey.isEmpty()) {
-            switch (provider) {
-                case "OpenAI":
-                    mismatch = !apiKey.startsWith("sk-proj-");
-                    break;
-                case "Gemini":
-                    mismatch = !apiKey.startsWith("AIzaSy");
-                    break;
-                case "DeepSeek":
-                    mismatch = !apiKey.startsWith("sk-");
-                    break;
-                case "Anthropic":
-                    mismatch = !apiKey.startsWith("sk-ant-");
-                    break;
-            }
-        }
-
-        if (mismatch) {
+        String validationError = getApiKeyPrefixValidationError(
+                (String) llmProviderComboBox.getSelectedItem(),
+                new String(agentApiKey.getPassword())
+        );
+        if (validationError != null) {
             JOptionPane.showMessageDialog(
                     mainPanel,
-                    "The API key prefix does not match the selected provider.\nPlease verify your key.",
+                    validationError,
                     "API Key Provider Mismatch",
                     JOptionPane.WARNING_MESSAGE
             );
         }
+    }
+
+    String getApiKeyPrefixValidationError() {
+        return getApiKeyPrefixValidationError(getLlmProvider(), getAiderApiKey());
+    }
+
+    private static String getApiKeyPrefixValidationError(String provider, String apiKey) {
+        String expectedPrefix = getExpectedApiKeyPrefix(provider);
+        String normalizedApiKey = apiKey == null ? "" : apiKey.trim();
+
+        if (expectedPrefix == null || normalizedApiKey.isEmpty() || normalizedApiKey.startsWith(expectedPrefix)) {
+            return null;
+        }
+
+        return "API key for " + provider + " must start with '" + expectedPrefix + "'.";
+    }
+
+    private static String getExpectedApiKeyPrefix(String provider) {
+        if (provider == null) {
+            return null;
+        }
+
+        return switch (provider) {
+            case "OpenAI" -> "sk-proj-";
+            case "Gemini" -> "AIzaSy";
+            case "DeepSeek" -> "sk-";
+            case "Anthropic" -> "sk-ant-";
+            default -> null;
+        };
     }
 
     /**
@@ -1729,4 +1741,3 @@ public class ProjectSettingsComponent {
         }
     }
 }
-
