@@ -551,10 +551,25 @@ public class ProjectSettingsComponent {
         updatePanelVisibilities();
 
         apiBase.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            public void insertUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
-            public void removeUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
-            public void changedUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { onChange(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { onChange(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { onChange(); }
+
+            private void onChange() {
+                updateOllamaWarnings();
+                if (azurePlaceholderActive) {
+                    return;
+                }
+                Object providerObj = llmProviderComboBox.getSelectedItem();
+                if (providerObj != null && "Azure".equalsIgnoreCase(providerObj.toString())) {
+                    String text = apiBase.getText();
+                    if (text != null) {
+                        lastAzureApiBase = text.trim();
+                    }
+                }
+            }
         });
+
         ollamaModel.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             public void insertUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
             public void removeUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
@@ -564,6 +579,13 @@ public class ProjectSettingsComponent {
         String initProvider = (String) llmProviderComboBox.getSelectedItem();
         setModelOptionsForProvider(initProvider, aidermodelComboBox);
         updateProviderSpecificPanels(initProvider);
+
+        if ("Ollama".equalsIgnoreCase(initProvider)) {
+            apiBase.setText(OLLAMA_DEFAULT_API_BASE);
+        } else if ("Azure".equalsIgnoreCase(initProvider) && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+            apiBase.setText(lastAzureApiBase);
+        }
+
         // Initialize provider and model dropdowns if empty
         if (llmProviderComboBox.getSelectedItem() == null) {
             llmProviderComboBox.setSelectedItem("OpenAI");
@@ -1246,6 +1268,7 @@ public class ProjectSettingsComponent {
 
     /**
      * Sets the Azure API version text.
+     * Clears placeholder state so saved values are rendered as normal text.
      */
     public void setApiVersion(String version) {
         if (isCloneMultiAgentSelected() && multiAgentApiVersion != null) {
@@ -1310,6 +1333,7 @@ public class ProjectSettingsComponent {
     public void setComplexityRequired(boolean required) {
         complexityRequiredCheckBox.setSelected(required);
     }
+
     /**
      * Sets the name-model selection by value while suppressing change side-effects during load.
      */
@@ -1483,6 +1507,7 @@ public class ProjectSettingsComponent {
                     JOptionPane.WARNING_MESSAGE
             );
         }
+        apiBase.setText(AZURE_DEFAULT_API_BASE);
     }
 
     public String getApiKeyPrefixValidationError() {

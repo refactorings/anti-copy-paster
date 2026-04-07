@@ -20,6 +20,13 @@ AntiCopyPaster requires IntelliJ IDEA version 2024.1.7 to work. To install the p
 
 ## Technical Information
 
+### Expected Project Structure (Example)
+
+The following figure shows the expected **high-level project structure** when using JHotDraw.
+For correct analysis, the project should follow this general layout.
+
+![Example JHotDraw project structure](images/jhotdraw-project-structure.png)
+
 ### How It Works
 
 The plugin monitors the copying and pasting that takes place inside the IDE. As soon as a code fragment is pasted,
@@ -127,7 +134,13 @@ Click **Apply** and then **OK** to save.
 
 ##### Choosing the Right Ollama Model for Your Device
 
-**Important:** Ollama model performance heavily depends on your device's available RAM and processing power. Choose an appropriate model size to ensure responsive refactoring.
+In our evaluation, we tested the following Ollama models to assess performance: `dolphin3:8b`, `phi4:14b`, `gemma2:9b`, `qwen2.5:7b`, `mistral:7b`, `qwen3:8b`, `llama3.1:8b`, `deepseek-r1:8b`, `llama3.2:3b`, `phi3:3.8b`, `qwen2.5-coder:7b`, `codellama:7b`, `olmo2:7b`, `deepseek-coder:6.7b`, `starcoder2:7b`, `falcon3:7b`, and `granite3.3:8b`.
+
+
+**Important:** Ollama model performance heavily depends on your device's available RAM and processing power. Choose an appropriate model size to ensure responsive refactoring. Ollama model performance depends heavily on your device’s **GPU VRAM** and overall processing power. Larger models require significantly more memory to load and run. Always choose a model size compatible with your hardware.
+
+Based on our evaluation, models with **7B–8B parameters** typically require **At least 6–8 GB of GPU VRAM**. If your GPU has **less VRAM** than the model requires (e.g., 4–6 GB), choose a smaller model such as **3B–4B** variants to ensure stability.
+
 
 **⚠️ Performance Warning:**
 
@@ -183,6 +196,55 @@ If the response takes longer than 30 seconds, consider using a smaller model or 
 
 By integrating Aider, AntiCopyPaster makes it easier to manage code clones while improving code readability and maintainability.
 
+## EvoSuite Integration
+
+AntiCopyPaster integrates with **EvoSuite** to automatically generate unit tests after refactoring, ensuring that the extracted methods preserve program behavior.
+
+### Java Version Requirement (Important)
+
+EvoSuite **requires Java 8 (JDK 8)** to run correctly. This is a strict requirement due to EvoSuite's dependency on `tools.jar`, which is only available in JDK 8.
+
+- Your **IntelliJ IDEA project can use Java 11 or Java 17**.
+- **Only EvoSuite execution** depends on Java 8.
+- AntiCopyPaster will automatically use Java 8 if the environment variable `JAVA_8_HOME` is set.
+
+### Installing Java 8
+
+1. Download and install **JDK 8** from one of the following sources:
+   - Eclipse Temurin (Adoptium): https://adoptium.net/temurin/releases/?version=8
+   - Oracle JDK 8 (requires Oracle account)
+
+2. Set the environment variable `JAVA_8_HOME` to the JDK 8 installation path.
+
+**macOS / Linux (bash/zsh):**
+```bash
+export JAVA_8_HOME=/path/to/jdk8
+```
+
+**Windows (PowerShell):**
+```powershell
+setx JAVA_8_HOME "C:\Path\To\JDK8"
+```
+
+Restart IntelliJ IDEA after setting the variable.
+
+### How EvoSuite Is Used
+
+When a refactoring is generated:
+1. The tool invokes EvoSuite as an **external process** using Java 8.
+2. EvoSuite generates JUnit 4 test cases for the refactored class.
+3. Generated tests are post-processed.
+4. Tests can be inspected, executed, or modified directly inside IntelliJ IDEA.
+
+If Java 8 is not configured correctly, EvoSuite execution will fail.
+
+### Notes and Limitations
+
+- EvoSuite version used: **1.0.6**
+- Generated tests may require minor manual cleanup in rare cases.
+- **Hanging issue**: In some projects, EvoSuite may hang or take a very long time during test generation (e.g., due to complex static initializers, GUI-related code, or heavy reflection usage).  
+  To mitigate this, the tool enforces strict time limits on EvoSuite execution. If a timeout occurs, the EvoSuite process is automatically terminated and **restarted in an iterative manner**, for up to **5 retry rounds**.
+-
 
 ### How to cite?
 Please, use the following bibtex entry:
