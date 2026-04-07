@@ -25,7 +25,10 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public int minimumDuplicateMethods = 2;
     public int timeBuffer = 10;
     public JudgementModel judgementModel = JudgementModel.TENSORFLOW;
+    // Clone pipeline mode (used when judgementModel == AIDER)
+    public CloneMode cloneMode = CloneMode.SINGLE_AGENT;
     public ExtractionType extractionType = ExtractionType.TYPE_TWO;
+    public int maxAttempts = 3;
 
     public int maxParams = 10;
 
@@ -65,7 +68,7 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public String statisticsUsername = null;
     public boolean statisticsPasswordIsSet = false;
 
-    public int useNameRec = 1;
+    public String useNameRec = "code2vec";
     public int numOfPreds = 3;
 
     // Aider settings
@@ -142,6 +145,22 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
         this.filesPath = path;
     }
 
+    public int getMaxAttempts() {
+        return maxAttempts;
+    }
+
+    public void setMaxAttempts(int maxAttempts) {
+        this.maxAttempts = maxAttempts;
+    }
+
+    public CloneMode getCloneMode() {
+        return cloneMode;
+    }
+
+    public void setCloneMode(CloneMode cloneMode) {
+        this.cloneMode = cloneMode;
+    }
+
     public ArrayList<JCheckBox> getAllFilesCheckboxes() {
         return allFilesCheckboxes;
     }
@@ -167,8 +186,18 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
         return selectedAnalysisButton;
     }
 
+
+    public int getMinimumDuplicateMethods() {
+        return minimumDuplicateMethods;
+    }
+
     public void setSelectedAnalysisButton(String analysisButton) {
         this.selectedAnalysisButton = analysisButton;
+    }
+
+    public enum CloneMode {
+        SINGLE_AGENT,
+        MULTI_AGENT
     }
 
     public enum JudgementModel {

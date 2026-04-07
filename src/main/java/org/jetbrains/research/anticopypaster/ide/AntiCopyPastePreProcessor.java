@@ -15,7 +15,8 @@ import com.intellij.openapi.editor.RawText;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.PsiDirectory;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
 import org.jetbrains.annotations.NotNull;
@@ -29,6 +30,11 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Timer;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TimerTask;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOffset;
 
@@ -36,8 +42,12 @@ import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOf
  * Handles any copy-paste action and checks if the pasted code fragment could be extracted into a separate method.
  */
 public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
+    private static final long INTERNAL_COPY_VALIDITY_MS = 30_000L;
+
     private final Timer timer = new Timer(true);
     private final ArrayList<RefactoringNotificationTask> refactoringNotificationTask = new ArrayList<>();
+    private final Map<Project, TimerTask> pendingAiderTaskByProject = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Project, CopiedSnippetInfo> lastCopiedSnippetByProject = new ConcurrentHashMap<>();
 
     private static final Logger LOG = Logger.getInstance(AntiCopyPastePreProcessor.class);
 
@@ -47,7 +57,11 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     @Nullable
     @Override
     public String preprocessOnCopy(PsiFile file, int[] startOffsets, int[] endOffsets, String text) {
-        AntiCopyPasterUsageStatistics.getInstance(file.getProject()).onCopy();
+        Project project = file == null ? null : file.getProject();
+        if (project != null) {
+            AntiCopyPasterUsageStatistics.getInstance(project).onCopy();
+            lastCopiedSnippetByProject.put(project, new CopiedSnippetInfo(text, System.currentTimeMillis()));
+        }
         return null;
     }
 
@@ -61,10 +75,16 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         RefactoringNotificationTask rnt = getRefactoringTask(project);
         ProjectSettingsState.JudgementModel currentModelType = ProjectSettingsState.getInstance(project).judgementModel;
 
+        AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
+
         ProjectSettingsState state = ProjectSettingsState.getInstance(project);
         String selectedAnalysisButton = state.getSelectedAnalysisButton();
         String filesPath = state.getFilesPath();
         ArrayList<JCheckBox> filesCheckboxes = new ArrayList<>(state.getAllFilesCheckboxes());
+
+        if (!wasCopiedInsideIde(project, text)) {
+            return text;
+        }
 
         // If user selects Copilot as the judgement model, hand off to Copilot Chat UI.
         if (currentModelType == ProjectSettingsState.JudgementModel.COPILOT) {
@@ -111,55 +131,56 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         }
 
         if (currentModelType == ProjectSettingsState.JudgementModel.AIDER) {
+            ProjectSettingsState.CloneMode cloneMode = state.getCloneMode();
+
+            // Reuse unified target selection across three scopes
+            List<VirtualFile> targets =
+                    collectTargetFiles(project, file, selectedAnalysisButton, filesPath, filesCheckboxes);
+
+            if ("Multiple Files".equals(selectedAnalysisButton)) {
+                if (filesPath == null || filesPath.isEmpty()) {
+                    ApplicationManager.getApplication().invokeLater(() ->
+                            notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file."));
+                    return text;
+                }
+                File filesDir = new File(filesPath);
+                if (!filesDir.isDirectory()) {
+                    ApplicationManager.getApplication().invokeLater(() ->
+                            notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file."));
+                    return text;
+                }
+                if (targets == null || targets.isEmpty()) {
+                    ApplicationManager.getApplication().invokeLater(() ->
+                            notify(project, "No files have been selected in the plugin menu. Please select at least one file."));
+                    return text;
+                }
+            }
+
+            // Fallback to current file if nothing was selected
+            if ((targets == null || targets.isEmpty()) && file != null && file.getVirtualFile() != null) {
+                targets = List.of(file.getVirtualFile());
+            }
+
+            // ===== DELAYED AIDER WORKFLOW (debounced by timeBuffer) =====
             String model = state.getAiderModel();
             String apiKey = state.getAiderApiKey();
             String provider = state.getLlmprovider();
             String aiderPath = state.getAiderPath();
             String apiBase = "";
             String apiVersion = "";
-            if (provider.equals("Azure")) {
+
+            if ("Azure".equals(provider)) {
                 apiBase = state.getApiBase();
                 apiVersion = state.getApiVersion();
             }
-            if (provider.equals("Ollama")) {
+            if ("Ollama".equals(provider)) {
                 apiBase = state.getApiBase();
                 model = state.getOllamaModelName();
             }
 
-            // Reuse unified target selection across three scopes
-            List<VirtualFile> targets = collectTargetFiles(project, file, selectedAnalysisButton, filesPath, filesCheckboxes);
-
-            if ("Multiple Files".equals(selectedAnalysisButton)) {
-                if (filesPath == null || filesPath.isEmpty()) {
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file for Aider to run on.");
-                    });
-                    return text;
-                }
-                File filesDir = new File(filesPath);
-                if (!filesDir.isDirectory()) {
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file for Aider to run on.");
-                    });
-                    return text;
-                }
-                if (targets == null || targets.isEmpty()) {
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        notify(project, "No files have been selected in the plugin menu. Please select at least one file to run Aider on.");
-                    });
-                    return text;
-                }
-            }
-
-            // Execute Aider for each selected target file
-            if (targets != null && !targets.isEmpty()) {
-                for (VirtualFile vf : targets) {
-                    AiderHelper.checkAndSuggestRefactor(project, vf, provider, model, apiKey, aiderPath, apiBase, apiVersion);
-                }
-            } else if (file != null && file.getVirtualFile() != null) {
-                // Fallback to current file only
-                AiderHelper.checkAndSuggestRefactor(project, file.getVirtualFile(), provider, model, apiKey, aiderPath, apiBase, apiVersion);
-            }
+            List<VirtualFile> finalTargets = targets;
+            // Schedule after timeBuffer seconds; repeated pastes within the buffer window will reset the timer.
+            scheduleAiderWorkflow(project, finalTargets, text, cloneMode, provider, model, apiKey, aiderPath, apiBase, apiVersion);
 
             return text;
         }
@@ -169,8 +190,6 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 refactoringNotificationTask.add(rnt);
                 setCheckingForRefactoringOpportunities(rnt, project);
             }
-
-            AntiCopyPasterUsageStatistics.getInstance(project).onPaste();
 
             if (editor == null || file == null) return text;
 
@@ -331,5 +350,100 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 NotificationType.INFORMATION
         );
         Notifications.Bus.notify(notification, project);
+    }
+
+    private boolean wasCopiedInsideIde(Project project, String pastedText) {
+        if (project == null || pastedText == null) {
+            return false;
+        }
+
+        CopiedSnippetInfo copiedInfo = lastCopiedSnippetByProject.get(project);
+        if (copiedInfo == null) {
+            return false;
+        }
+
+        long ageMs = System.currentTimeMillis() - copiedInfo.timestampMs;
+        if (ageMs > INTERNAL_COPY_VALIDITY_MS) {
+            lastCopiedSnippetByProject.remove(project, copiedInfo);
+            return false;
+        }
+
+        return Objects.equals(copiedInfo.text, pastedText);
+    }
+
+    /**
+     * Schedules the AIDER workflow after a debounce delay (timeBuffer seconds) per project.
+     * If user pastes again within the buffer window, the previous pending task is canceled.
+     */
+    private void scheduleAiderWorkflow(Project project,
+                                       List<VirtualFile> targets,
+                                       String pastedText,
+                                       ProjectSettingsState.CloneMode cloneMode,
+                                       String provider,
+                                       String model,
+                                       String apiKey,
+                                       String aiderPath,
+                                       String apiBase,
+                                       String apiVersion) {
+        ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
+        int delayMs = Math.max(0, settings.timeBuffer) * 1000;
+
+        // Debounce: if user pastes again within the buffer window, cancel the previous pending task.
+        TimerTask old = pendingAiderTaskByProject.remove(project);
+        if (old != null) {
+            old.cancel();
+        }
+
+        TimerTask task = new TimerTask() {
+            @Override
+            public void run() {
+                // Clear the pending task pointer for this project.
+                pendingAiderTaskByProject.remove(project);
+                lastCopiedSnippetByProject.remove(project);
+
+                ApplicationManager.getApplication().executeOnPooledThread(() -> {
+                    try {
+                        if (cloneMode == ProjectSettingsState.CloneMode.SINGLE_AGENT) {
+                            if (targets != null && !targets.isEmpty()) {
+                                for (VirtualFile vf : targets) {
+                                    AiderHelper.checkAndSuggestRefactor(
+                                            project, vf, provider, model, apiKey, aiderPath, apiBase, apiVersion
+                                    );
+                                }
+                            }
+                        } else {
+                            org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.run(
+                                    project,
+                                    targets,
+                                    pastedText
+                            );
+                        }
+                    } catch (Throwable t) {
+                        ApplicationManager.getApplication().invokeLater(() ->
+                                AntiCopyPastePreProcessor.notify(project, "Aider refactoring workflow failed: " + t.getMessage()));
+                    }
+                });
+            }
+        };
+
+        pendingAiderTaskByProject.put(project, task);
+
+        try {
+            timer.schedule(task, delayMs);
+        } catch (Exception ex) {
+            LOG.error("[ACP] Failed to schedule AIDER workflow.", ex.getMessage());
+            // Fallback: run immediately if scheduling fails.
+            task.run();
+        }
+    }
+
+    private static final class CopiedSnippetInfo {
+        private final String text;
+        private final long timestampMs;
+
+        private CopiedSnippetInfo(String text, long timestampMs) {
+            this.text = text;
+            this.timestampMs = timestampMs;
+        }
     }
 }

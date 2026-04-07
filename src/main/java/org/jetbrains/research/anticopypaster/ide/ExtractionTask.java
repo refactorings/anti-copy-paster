@@ -23,6 +23,8 @@ import org.jetbrains.research.anticopypaster.cloneprocessors.CloneProcessor;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Parameter;
 import org.jetbrains.research.anticopypaster.cloneprocessors.Variable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.llm.LlmClient;
+import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterTelemetry;
 
 import java.awt.*;
@@ -485,6 +487,85 @@ public class ExtractionTask {
         });
     }
 
+    private static String requestMethodNameSuggestionsFromConfiguredLlm(Project project, String prompt) throws Exception {
+        java.util.function.Consumer<String> viewer = content -> { };
+        LlmClient llmClient = LlmClientFactory.fromProjectSettings(project, viewer);
+        String response = llmClient.complete(prompt);
+        return response == null ? null : response;
+    }
+
+    private static List<String> parseMethodNameCandidates(String output, int count) {
+        if (output == null) {
+            return Collections.emptyList();
+        }
+        return output.lines()
+                .map(String::trim)
+                .filter(line -> !line.isEmpty())
+                .map(line -> line.replaceFirst("^[\\d]+[\\s\\).:]+", ""))
+                .map(line -> line.replace("`", "").trim())
+                .filter(name -> name.matches("[a-zA-Z_$][a-zA-Z\\d_$]*"))
+                .distinct()
+                .limit(count)
+                .toList();
+    }
+
+    private static String buildMethodNameSuggestionPrompt(String codeSnippet, int count) {
+        return String.format(
+                "Suggest %d concise and meaningful Java method names for the extracted method in this code. " +
+                        "List ONLY the method names, one per line, ranked from most to least confident. " +
+                        "Format: 1 methodName1\\n2 methodName2\\n etc. " +
+                        "Use valid Java identifiers (camelCase). Do not include method bodies or explanations.\\n\\n" +
+                        "```java\\n%s\\n```",
+                count,
+                codeSnippet
+        );
+    }
+
+    public static void suggestMethodNameMultiagentAsync(Project project, String codeSnippet, String provider, String model, String apikey, String aiderPath, String apiBase, String apiVersion, int count, java.util.function.Consumer<String> callback) {
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            try {
+                String prompt = buildMethodNameSuggestionPrompt(codeSnippet, count);
+                notify(project, "Clone_multiagent is generating names...");
+
+                String output = requestMethodNameSuggestionsFromConfiguredLlm(project, prompt);
+                if (output != null) {
+                    System.out.println("[NAME_LLM] raw output:\n" + output);
+                }
+                List<String> candidates = parseMethodNameCandidates(output, count);
+
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    String selected;
+                    if (!candidates.isEmpty()) {
+                        selected = Messages.showEditableChooseDialog(
+                                "Choose a method name:",
+                                "Clone_multiagent Name Suggestions",
+                                Messages.getQuestionIcon(),
+                                candidates.toArray(new String[0]),
+                                candidates.get(0),
+                                null
+                        );
+                    } else {
+                        notify(project, "Clone_multiagent didn't return any usable name suggestions. Please enter a method name. Check API key / provider settings if this keeps happening.");
+                        selected = Messages.showInputDialog(
+                                project,
+                                "Enter a method name:",
+                                "Clone_multiagent Name Suggestions",
+                                Messages.getQuestionIcon(),
+                                "extractedMethod",
+                                null
+                        );
+                    }
+                    callback.accept(selected);
+                });
+            } catch (Exception e) {
+                notify(project, "Failed to generate method names: " + e.getMessage());
+                e.printStackTrace();
+                ApplicationManager.getApplication().invokeLater(() -> callback.accept(null));
+            }
+        });
+    }
+
+
     public void passPreds(List<String> preds){
         String predstr = String.join("-", preds);
         try (Socket socket = new Socket("localhost", 8082);
@@ -594,7 +675,7 @@ public class ExtractionTask {
             String methodName;
             // Predictions
             List<String> pred = null;
-            if(ProjectSettingsState.getInstance(project).useNameRec == 0) {
+            if ("code2vec".equals(ProjectSettingsState.getInstance(project).useNameRec)) {
                 try {
                     List<String> recs = generateName(template, returnType, normalizedLambdaArgs, "extractedMethod", extractToStatic);
                     if (recs != null) pred = recs;
@@ -614,7 +695,7 @@ public class ExtractionTask {
                         finalizeExtraction(project, containingClass, factory, results, finalTemplate1, finalReturnType1, normalizedLambdaArgs, methodName, extractToStatic)
                 );
             }
-            else if (ProjectSettingsState.getInstance(project).useNameRec == 1) {
+            else if ("built-in".equals(ProjectSettingsState.getInstance(project).useNameRec)) {
                 pred = new ArrayList<>();
                 pred.add("extractedMethod");
                 methodName = getNewMethodName(containingClass, pred.get(0));
@@ -624,7 +705,8 @@ public class ExtractionTask {
                 ApplicationManager.getApplication().invokeLater(() ->
                         finalizeExtraction(project, containingClass, factory, results, finalTemplate2, finalReturnType2, normalizedLambdaArgs, methodName, extractToStatic)
                 );
-            } else {
+            }
+            else if ("Clone".equals(ProjectSettingsState.getInstance(project).useNameRec)) {
                 // Use the new async method name suggestion
                 final Project finalProject = project;
                 final PsiClass finalContainingClass = containingClass;
@@ -661,8 +743,80 @@ public class ExtractionTask {
                             ApplicationManager.getApplication().invokeLater(() ->
                                     finalizeExtraction(finalProject, finalContainingClass, finalFactory, finalResults, finalTemplate, finalReturnType, finalLambdaArgs, methodNameLocal, finalExtractToStatic, false)
                             );
-                        }
-                );
+                        });
+            }
+            else if ("Clone_multiagent".equals(ProjectSettingsState.getInstance(project).useNameRec)) {
+                // Use the new async method name suggestion
+                final Project finalProject = project;
+                final PsiClass finalContainingClass = containingClass;
+                final PsiElementFactory finalFactory = factory;
+                final List<Clone> finalResults = results;
+                final Clone finalTemplate = template;
+                final String finalReturnType = returnType;
+                final List<List<Integer>> finalLambdaArgs = normalizedLambdaArgs;
+                final boolean finalExtractToStatic = extractToStatic;
+                suggestMethodNameMultiagentAsync(
+                        finalProject,
+                        buildMethodText(finalTemplate, finalReturnType, finalLambdaArgs, "tempName", finalExtractToStatic),
+                        ProjectSettingsState.getInstance(finalProject).getLlmprovider(),
+                        ProjectSettingsState.getInstance(finalProject).getAiderModel(),
+                        ProjectSettingsState.getInstance(finalProject).getAiderApiKey(),
+                        ProjectSettingsState.getInstance(finalProject).getAiderPath(),
+                        ProjectSettingsState.getInstance(finalProject).getApiBase(),
+                        ProjectSettingsState.getInstance(finalProject).getApiVersion(),
+                        ProjectSettingsState.getInstance(finalProject).numOfPreds,
+                        (String methodSuggestion) -> {
+                            List<String> predLocal;
+                            String methodNameLocal;
+                            if (methodSuggestion != null && !methodSuggestion.isEmpty()) {
+                                predLocal = new ArrayList<>();
+                                predLocal.add(methodSuggestion);
+                                methodNameLocal = getNewMethodName(finalContainingClass, methodSuggestion);
+                            } else {
+                                notify(finalProject, "Clone_multiagent did not provide a name. Using default 'extractedMethod'.");
+                                predLocal = new ArrayList<>();
+                                predLocal.add("extractedMethod");
+                                methodNameLocal = getNewMethodName(finalContainingClass, "extractedMethod");
+                            }
+                            passPreds(predLocal);
+                            ApplicationManager.getApplication().invokeLater(() ->
+                                    finalizeExtraction(finalProject, finalContainingClass, finalFactory, finalResults, finalTemplate, finalReturnType, finalLambdaArgs, methodNameLocal, finalExtractToStatic, false)
+                            );
+                        });
+            }
+            else {
+                // No Aider: ask the user for a method name (fallback to default).
+                final Project finalProject = project;
+                final PsiClass finalContainingClass = containingClass;
+                final PsiElementFactory finalFactory = factory;
+                final List<Clone> finalResults = results;
+                final Clone finalTemplate = template;
+                final String finalReturnType = returnType;
+                final List<List<Integer>> finalLambdaArgs = normalizedLambdaArgs;
+                final boolean finalExtractToStatic = extractToStatic;
+
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    String suggested = "extractedMethod";
+                    String input = Messages.showInputDialog(
+                            finalProject,
+                            "Enter a method name for the extracted method:",
+                            "Method Name",
+                            Messages.getQuestionIcon(),
+                            suggested,
+                            null
+                    );
+
+                    String chosenBase = (input != null && !input.isBlank()) ? input.trim() : suggested;
+
+                    List<String> predLocal = new ArrayList<>();
+                    predLocal.add(chosenBase);
+
+                    String methodNameLocal = getNewMethodName(finalContainingClass, chosenBase);
+                    passPreds(predLocal);
+
+                    finalizeExtraction(finalProject, finalContainingClass, finalFactory, finalResults,
+                            finalTemplate, finalReturnType, finalLambdaArgs, methodNameLocal, finalExtractToStatic, true);
+                });
                 return;
             }
         });

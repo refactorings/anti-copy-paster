@@ -53,31 +53,33 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= settingsComponent.getComplexitySensitivity() != settings.complexitySensitivity;
         modified |= settingsComponent.getComplexityEnabled() != settings.complexityEnabled;
         modified |= settingsComponent.getComplexityRequired() != settings.complexityRequired;
-        modified |= settingsComponent.getNameModel() != settings.useNameRec;
+        modified |= !Objects.equals(settingsComponent.getNameModel(), settings.useNameRec);
         modified |= settingsComponent.getNumOfPreds() != settings.numOfPreds;
         modified |= settingsComponent.getJudgementModel() != settings.judgementModel;
+        modified |= settings.judgementModel == ProjectSettingsState.JudgementModel.AIDER &&
+                settingsComponent.getCloneMode() != settings.getCloneMode();
         modified |= settingsComponent.getExtractionType() != settings.extractionType;
         modified |= settingsComponent.getModelSensitivity() != settings.modelSensitivity;
         modified |= settingsComponent.getMaxParams() != settings.maxParams;
         modified |= !Objects.equals(settingsComponent.getAiderApiKey(), settings.getAiderApiKey());
+        modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
         modified |= !Objects.equals(settingsComponent.getSelectedAiderModel(), settings.getAiderModel());
         modified |= !Objects.equals(settingsComponent.getLlmProvider(), settings.getLlmprovider());
-        modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
         modified |= !Objects.equals(settingsComponent.getApiBase(), settings.getApiBase());
         modified |= !Objects.equals(settingsComponent.getApiVersion(), settings.getApiVersion());
         modified |= !Objects.equals(settingsComponent.getFilesPath(), settings.getFilesPath());
         modified |= !Objects.equals(settingsComponent.getAllFilesCheckboxes(), settings.getAllFilesCheckboxes());
         modified |= !Objects.equals(settingsComponent.getSelectedAnalysisButton(), settings.getSelectedAnalysisButton());
         modified |= !Objects.equals(settingsComponent.getOllamaModel(), settings.getOllamaModelName());
+        modified |= settingsComponent.getMaxAttempts() != settings.getMaxAttempts();
         return modified;
     }
 
     @Override
     public void apply() throws ConfigurationException {
-        if ((settingsComponent.getJudgementModel() == ProjectSettingsState.JudgementModel.AIDER ||
-                settingsComponent.getNameModel() == 2) &&
-                (settingsComponent.getAiderApiKey() == null || settingsComponent.getAiderApiKey().trim().isEmpty())) {
-            throw new ConfigurationException("API Key must be provided when using Aider.");
+        String apiKeyPrefixValidationError = settingsComponent.getApiKeyPrefixValidationError();
+        if (apiKeyPrefixValidationError != null) {
+            throw new ConfigurationException(apiKeyPrefixValidationError);
         }
 
         if ("Azure".equalsIgnoreCase(settingsComponent.getLlmProvider())) {
@@ -116,13 +118,15 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.useNameRec = settingsComponent.getNameModel();
         settings.numOfPreds = settingsComponent.getNumOfPreds();
         settings.judgementModel = settingsComponent.getJudgementModel();
+        settings.setCloneMode(settingsComponent.getCloneMode());
         settings.extractionType = settingsComponent.getExtractionType();
         settings.modelSensitivity = settingsComponent.getModelSensitivity();
         settings.maxParams = settingsComponent.getMaxParams();
-        settings.setAiderPath(settingsComponent.getAiderPath());
+        settings.setMaxAttempts(settingsComponent.getMaxAttempts());
         settings.setLlmprovider(settingsComponent.getLlmProvider());
         settings.setAiderModel(settingsComponent.getSelectedAiderModel());
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
+        settings.setAiderPath(settingsComponent.getAiderPath());
         settings.setApiBase(settingsComponent.getApiBase());
         settings.setApiVersion(settingsComponent.getApiVersion());
         settings.setFilesPath(settingsComponent.getFilesPath());
@@ -151,16 +155,20 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setComplexitySensitivity(settings.complexitySensitivity);
         settingsComponent.setComplexityEnabled(settings.complexityEnabled);
         settingsComponent.setComplexityRequired(settings.complexityRequired);
+        settingsComponent.setJudgementModel(settings.judgementModel);
+        if (settings.judgementModel == ProjectSettingsState.JudgementModel.AIDER) {
+            settingsComponent.setCloneMode(settings.getCloneMode());
+        }
         settingsComponent.setNameModel(settings.useNameRec);
         settingsComponent.setNumOfPreds(settings.numOfPreds);
-        settingsComponent.setJudgementModel(settings.judgementModel);
         settingsComponent.setExtractionType(settings.extractionType);
         settingsComponent.setModelSensitivity(settings.modelSensitivity);
         settingsComponent.setMaxParams(settings.maxParams);
-        settingsComponent.setAiderPath(settings.getAiderPath());
+        settingsComponent.setMaxAttempts(settings.getMaxAttempts());
         settingsComponent.setLlmProvider(settings.getLlmprovider());
         settingsComponent.setSelectedAiderModel(settings.getAiderModel());
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());
+        settingsComponent.setAiderPath(settings.getAiderPath());
         settingsComponent.setFilesPath(settings.getFilesPath());
         settingsComponent.setApiBase(settings.getApiBase());
         settingsComponent.setApiVersion(settings.getApiVersion());

@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "org.jetbrains.research.anticopypaster"
-version = "2024.1-3.1"
+version = "2025.1-3.2" //version of the plugin, not the platform
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -80,15 +80,13 @@ intellij {
     version.set(properties("platformVersion"))
     type.set(properties("platformType"))
     downloadSources.set(properties("platformDownloadSources").toBoolean())
-    updateSinceUntilBuild.set(true)
+    updateSinceUntilBuild.set(false) //set false to support different versions of the platform depending on the settings in plugin.xml
     val basePlugins = properties("platformPlugins")
         .split(',')
         .map(String::trim)
         .filter(String::isNotEmpty)
 
-    // Ensure required bundled plugins are present in the runIde sandbox.
-    // NOTE: For the Gradle IntelliJ Plugin 1.x, Java support is provided by the bundled plugin id "com.intellij.java".
-    plugins.set((basePlugins + listOf("terminal", "com.intellij.java", "JUnit")).distinct())
+    plugins.set((basePlugins + listOf("terminal", "junit")).distinct())
 }
 
 tasks {

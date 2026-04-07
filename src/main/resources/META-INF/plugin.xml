@@ -2,7 +2,9 @@
     <id>org.jetbrains.research.anticopypaster</id>
     <name>AntiCopyPaster</name>
     <vendor>JetBrains</vendor>
-    <version>2023.2-2.0</version>
+
+    <idea-version since-build="241.0"/>
+<!--    compatible with IntelliJ IDEA 2024.1 and later-->
 
     <description><![CDATA[
     Tracks the copying and pasting actions and suggests extracting duplicates into a new method. Based on imbalanced-pruned experiment.
@@ -12,15 +14,17 @@
     <depends>com.intellij.modules.java</depends>
     <depends>com.intellij.modules.lang</depends>
     <depends>org.jetbrains.plugins.terminal</depends>
+    <depends optional="true">com.intellij.junit</depends>
     <depends optional="true">com.github.copilot</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <notificationGroup id="AntiCopyPaster" displayType="BALLOON" isLogByDefault="false"/>
+        <notificationGroup id="AntiCopyPaster" displayType="TOOL_WINDOW" isLogByDefault="true"/>
         <copyPastePreProcessor
                 implementation="org.jetbrains.research.anticopypaster.ide.AntiCopyPastePreProcessor"/>
         <notificationGroup
                 id="Extract Method suggestion"
-                displayType="BALLOON"/>
+                displayType="TOOL_WINDOW"
+                isLogByDefault="true"/>
         <projectConfigurable
                 parentId="tools"
                 instance="org.jetbrains.research.anticopypaster.config.ProjectSettingsConfigurable"

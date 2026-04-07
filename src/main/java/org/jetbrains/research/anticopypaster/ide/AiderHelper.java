@@ -49,237 +49,19 @@ import java.nio.file.Files;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.List;
+import org.jetbrains.research.anticopypaster.rag.RagService;
+import com.intellij.openapi.project.ProjectManager;
+import com.intellij.openapi.roots.ProjectRootManager;
+import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 public class AiderHelper {
 
     private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
 
-    /**
-     * Cache of last-known-good converted JUnit4 tests per CUT (fully-qualified class name).
-     * Used as a fallback when EvoSuite hangs or fails so the tool can still return a runnable test.
-     */
-    private static final class CachedJUnitTest {
-        final String testClassFqn;
-        final String testJavaSource;
-
-        private CachedJUnitTest(String testClassFqn, String testJavaSource) {
-            this.testClassFqn = testClassFqn;
-            this.testJavaSource = testJavaSource;
-        }
-    }
-
-    private static final Map<String, CachedJUnitTest> LAST_GOOD_TEST_BY_CUT = new ConcurrentHashMap<>();
-
-    private static boolean isMavenOrGradleProject(Project project) {
-        String base = project.getBasePath();
-        if (base == null || base.isBlank()) return false;
-        File pom = new File(base, "pom.xml");
-        File gradle = new File(base, "build.gradle");
-        File gradleKts = new File(base, "build.gradle.kts");
-        File settingsGradle = new File(base, "settings.gradle");
-        File settingsGradleKts = new File(base, "settings.gradle.kts");
-        return pom.exists() || gradle.exists() || gradleKts.exists() || settingsGradle.exists() || settingsGradleKts.exists();
-    }
-
-    private static boolean isPlainProject(Project project) {
-        if (isMavenOrGradleProject(project)) return false;
-        try {
-            Module[] modules = ModuleManager.getInstance(project).getModules();
-            return modules == null || modules.length <= 1;
-        } catch (Throwable t) {
-            return true;
-        }
-    }
-
-    /**
-     /**
-     * Writes the converted JUnit4 test into the project's test source root so IntelliJ/Maven/Gradle can compile it.
-     * Best-effort: uses the first module's first content root and places under src/test/java/<package>/Class.java.
-     */
-    private static File writeTestIntoProjectTestSources(Project project,
-                                                        String testJavaSource,
-                                                        String testClassFqn,
-                                                        Consumer<String> viewer) throws IOException {
-        if (testJavaSource == null || testJavaSource.isBlank()) {
-            throw new IllegalArgumentException("testJavaSource is empty");
-        }
-        if (testClassFqn == null || testClassFqn.isBlank()) {
-            throw new IllegalArgumentException("testClassFqn is empty");
-        }
-
-        String pkg = "";
-        String simple = testClassFqn;
-        int lastDot = testClassFqn.lastIndexOf('.');
-        if (lastDot >= 0) {
-            pkg = testClassFqn.substring(0, lastDot);
-            simple = testClassFqn.substring(lastDot + 1);
-        }
-
-        Module[] modules = ModuleManager.getInstance(project).getModules();
-        String rootPath = null;
-        if (modules != null && modules.length > 0) {
-            VirtualFile[] roots = ModuleRootManager.getInstance(modules[0]).getContentRoots();
-            if (roots != null && roots.length > 0) {
-                rootPath = roots[0].getPath();
-            }
-        }
-        if (rootPath == null || rootPath.isBlank()) {
-            String base = project.getBasePath();
-            if (base != null && !base.isBlank()) rootPath = base;
-        }
-        if (rootPath == null || rootPath.isBlank()) {
-            throw new IllegalStateException("Cannot determine project root/content root to write test");
-        }
-
-        File testRoot = new File(rootPath, "src" + File.separator + "test" + File.separator + "java");
-        File pkgDir = testRoot;
-        if (!pkg.isBlank()) {
-            pkgDir = new File(testRoot, pkg.replace('.', File.separatorChar));
-        }
-        if (!pkgDir.exists() && !pkgDir.mkdirs()) {
-            throw new IOException("Failed to create test package directory: " + pkgDir.getAbsolutePath());
-        }
-
-        File out = new File(pkgDir, simple + ".java");
-        Files.writeString(out.toPath(), testJavaSource, StandardCharsets.UTF_8);
-
-        // Refresh VFS so IntelliJ can see/compile it
-        String finalRootPath = rootPath;
-        ApplicationManager.getApplication().invokeLater(() -> {
-            VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(out);
-            if (vf != null) {
-                vf.refresh(false, false);
-            } else {
-                // fallback: refresh project root
-                VirtualFile rootVf = LocalFileSystem.getInstance().refreshAndFindFileByPath(finalRootPath);
-                if (rootVf != null) rootVf.refresh(true, true);
-            }
-        }, ModalityState.any());
-
-        if (viewer != null) viewer.accept("[JUnit/IDE] Wrote test into project test sources: " + out.getAbsolutePath());
-        return out;
-    }
-    /**
-     * Runs a single JUnit test class through IntelliJ's built-in JUnit runner.
-     * This is the correct approach for Maven/Gradle projects because IntelliJ will use the IDE/module classpath.
-     * Note: execution is asynchronous; this method does not wait for PASS/FAIL.
-     */
-    private static void runJUnit4ViaIdeaRunner(Project project,
-                                               String testClassFqn,
-                                               Consumer<String> viewer) {
-        if (testClassFqn == null || testClassFqn.isBlank()) {
-            if (viewer != null) viewer.accept("[JUnit/IDE] Skipped: test class name is empty.");
-            return;
-        }
-
-        ApplicationManager.getApplication().invokeLater(() -> {
-            try {
-                RunManager runManager = RunManager.getInstance(project);
-
-                // Find JUnit configuration type in a version-stable way (avoid direct JUnitConfigurationType API differences)
-                ConfigurationType junitType = null;
-                for (ConfigurationType t : ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()) {
-                    if (t != null && "JUnit".equals(t.getId())) {
-                        junitType = t;
-                        break;
-                    }
-                }
-                if (junitType == null) {
-                    if (viewer != null) viewer.accept("[JUnit/IDE] JUnit run configuration type not found (id=JUnit). Is the JUnit plugin enabled?");
-                    notify(project, "JUnit runner not available: configuration type 'JUnit' not found.");
-                    return;
-                }
-                if (junitType.getConfigurationFactories() == null || junitType.getConfigurationFactories().length == 0) {
-                    if (viewer != null) viewer.accept("[JUnit/IDE] JUnit configuration has no factories.");
-                    notify(project, "JUnit runner not available: no configuration factories.");
-                    return;
-                }
-
-                RunnerAndConfigurationSettings settings =
-                        runManager.createConfiguration("Clone JUnit4: " + testClassFqn, junitType.getConfigurationFactories()[0]);
-
-                if (!(settings.getConfiguration() instanceof JUnitConfiguration)) {
-                    if (viewer != null) viewer.accept("[JUnit/IDE] Created configuration is not a JUnitConfiguration: " + settings.getConfiguration().getClass().getName());
-                    notify(project, "Failed to create JUnit run configuration for: " + testClassFqn);
-                    return;
-                }
-
-                JUnitConfiguration cfg = (JUnitConfiguration) settings.getConfiguration();
-
-                // Configure the JUnit run configuration in a version-tolerant way.
-                // Different IDE builds expose different APIs (setTestObject/setMainClassName vs persistent data).
-                boolean configured = false;
-
-                // 1) Try setters via reflection on the configuration instance (newer builds)
-                try {
-                    java.lang.reflect.Method mSetTestObj = cfg.getClass().getMethod("setTestObject", String.class);
-                    mSetTestObj.invoke(cfg, JUnitConfiguration.TEST_CLASS);
-                    configured = true;
-                } catch (Throwable ignored) {
-                    // ignore
-                }
-                try {
-                    java.lang.reflect.Method mSetMain = cfg.getClass().getMethod("setMainClassName", String.class);
-                    mSetMain.invoke(cfg, testClassFqn);
-                    configured = true;
-                } catch (Throwable ignored) {
-                    // ignore
-                }
-
-                // 2) Fallback: persistent data (older builds)
-                try {
-                    java.lang.reflect.Method mGet = cfg.getClass().getMethod("getPersistentData");
-                    Object data = mGet.invoke(cfg);
-                    if (data != null) {
-                        try {
-                            java.lang.reflect.Field f = data.getClass().getField("TEST_OBJECT");
-                            f.set(data, JUnitConfiguration.TEST_CLASS);
-                            configured = true;
-                        } catch (Throwable ignored) {
-                            // ignore
-                        }
-                        try {
-                            java.lang.reflect.Method mSetMain = data.getClass().getMethod("setMainClassName", String.class);
-                            mSetMain.invoke(data, testClassFqn);
-                            configured = true;
-                        } catch (Throwable ignored) {
-                            // ignore
-                        }
-                    }
-                } catch (Throwable ignored) {
-                    // ignore
-                }
-
-                if (!configured) {
-                    if (viewer != null) viewer.accept("[JUnit/IDE] Warning: could not configure test class via available APIs; running configuration may be incomplete.");
-                }
-
-                // Best-effort select a module (avoid setModule(Module) API differences)
-                try {
-                    Module[] modules = ModuleManager.getInstance(project).getModules();
-                    if (modules != null && modules.length > 0) {
-                        cfg.getConfigurationModule().setModule(modules[0]);
-                    }
-                } catch (Throwable ignored) {
-                    // ignore
-                }
-
-
-                runManager.setTemporaryConfiguration(settings);
-
-                ExecutionEnvironment env =
-                        ExecutionEnvironmentBuilder.create(DefaultRunExecutor.getRunExecutorInstance(), settings).build();
-
-                if (viewer != null) viewer.accept("[JUnit/IDE] Running via IntelliJ runner: " + testClassFqn);
-                ProgramRunnerUtil.executeConfiguration(env, true, true);
-
-            } catch (Throwable t) {
-                if (viewer != null) viewer.accept("[JUnit/IDE] Failed to run via IntelliJ runner: " + t.getMessage());
-                notify(project, "Failed to run tests via IntelliJ runner: " + t.getMessage());
-            }
-        }, ModalityState.any());
-    }
-
+    // RAG defaults to mirror the multi-agent refactor baseline (refactor.java)
+    private static final String DEFAULT_REFACTOR_DB_PATH = "refactor_database.csv";
+    private static final int DEFAULT_RAG_TOP_K = 2;
+    private static final int DEFAULT_RAG_MAX_CHARS = 700;
 
     /**
      * Opens (or reuses) a tool window console viewer for streaming output.
@@ -376,47 +158,6 @@ public class AiderHelper {
     }
 
     /**
-     * Like {@link #openStreamingViewer(Project, String)} but lazily creates the console tab.
-     * The tool window/tab will only appear when the returned consumer receives the first non-empty line.
-     */
-    public static Consumer<String> openLazyStreamingViewer(Project project, String title) {
-        final java.util.concurrent.ConcurrentLinkedQueue<String> pending = new java.util.concurrent.ConcurrentLinkedQueue<>();
-        final java.util.concurrent.atomic.AtomicReference<Consumer<String>> delegate = new java.util.concurrent.atomic.AtomicReference<>();
-        final java.util.concurrent.atomic.AtomicBoolean creating = new java.util.concurrent.atomic.AtomicBoolean(false);
-
-        return line -> {
-            if (line == null) return;
-            String trimmed = line.trim();
-            if (trimmed.isEmpty()) return;
-
-            Consumer<String> d = delegate.get();
-            if (d != null) {
-                d.accept(line);
-                return;
-            }
-
-            // Buffer until we create the real console
-            pending.add(line);
-
-            // Only one thread creates the console
-            if (creating.compareAndSet(false, true)) {
-                try {
-                    Consumer<String> real = openStreamingViewer(project, title);
-                    delegate.set(real);
-
-                    // Flush buffered lines
-                    String s;
-                    while ((s = pending.poll()) != null) {
-                        real.accept(s);
-                    }
-                } finally {
-                    creating.set(false);
-                }
-            }
-        };
-    }
-
-    /**
      * Runs a quick Aider‑based clone check for the file and, if clones are indicated, asks the user whether to refactor.
      * Copies the file to a temp path, streams detector output, and prompts for a refactor preview on positive signals.
      *
@@ -439,6 +180,16 @@ public class AiderHelper {
             File tempFile = File.createTempFile("aider_clonecheck_", ".java");
             Files.copy(originalFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             String tempFilePath = tempFile.getAbsolutePath();
+            // Fairness: prevent Aider from pulling external web context by auto-scraping URLs in the file header/comments.
+            try {
+                String tmp = Files.readString(tempFile.toPath(), StandardCharsets.UTF_8);
+                String sanitized = neutralizeHttpUrls(tmp);
+                if (!sanitized.equals(tmp)) {
+                    Files.writeString(tempFile.toPath(), sanitized, StandardCharsets.UTF_8);
+                }
+            } catch (Throwable ignored) {
+                // best-effort only
+            }
 
             ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
@@ -493,6 +244,7 @@ public class AiderHelper {
             );
 
             if (choice == Messages.YES) {
+                AntiCopyPasterUsageStatistics.getInstance(project).refactoringApplied();
                 ApplicationManager.getApplication().executeOnPooledThread(() -> {
                     try {
                         Files.write(originalPath, refactoredContent.getBytes(StandardCharsets.UTF_8));
@@ -512,6 +264,7 @@ public class AiderHelper {
                     }
                 });
             } else {
+                AntiCopyPasterUsageStatistics.getInstance(project).refactoringCancelled();
                 notify(project, "Refactoring for file " + fileName + " was canceled.");
             }
         }, ModalityState.any());
@@ -538,35 +291,85 @@ public class AiderHelper {
                 File originalFile = new File(filePath);
                 File tempFile = File.createTempFile("aider_refactor_", ".java");
                 Files.copy(originalFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                // Fairness: prevent Aider from pulling external web context by auto-scraping URLs in the file header/comments.
+                try {
+                    String tmp = Files.readString(tempFile.toPath(), StandardCharsets.UTF_8);
+                    String sanitized = neutralizeHttpUrls(tmp);
+                    if (!sanitized.equals(tmp)) {
+                        Files.writeString(tempFile.toPath(), sanitized, StandardCharsets.UTF_8);
+                    }
+                } catch (Throwable ignored) {
+                    // best-effort only
+                }
 
                 Consumer<String> viewer = openStreamingViewer(project, "Clone Refactoring Output");
-                String output = runAiderWithPromptStreaming(project, aiderPath, tempFile.getAbsolutePath(),
-                        "Refactor this file by Extract Method to eliminate clones. Output the COMPLETE final Java file ONLY, inside a single ```java code block. Do NOT output patches, SEARCH/REPLACE markers, or explanations.",
-                        provider, model, apikey, apiBase, apiVersion, viewer);
-                System.out.println("===> Refactor output:\n" + output);
 
+                // Build a fair-comparison prompt that mirrors the multi-agent refactor baseline (refactor.java)
+                String originalForPrompt = "";
+                try {
+                    originalForPrompt = Files.readString(originalFile.toPath(), StandardCharsets.UTF_8);
+                    // Also neutralize URLs inside the prompt copy.
+                    originalForPrompt = neutralizeHttpUrls(originalForPrompt);
+                } catch (Throwable t) {
+                    originalForPrompt = "";
+                }
+
+                // Optional RAG: use the (truncated) file as the query when we don't have a representative clone snippet.
+                String rag = "";
+                try {
+                    String query = safeTruncate(originalForPrompt, DEFAULT_RAG_MAX_CHARS);
+                    rag = RagService.buildRefactorRagGuidance(project, DEFAULT_REFACTOR_DB_PATH, query, DEFAULT_RAG_TOP_K, DEFAULT_RAG_MAX_CHARS);
+                } catch (Throwable ignored) {
+                    rag = "";
+                }
+
+                String refactorPrompt = buildAiderRefactorPrompt(fileName, originalForPrompt, rag);
+
+                // Aider typically uses diff-based edit formats (SEARCH/REPLACE) and applies edits directly to the file.
+                // For stability and fairness, we ignore stdout formatting and read the final refactored file from disk.
+                String output = null;
+                try {
+                    output = runAiderWithPromptStreaming(project, aiderPath, tempFile.getAbsolutePath(),
+                            refactorPrompt,
+                            provider, model, apikey, apiBase, apiVersion, viewer);
+                } catch (Throwable tRun) {
+                    notify(project, "Aider refactor run failed: " + tRun.getMessage());
+                }
                 if (output != null) {
+                    System.out.println("===> Refactor output (stdout):\n" + output);
+                }
+
+                // Always read the on-disk content after Aider finishes; this is the source of truth.
+                String originalContent = Files.readString(originalFile.toPath(), StandardCharsets.UTF_8);
+                String refactoredContent = Files.readString(tempFile.toPath(), StandardCharsets.UTF_8);
+
+                // If Aider did not change the temp file, try a best-effort fallback: extract a full-file Java code block.
+                // (Some models can be configured to output whole files.)
+                if (originalContent.equals(refactoredContent) && output != null) {
                     String fenced = extractJavaCodeBlock(output);
                     if (fenced != null && !fenced.isBlank()) {
                         try {
                             Files.writeString(tempFile.toPath(), fenced, StandardCharsets.UTF_8);
+                            refactoredContent = Files.readString(tempFile.toPath(), StandardCharsets.UTF_8);
                         } catch (IOException ioe) {
-                            notify(project, "Failed to write refactored content to temp file: " + ioe.getMessage());
+                            notify(project, "Failed to write extracted refactored content to temp file: " + ioe.getMessage());
                         }
                     }
                 }
 
-                String originalContent = Files.readString(originalFile.toPath());
-                String refactoredContent = Files.readString(tempFile.toPath());
+                // `refactoredContent` may have been reassigned above, so it is not effectively-final.
+                // Capture stable values for use in lambdas below.
+                final String finalRefactoredContent = refactoredContent;
+                final String finalOriginalContent = originalContent;
 
-                if (!originalContent.equals(refactoredContent)) {
+                if (!finalOriginalContent.equals(finalRefactoredContent)) {
                     ApplicationManager.getApplication().invokeLater(() -> {
                         // Show diff window
                         DiffContentFactory contentFactory = DiffContentFactory.getInstance();
                         SimpleDiffRequest diffRequest = new SimpleDiffRequest(
                                 "Refactor Preview: Compare Original and Refactored Code",
-                                contentFactory.create(originalContent),
-                                contentFactory.create(refactoredContent),
+                                contentFactory.create(finalOriginalContent),
+                                contentFactory.create(finalRefactoredContent),
                                 "Original",
                                 "Refactored"
                         );
@@ -583,7 +386,7 @@ public class AiderHelper {
                             evoSuiteJarPath = resolveBundledEvoSuiteJarPath();
                         } catch (Exception ex) {
                             notify(project, "EvoSuite skipped: failed to load bundled EvoSuite jar from resources: " + ex.getMessage());
-                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), finalRefactoredContent);
                             return;
                         }
 
@@ -610,7 +413,7 @@ public class AiderHelper {
                                 }
                             } catch (Throwable t) {
                                 notify(project, "EvoSuite skipped: classpath is empty and Java-8 fallback compilation failed: " + t.getMessage());
-                                promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                                promptApplyRefactoring(project, fileName, originalFile.toPath(), finalRefactoredContent);
                                 return;
                             }
                         } else {
@@ -621,7 +424,7 @@ public class AiderHelper {
 
                         if (classpath == null || classpath.isBlank()) {
                             notify(project, "EvoSuite skipped: classpath is still empty. Make sure the project is imported and compiled.");
-                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), finalRefactoredContent);
                             return;
                         }
 
@@ -638,7 +441,7 @@ public class AiderHelper {
 
                         if (classFqn == null || classFqn.isBlank()) {
                             notify(project, "EvoSuite skipped: failed to resolve class FQN for " + fileName + ". Ensure it is a Java file with a package/class declaration.");
-                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), finalRefactoredContent);
                             return;
                         }
 
@@ -649,14 +452,14 @@ public class AiderHelper {
                         // 5) Run EvoSuite while previewing (and run generated JUnit4 against the REFACTORED preview before applying)
                         boolean refactoredPass = false;
                         try {
-                            refactoredPass = runEvoSuiteOnClass(project, javaExe, evoSuiteJarPath, classpath, classFqn, filePath, refactoredContent);
+                            refactoredPass = runEvoSuiteOnClass(project, javaExe, evoSuiteJarPath, classpath, classFqn, filePath, finalRefactoredContent);
                         } catch (Throwable t) {
                             notify(project, "EvoSuite failed during preview: " + t.getMessage());
                             refactoredPass = false;
                         }
 
                         if (refactoredPass) {
-                            promptApplyRefactoring(project, fileName, originalFile.toPath(), refactoredContent);
+                            promptApplyRefactoring(project, fileName, originalFile.toPath(), finalRefactoredContent);
                         } else {
                             notify(project, "Refactored preview tests FAILED. Not applying changes to " + fileName + ".");
                         }
@@ -777,18 +580,46 @@ public class AiderHelper {
     }
 
     /**
+     * Read a Java home from environment variables first, then from JVM system properties.
+     * This lets the plugin work both when launched from a shell and when JAVA_8_HOME/JAVA_11_HOME
+     * is passed through IntelliJ VM options (for example: -DJAVA_8_HOME=/path/to/jdk8).
+     */
+    private static String getConfiguredJavaHome(String key) {
+        String v = System.getenv(key);
+        if (v != null && !v.isBlank()) return v;
+        v = System.getProperty(key);
+        if (v != null && !v.isBlank()) return v;
+        return null;
+    }
+
+    /**
      * Best-effort javac resolution. Prefers JAVA_8_HOME (to match EvoSuite runtime), then JAVA_11_HOME, then JAVA_HOME, else "javac".
      */
     private static String resolveJavacExecutable() {
-        String java8 = System.getenv("JAVA_8_HOME");
+        String java8 = getConfiguredJavaHome("JAVA_8_HOME");
         String p = resolveExeUnderHome(java8, "javac");
         if (p != null) return p;
 
-        String java11 = System.getenv("JAVA_11_HOME");
+        try {
+            Project project = ProjectManager.getInstance().getOpenProjects().length > 0
+                    ? ProjectManager.getInstance().getOpenProjects()[0]
+                    : null;
+            if (project != null) {
+                ProjectRootManager prm = ProjectRootManager.getInstance(project);
+                if (prm != null && prm.getProjectSdk() != null && prm.getProjectSdk().getHomePath() != null) {
+                    p = resolveExeUnderHome(prm.getProjectSdk().getHomePath(), "javac");
+                    if (p != null) return p;
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort only
+        }
+
+        String java11 = getConfiguredJavaHome("JAVA_11_HOME");
         p = resolveExeUnderHome(java11, "javac");
         if (p != null) return p;
 
-        String javaHome = System.getenv("JAVA_HOME");
+        String javaHome = getConfiguredJavaHome("JAVA_HOME");
         p = resolveExeUnderHome(javaHome, "javac");
         if (p != null) return p;
 
@@ -872,16 +703,6 @@ public class AiderHelper {
     }
 
     /**
-     * Convenience overload of {@link #runCommand(Project, String, String, String, String, java.util.function.Consumer, String...)}
-     * with no streaming viewer. Executes the given command and returns combined stdout.
-     */
-    private static String runCommand(Project project, String provider, String apikey, String apiBase,
-                                     String apiVersion, String... command)
-            throws IOException, InterruptedException {
-        return runCommand(project, provider, apikey, apiBase, apiVersion, null, command);
-    }
-
-    /**
      * Executes an external process with provider‑specific environment variables, cleans and optionally streams stdout,
      * and returns the combined output as a string. Sets the project root as the working directory and filters noisy lines.
      *
@@ -938,6 +759,7 @@ public class AiderHelper {
                 if (apiBase == null || apiBase.isBlank()) {
                     apiBase = "http://127.0.0.1:11434";
                 }
+                apiBase = normalizeOllamaApiBase(apiBase);
                 pb.environment().put("OLLAMA_API_BASE", apiBase);
 
                 pb.environment().remove("AZURE_API_KEY");
@@ -950,7 +772,7 @@ public class AiderHelper {
                     throw new IllegalArgumentException("Azure provider selected but API base is empty");
                 }
                 if (apiBase.contains("11434")) {
-                    System.err.println("[AIDER] Warning: Azure API base points to 11434 (Ollama). This will 404.");
+                    System.err.println("[Clone] Warning: Azure API base points to 11434 (Ollama). This will 404.");
                 }
                 pb.environment().put("AZURE_API_KEY", apikey);
                 pb.environment().put("AZURE_API_VERSION", apiVersion);
@@ -1012,7 +834,6 @@ public class AiderHelper {
             if (viewer != null) {
                 viewer.accept(cleaned);
             }
-            System.out.println("[AIDER] " + cleaned);
             output.append(cleaned).append("\n");
         }
 
@@ -1043,105 +864,6 @@ public class AiderHelper {
                 NotificationType.INFORMATION
         );
         Notifications.Bus.notify(notification, project);
-    }
-
-    /**
-     * Closes a single streaming console tab identified by its title, if present. Safe to call from any thread.
-     * Disposes tracked consoles and hides the tool window if it becomes empty.
-     *
-     * @param project IntelliJ project
-     * @param title   console tab title to close
-     */
-    public static void closeViewerByTitle(Project project, String title) {
-        ApplicationManager.getApplication().invokeLater(() -> {
-            try {
-                ToolWindowManager twm = ToolWindowManager.getInstance(project);
-                ToolWindow toolWindow = twm.getToolWindow(ToolWindowId.RUN);
-                if (toolWindow == null) {
-                    toolWindow = twm.getToolWindow("Output");
-                }
-                if (toolWindow == null) {
-                    return; // Nothing to close
-                }
-
-                com.intellij.ui.content.ContentManager cm = toolWindow.getContentManager();
-                com.intellij.ui.content.Content content = cm.findContent(title);
-
-                ConsoleView console = CONSOLE_BY_TITLE.remove(title);
-
-                if (content != null) {
-                    cm.removeContent(content, true);
-                }
-                if (console != null) {
-                    console.clear();
-                    if (console instanceof ConsoleViewImpl cvi) {
-                        cvi.dispose();
-                    }
-                }
-
-                if (cm.getContentCount() == 0) {
-                    toolWindow.hide(null);
-                }
-            } catch (Throwable t) {
-                System.err.println("Failed to close viewer '" + title + "': " + t.getMessage());
-            }
-        });
-    }
-
-    /**
-     * Closes all Aider‑related viewer tabs.
-     * First closes any consoles tracked internally, then sweeps the Run/Aider Output tool windows
-     * to remove any tabs whose title starts with "Aider ".
-     *
-     * @param project IntelliJ project
-     */
-    public static void closeAllViewers(Project project) {
-        ApplicationManager.getApplication().invokeLater(() -> {
-            try {
-                // First close everything we explicitly tracked
-                java.util.List<String> titles = new java.util.ArrayList<>(CONSOLE_BY_TITLE.keySet());
-                for (String title : titles) {
-                    closeViewerByTitle(project, title);
-                }
-
-                // Then sweep tool windows to catch any stray tabs not tracked in the map
-                ToolWindowManager twm = ToolWindowManager.getInstance(project);
-                ToolWindow[] tws = new ToolWindow[] {
-                        twm.getToolWindow(ToolWindowId.RUN),
-                        twm.getToolWindow("Output")
-                };
-                for (ToolWindow tw : tws) {
-                    if (tw == null) continue;
-                    com.intellij.ui.content.ContentManager cm = tw.getContentManager();
-                    // Take a snapshot to avoid concurrent modification while removing
-                    java.util.List<Content> list = new java.util.ArrayList<>();
-                    for (int i = 0; i < cm.getContentCount(); i++) {
-                        list.add(cm.getContent(i));
-                    }
-                    for (Content c : list) {
-                        if (c != null) {
-                            String title = c.getDisplayName();
-                            if (title != null && title.startsWith("Clone ")) {
-                                cm.removeContent(c, true);
-                                // Clean any console we may have tracked under this title
-                                ConsoleView console = CONSOLE_BY_TITLE.remove(title);
-                                if (console != null) {
-                                    console.clear();
-                                    if (console instanceof ConsoleViewImpl cvi) {
-                                        cvi.dispose();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (cm.getContentCount() == 0) {
-                        tw.hide(null);
-                    }
-                }
-            } catch (Throwable t) {
-                System.err.println("Failed to close all Clone viewers: " + t.getMessage());
-            }
-        });
     }
 
     /**
@@ -1176,11 +898,27 @@ public class AiderHelper {
         }
         return sb.toString();
     }
+
+    private static String normalizeOllamaApiBase(String rawApiBase) {
+        String normalized = rawApiBase == null ? "" : rawApiBase.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.endsWith("/chat/completions")) {
+            normalized = normalized.substring(0, normalized.length() - "/chat/completions".length());
+        }
+        if (normalized.endsWith("/v1")) {
+            normalized = normalized.substring(0, normalized.length() - "/v1".length());
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
     /**
-     * Extracts the first fenced code block from {@code text} whose language is either empty or starts with "java".
-     *
-     * @param text full Aider response text, possibly containing fenced code blocks
-     * @return the inner content of the first matching fenced block, or {@code null} if none is found
+     * Best-effort fallback: extracts the first fenced code block from {@code text} whose language is either empty
+     * or starts with "java". Normally Aider applies edits directly to the file, so this is only used when the
+     * temp file remained unchanged but stdout contains a full-file output.
      */
     private static String extractJavaCodeBlock(String text) {
         if (text == null) return null;
@@ -1203,75 +941,57 @@ public class AiderHelper {
     }
 
     /**
-     * Detect a common Windows corruption pattern where literal 'n' is used instead of actual newlines.
-     * We only trigger when evidence is strong to avoid corrupting identifiers (e.g., 'runner').
+     * Prevent Aider from auto-scraping URLs found in source comments/headers by neutralizing http(s) links.
+     * This keeps the comparison fair (no external web context) and avoids pandoc/scrape errors.
      */
-    private static boolean looksLikeLiteralNNewlineCorruption(String code) {
-        if (code == null || code.isEmpty()) return false;
+    private static String neutralizeHttpUrls(String s) {
+        if (s == null || s.isEmpty()) return s;
+        // Replace schemes only (keep the rest readable)
+        return s.replace("https://", "hxxps://").replace("http://", "hxxp://");
+    }
 
-        // If there are already real newlines, don't assume corruption too easily.
-        int realNewlines = 0;
-        for (int i = 0; i < code.length(); i++) {
-            if (code.charAt(i) == '\n') realNewlines++;
-            if (realNewlines >= 5) break;
-        }
-
-        int markers = 0;
-        if (code.contains("npackage") || code.contains("nimport") || code.contains("npublic")) markers++;
-        if (code.contains("nnpackage") || code.contains("nnimport") || code.contains("nnpublic")) markers++;
-        if (code.contains("/*n") || code.contains("*/n")) markers++;
-        if (code.contains(";n") || code.contains("{n") || code.contains("}n")) markers++;
-        if (code.contains("n  @") || code.contains("nn  @")) markers++;
-
-        // Few real newlines + multiple markers => likely corrupted
-        if (realNewlines <= 1) return markers >= 2;
-        if (realNewlines <= 4) return markers >= 3;
-        return false;
+    private static String safeTruncate(String s, int maxChars) {
+        if (s == null) return "";
+        String t = s.trim();
+        if (maxChars <= 0) return t;
+        if (t.length() <= maxChars) return t;
+        return t.substring(0, maxChars) + "\n...<truncated>...";
     }
 
     /**
-     * Repair literal-'n' newline corruption without global 'nn' replacement (which can corrupt identifiers).
-     * Only fixes localized patterns typical at statement boundaries.
+     * A fair-comparison refactor prompt that mirrors the multi-agent baseline in agents/refactor.java.
+     * We include the full file source (or empty if unreadable) and optionally attach a few-shot RAG bundle.
      */
-    private static String repairLiteralNNewlineCorruption(String code) {
-        if (code == null) return null;
-        String out = code;
+    private static String buildAiderRefactorPrompt(String fileName, String fileSource, String ragExamples) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("You are a Java refactor agent.\n");
+        sb.append("You have a single file to modify: ").append(fileName).append("\n");
+        sb.append("The file source is below:\n");
+        sb.append("```\n").append(fileSource == null ? "" : fileSource).append("\n```\n\n");
 
-        for (int i = 0; i < 20; i++) {
-            String prev = out;
+//        if (ragExamples != null && !ragExamples.trim().isEmpty()) {
+//            sb.append("Here are some few-shot RAG examples to guide you:\n");
+//            sb.append(ragExamples).append("\n\n");
+//        }
 
-            // Comment header patterns
-            out = out.replace("/*n", "/*\n");
-            out = out.replace("*/n", "*/\n");
+        sb.append("Instructions:\n");
+        sb.append("- Use ONLY Extract Method (and creating private helper methods) to remove clones.\n");
+        sb.append("- Do NOT use any other refactoring type (e.g., Rename, Move Method, Introduce Parameter Object, etc.).\n");
+        sb.append("- Restrict modifications only to this file.\n");
+        sb.append("- Preserve package and import statements exactly.\n");
+        sb.append("- Keep public API signatures unchanged where possible.\n");
+        sb.append("- Minimize edits outside the clone regions.\n");
+        sb.append("- Apply edits directly to the file.\n");
+        sb.append("- If you output anything, keep it short and do not include SEARCH/REPLACE blocks unless necessary.\n");
+        sb.append("- Do not include explanations.\n");
 
-            // Package/import/class boundaries
-            out = out.replace("nnpackage", "\n\npackage");
-            out = out.replace("nnimport", "\n\nimport");
-            out = out.replace("nnpublic", "\n\npublic");
-
-            out = out.replace("npackage", "\npackage");
-            out = out.replace("nimport", "\nimport");
-            out = out.replace("npublic", "\npublic");
-
-            // Common statement separators
-            out = out.replace(";n", ";\n");
-            out = out.replace("{n", "{\n");
-            out = out.replace("}n", "}\n");
-
-            // Annotation lines
-            out = out.replace("n  @", "\n  @");
-            out = out.replace("nn  @", "\n\n  @");
-
-            if (out.equals(prev)) break;
-        }
-        return out;
+        return sb.toString();
     }
+
 
     /**
      * Runs EvoSuite on a given fully-qualified class name using an external EvoSuite jar.
-     * Uses a dedicated process runner (no LLM/Aider env handling).
-     * Runs synchronously (blocking) in the calling pooled thread.
-     * After EvoSuite completes, post-processes the generated *_ESTest.java into a pure JUnit4 test file.
+     * Simplified workflow-aligned implementation.
      */
     private static boolean runEvoSuiteOnClass(Project project,
                                               String javaExe,
@@ -1280,379 +1000,233 @@ public class AiderHelper {
                                               String targetClass,
                                               String sourceFilePath,
                                               String refactoredSourceText) throws IOException, InterruptedException {
-        // Use separate consoles so test execution output does not overwrite generation logs
-        Consumer<String> evoViewer = openStreamingViewer(project, "EvoSuite Generation Output");
-        // Build mark + code source: print to BOTH stderr and the EvoSuite viewer so it is visible in the tool window.
 
-        Consumer<String> junitViewer = openLazyStreamingViewer(project, "JUnit Test Output");
-        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        Consumer<String> viewer = openStreamingViewer(project, "EvoSuite Output");
 
-        // Force a deterministic EvoSuite output location so we can reliably find *_ESTest.java
-        // EvoSuite will create <output_directory>/evosuite-tests and write tests there.
-        File evoOutputBaseDir = Files.createTempDirectory("evosuite-out-").toFile();
-        evoOutputBaseDir.deleteOnExit();
+        // --- Print actual java -version output ---
+        ProcessBuilder versionPb = new ProcessBuilder(javaExe, "-version");
+        versionPb.redirectErrorStream(true);
+        Process versionProcess = versionPb.start();
 
-        // Minimal usable arguments: pick a generation mode + criterion + classpath + CUT
-        java.util.List<String> cmd = new java.util.ArrayList<>();
-        cmd.add(javaExe);
-        evoViewer.accept("[EvoSuite] Using java executable: " + javaExe);
-
-        cmd.add("-Xmx2048m");
-
-        boolean isMac = System.getProperty("os.name").toLowerCase().contains("mac");
-
-
-        // --- Windows hang mitigation: add JVM flag BEFORE -jar ---
-        if (isWindows) {
-            // Limit CPU parallelism to reduce sporadic EvoSuite hangs on Windows.
-            cmd.add("-XX:ActiveProcessorCount=1");
-            evoViewer.accept("[EvoSuite] Windows hang mitigation: -XX:ActiveProcessorCount=1");
-            // --- Windows hard constraints (prevent hangs by shrinking EvoSuite's internal search/refinement space) ---
-            // IMPORTANT: we set these as JVM system properties (BEFORE -jar) so even if EvoSuite ignores them,
-            // the JVM still accepts them and the process will not crash due to EvoSuite parsing.
-
-            // 0) Hard cap from outside: keep global timeout SMALL on Windows so we can always kill/escape.
-            //    (The process watchdog in runProcessStreaming also enforces an absolute wall-clock cap.)
-            cmd.add("-Dglobal_timeout=60");
-
-            // 1) Shrink search space aggressively.
-            cmd.add("-Dsearch_algorithm=GA");
-            cmd.add("-Dpopulation=6");
-            cmd.add("-Dmax_test_length=12");
-
-            // 2) Reduce additional work.
-            //    For EvoSuite 1.0.6, the most stable way is to disable assertion generation.
-            cmd.add("-Dassertions=false");
-
-            // 3) Keep the budget short and stop based on time.
-            cmd.add("-Dsearch_budget=15");
-            cmd.add("-Dstopping_condition=MaxTime");
-
-            evoViewer.accept("[EvoSuite] Windows hard constraints (JVM): search_algorithm=GA, population=6, max_test_length=12, assertions=false, search_budget=15, global_timeout=60, stopping_condition=MaxTime");
-        }
-
-        // Keep runs headless to reduce GUI/Swing initialization inside the SUT/tests.
-        // NOTE: Even in headless mode, some code paths may touch fonts; hence we disable sandbox on Windows.
-        cmd.add("-Djava.awt.headless=true");
-
-        // Block external entity / schema access in XML parsing (best-effort) to avoid network permission issues
-        cmd.add("-Djavax.xml.accessExternalDTD=");
-        cmd.add("-Djavax.xml.accessExternalSchema=");
-        cmd.add("-Djavax.xml.accessExternalStylesheet=");
-        // Reduce font/native surprises on Windows; safe elsewhere
-        cmd.add("-Dsun.java2d.noddraw=true");
-        cmd.add("-Djava.awt.fonts=");
-
-        // IMPORTANT: Do NOT force java.awt.graphicsenv/toolkit. Those overrides can break Swing initialization
-        // (e.g., RepaintManager init failures) and behave differently across OS/JDKs.
-        // cmd.add("-Djava.awt.graphicsenv=...");
-        // cmd.add("-Djava.awt.toolkit=...");
-
-        // Only relevant on macOS; harmless elsewhere, but keep it OS-gated to avoid surprising behavior.
-        if (isMac) {
-            cmd.add("-Dapple.awt.UIElement=true");
-        }
-
-        // Let EvoSuite decide whether to mock AWT based on its defaults/settings.
-        // Forcing mock_awt=false can re-enable Swing paths that crash in headless environments.
-        // cmd.add("-Dmock_awt=false");
-
-        cmd.add("-Dinstrumentation_skip_packages=java.*,javax.*,sun.*,com.sun.*,jdk.*");
-        // IMPORTANT: avoid EvoSuite's internal "compile & run" step during generation.
-        // On Windows, that step runs the generated scaffolding under EvoSuite's sandbox and can crash
-        // with SunFontManager/freetype permission issues. We will generate tests only, then post-process
-        // and run them ourselves.
-        cmd.add("-Djunit_check=false");
-        evoViewer.accept("[EvoSuite] junit_check=false (JVM) added before -jar (best-effort)");
-
-        // Allow EvoSuite to attach to itself when needed
-        cmd.add("-Djdk.attach.allowAttachSelf=true");
-        // EvoSuite 1.0.6 expects tools.jar (JDK 8). If we can't find it, running under JDK 9+ will crash.
-        String toolsJar = findToolsJarForJavaExe(javaExe);
-        if (toolsJar != null) {
-            cmd.add("-Dtools_jar_location=" + toolsJar);
-        } else {
-            evoViewer.accept("[EvoSuite] tools.jar not found for Java executable: " + javaExe);
-            evoViewer.accept("[EvoSuite] EvoSuite 1.0.6 typically requires JDK 8 (tools.jar).");
-            evoViewer.accept("[EvoSuite] Set JAVA_8_HOME to a JDK 8 installation and restart the IDE, or upgrade the bundled EvoSuite to a Java 9+ compatible version.");
-            notify(project, "EvoSuite skipped: tools.jar not found. Please set JAVA_8_HOME to a JDK 8 path (EvoSuite 1.0.6 requires tools.jar).");
-            return false;
-        }
-
-        // Insert -Djava.security.policy==... as JVM arg BEFORE -jar for EvoSuite 1.0.6 compatibility.
-        if (isWindows) {
-            try {
-                String policy = createPermissiveJavaPolicyFile();
-                if (policy != null && !policy.isBlank()) {
-                    cmd.add("-Djava.security.policy==" + policy);
-                }
-            } catch (Throwable t) {
-                evoViewer.accept("[EvoSuite] Windows: failed to create permissive security policy: " + t.getMessage());
+        StringBuilder versionOut = new StringBuilder();
+        try (BufferedReader r = new BufferedReader(
+                new InputStreamReader(versionProcess.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                versionOut.append(line).append("\n");
             }
         }
+        versionProcess.waitFor();
 
+        String versionText = versionOut.toString();
+        viewer.accept("[EvoSuite] resolved java executable: " + javaExe);
+        viewer.accept("[EvoSuite] java -version:\n" + versionText);
+
+        int javaMajor = parseJavaMajorVersion(versionText);
+        viewer.accept("[EvoSuite] Parsed major version: " + javaMajor);
+
+        File outDir = Files.createTempDirectory("evosuite-tests-").toFile();
+        outDir.deleteOnExit();
+
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        cmd.add(javaExe);
+
+        // Add module opens if Java 9+
+        if (javaMajor >= 9) {
+            cmd.add("--add-opens=java.base/java.lang=ALL-UNNAMED");
+            cmd.add("--add-opens=java.base/java.util=ALL-UNNAMED");
+            cmd.add("--add-opens=java.base/java.io=ALL-UNNAMED");
+            cmd.add("--add-opens=java.desktop/java.awt=ALL-UNNAMED");
+        }
+
+        cmd.add("-Xmx2048m");
         cmd.add("-jar");
         cmd.add(evoSuiteJarPath);
-
-        if (isWindows) {
-            // Also try to fully disable EvoSuite sandbox/security manager (best-effort; harmless if ignored)
-            cmd.add("-Dsandbox=false");
-            cmd.add("-Dsandbox_mode=OFF");
-            evoViewer.accept("[EvoSuite] Windows: sandbox disable flags set (sandbox=false, sandbox_mode=OFF)." );
-            evoViewer.accept("[EvoSuite] Windows: not passing -Duse_security_manager=false (unsupported by EvoSuite 1.0.6)." );
-        }
-
-        // EvoSuite reads most "-D" properties as its own CLI arguments (after -jar), not only as JVM system properties.
-        // Passing this here ensures EvoSuite actually disables its internal JUnitAnalyzer compile/run phase.
-        cmd.add("-Djunit_check=false");
-        evoViewer.accept("[EvoSuite] junit_check=false (CLI) added after -jar to ensure EvoSuite disables JUnitAnalyzer phase");
-
-        // Generation mode
+        cmd.add("-Dsandbox=false");
         cmd.add("-generateSuite");
-        if (isWindows) {
-            evoViewer.accept("[EvoSuite] Windows: using -generateSuite (stable mode for EvoSuite 1.0.6).");
-        } else {
-            evoViewer.accept("[EvoSuite] Non-Windows: using -generateSuite.");
-        }
-
-        // IMPORTANT: Do not force client_on_thread.
-        // EvoSuite 1.0.6 can become unstable (client thread never terminates / master cannot access client state)
-        // when client_on_thread is toggled. Leaving it unset is the most portable behavior.
-        evoViewer.accept("[EvoSuite] client_on_thread: not forced (using EvoSuite default).");
-
-        // IMPORTANT (EvoSuite version compatibility):
-        // EvoSuite 1.0.6 will CRASH on unknown CLI properties (e.g., "-Doutput_directory=...").
-        // To keep output deterministic without relying on version-specific properties, we instead:
-        //   1) set the subprocess working directory to `evoOutputBaseDir` (via runProcessStreaming)
-        //   2) look for generated tests under <workingDir>/evosuite-tests/**
-        // This avoids hardcoding EvoSuite-specific flags that may differ across versions.
-        evoViewer.accept("[EvoSuite] Working directory (deterministic output base): " + evoOutputBaseDir.getAbsolutePath());
-
-        // Target class and classpath
         cmd.add("-class");
         cmd.add(targetClass);
         cmd.add("-projectCP");
         cmd.add(classpath);
 
-        // Windows hang mitigation: limit JVM to a single core.
-        // EvoSuite 1.0.6 does not recognize "-Dnum_cores"; use a JVM flag instead.
-        // NOTE: This flag must be placed BEFORE "-jar". We already added JVM args above, so we add it there.
-        // (We do NOT add any EvoSuite CLI property here to avoid "Unknown property" crashes.)
-
-        // Keep budgets conservative on Windows to avoid long hangs.
-        // NOTE: EvoSuite treats these -D... as its own CLI properties (after -jar).
-        if (isWindows) {
-            cmd.add("-Dsearch_budget=30");
-            cmd.add("-Dglobal_timeout=90");
-            cmd.add("-Dstopping_condition=MaxTime");
-        } else {
-            cmd.add("-Dsearch_budget=60");
-            cmd.add("-Dglobal_timeout=120");
-        }
-        evoViewer.accept("[EvoSuite] Budgets: search_budget=" + (isWindows ? "30" : "60") + ", global_timeout=" + (isWindows ? "90" : "120") + (isWindows ? ", stopping_condition=MaxTime" : ""));
-
-        // Coverage goals (avoid duplicates like LINE:LINE)
+        cmd.add("-Dsearch_budget=60");
+        cmd.add("-Dglobal_timeout=120");
         cmd.add("-Dcriterion=LINE");
+        cmd.add("-Dtest_dir=" + outDir.getAbsolutePath());
 
-        cmd.add("-Dminimize=false");
+        viewer.accept("[EvoSuite] Command: " + String.join(" ", cmd));
 
-        evoViewer.accept("[EvoSuite] Running EvoSuite for class: " + targetClass);
-        evoViewer.accept("[EvoSuite] Command: " + String.join(" ", cmd));
+        java.util.Map<String, String> env = new java.util.HashMap<>();
 
-        // Run EvoSuite with `evoOutputBaseDir` as the working directory so outputs land there.
-        int exit = -1;
-        int attempt = 0;
-        int maxAttempts = 5;
+        String forcedJavaHome = deriveJavaHomeFromJavaExe(javaExe);
+        if (forcedJavaHome != null && !forcedJavaHome.isBlank()) {
+            env.put("JAVA_HOME", forcedJavaHome);
 
-        while (attempt < maxAttempts) {
-            attempt++;
-            evoViewer.accept("[EvoSuite] Attempt " + attempt + " / " + maxAttempts + " starting...");
-
-            exit = runProcessStreaming(project, cmd, evoViewer, evoOutputBaseDir);
-
-            // exit == -1 indicates the process was force-killed due to hang/timeout
-            if (exit == -1) {
-                evoViewer.accept("[EvoSuite] Attempt " + attempt + " was killed due to hang. Retrying...");
-                continue;
-            }
-
-            // Non-hang exit (success or normal failure): stop retrying
-            break;
-        }
-
-        if (exit == -1) {
-            evoViewer.accept("[EvoSuite] All " + maxAttempts + " attempts were killed due to hangs. Giving up.");
-        }
-
-        if (exit != 0 && isWindows) {
-            evoViewer.accept("[EvoSuite] Windows: initial run failed (exit=" + exit + "). Retrying once with harder limits...");
-
-            java.util.List<String> retry = new java.util.ArrayList<>(cmd);
-
-            // Tighten knobs by removing previous values (best-effort).
-            retry.removeIf(s -> s != null && (
-                    s.startsWith("-Dsearch_budget=") ||
-                            s.startsWith("-Dglobal_timeout=") ||
-                            s.startsWith("-Dpopulation=") ||
-                            s.startsWith("-Dmax_test_length=") ||
-                            s.startsWith("-Xmx")
-            ));
-
-            // Add the harder caps.
-            retry.add(1, "-Xmx1024m");
-            retry.add("-Dsearch_budget=8");
-            retry.add("-Dglobal_timeout=30");
-            retry.add("-Dpopulation=4");
-            retry.add("-Dmax_test_length=8");
-            retry.add("-Dstopping_condition=MaxTime");
-
-            evoViewer.accept("[EvoSuite] Windows: retry command: " + String.join(" ", retry));
-            // Retry with the same deterministic working directory.
-            exit = runProcessStreaming(project, retry, evoViewer, evoOutputBaseDir);
-        }
-
-        boolean refactoredPass = false;
-
-        // Convert EvoSuite tests to a pure JUnit4 test (no EvoRunner/scaffolding) for plain projects,
-        // then compile + run it and report PASS/FAIL.
-        try {
-            JUnitConversionResult conv = null;
-            try {
-                conv = postProcessEvoSuiteTestsToPureJUnit4(project, evoOutputBaseDir, targetClass, sourceFilePath, evoViewer);
-            } catch (Throwable tConv) {
-                evoViewer.accept("[EvoSuite] Conversion failed: " + tConv.getMessage());
-                conv = null;
-            }
-
-            if (conv == null) {
-                // Fallback: use cached last-known-good test if available
-                CachedJUnitTest cached = LAST_GOOD_TEST_BY_CUT.get(targetClass);
-                if (cached != null && cached.testJavaSource != null && !cached.testJavaSource.isBlank()) {
-                    evoViewer.accept("[EvoSuite] Using cached last-known-good test for: " + targetClass);
-
-                    // Materialize cached test into evoOutputBaseDir/evosuite-tests to reuse existing pipeline
-                    File evoDir = new File(evoOutputBaseDir, "evosuite-tests");
-                    if (!evoDir.exists()) evoDir.mkdirs();
-
-                    String simple = cached.testClassFqn;
-                    String pkg = "";
-                    int lastDot = cached.testClassFqn.lastIndexOf('.');
-                    if (lastDot >= 0) {
-                        pkg = cached.testClassFqn.substring(0, lastDot);
-                        simple = cached.testClassFqn.substring(lastDot + 1);
-                    }
-                    File pkgDir = evoDir;
-                    if (!pkg.isBlank()) {
-                        pkgDir = new File(evoDir, pkg.replace('.', File.separatorChar));
-                        if (!pkgDir.exists()) pkgDir.mkdirs();
-                    }
-
-                    File outFile = new File(pkgDir, simple + ".java");
-                    Files.writeString(outFile.toPath(), cached.testJavaSource, StandardCharsets.UTF_8);
-
-                    conv = new JUnitConversionResult(outFile, cached.testClassFqn);
-                    evoViewer.accept("[EvoSuite] Cached test materialized at: " + outFile.getAbsolutePath());
-                } else {
-                    evoViewer.accept("[EvoSuite] Cached test fallback unavailable for: " + targetClass);
-                }
-            }
-
-            if (conv != null) {
-                if (isPlainProject(project)) {
-                    // Plain/simple projects: run via external JUnitCore against compiled preview
-                    runJUnit4ForGeneratedTest(project, javaExe, classpath, null, conv.testFile.getAbsolutePath(), conv.testClassFqn, junitViewer);
-
-                    // Also write the generated test into the project so the user can see it under src/test/java
-                    try {
-                        String testSource = Files.readString(conv.testFile.toPath(), StandardCharsets.UTF_8);
-                        writeTestIntoProjectTestSources(project, testSource, conv.testClassFqn, junitViewer);
-                    } catch (Throwable t) {
-                        if (evoViewer != null) evoViewer.accept("[JUnit/IDE] Warning: failed to write generated test into project: " + t.getMessage());
-                    }
-
-                    // Compile the REFACTORED preview source and run the SAME tests against it
-                    if (refactoredSourceText != null && !refactoredSourceText.isBlank()) {
-                        String refactoredOut = compileJavaSourceTextToTempOutput(project, targetClass, refactoredSourceText, classpath);
-// Put refactored preview output FIRST so it overrides the project's original bytecode
-                        refactoredPass = runJUnit4ForGeneratedTest(project, javaExe, classpath, refactoredOut, conv.testFile.getAbsolutePath(), conv.testClassFqn, junitViewer);
-                    } else {
-                        evoViewer.accept("[EvoSuite] Refactored source text is empty; skipping refactored preview test run.");
-                        refactoredPass = false;
-                    }
-                } else {
-                    // Maven/Gradle projects: write test into src/test/java and run via IntelliJ JUnit runner.
-                    evoViewer.accept("[EvoSuite] Maven/Gradle project detected: running generated JUnit4 test via IntelliJ runner.");
-
-                    try {
-                        String testSource = Files.readString(conv.testFile.toPath(), StandardCharsets.UTF_8);
-                        writeTestIntoProjectTestSources(project, testSource, conv.testClassFqn, junitViewer);
-                        runJUnit4ViaIdeaRunner(project, conv.testClassFqn, junitViewer);
-                        evoViewer.accept("[EvoSuite] Note: IntelliJ runner execution is async; not gating apply on PASS/FAIL for Maven/Gradle." );
-                        // Allow apply; gating would require test run listeners.
-                        refactoredPass = true;
-                    } catch (Throwable t) {
-                        junitViewer.accept("[JUnit/IDE] Failed to write/run tests via IntelliJ runner: " + t.getMessage());
-                        refactoredPass = true; // don't block apply due to runner integration issues
-                    }
-                }
+            // Ensure forked processes that call plain "java" also use this JDK
+            String oldPath = System.getenv("PATH");
+            String javaBin = forcedJavaHome + File.separator + "bin";
+            if (oldPath == null || oldPath.isBlank()) {
+                env.put("PATH", javaBin);
             } else {
-                evoViewer.accept("[EvoSuite] No converted JUnit4 test to run.");
-                refactoredPass = false;
+                env.put("PATH", javaBin + File.pathSeparator + oldPath);
             }
+
+            viewer.accept("[EvoSuite] Enforce JAVA_HOME=" + forcedJavaHome);
+            viewer.accept("[EvoSuite] Prepend PATH with " + javaBin);
+        }
+
+        // Defensive fallback: ONLY if Java 9+ is actually used, open required modules for XStream/Reflection.
+        // On Java 8, "--add-opens" is an unrecognized option and will crash the JVM.
+        if (javaMajor >= 9) {
+            String oldJto = System.getenv("JAVA_TOOL_OPTIONS");
+            String opens = " --add-opens=java.base/java.util=ALL-UNNAMED"
+                    + " --add-opens=java.base/java.lang=ALL-UNNAMED"
+                    + " --add-opens=java.base/java.io=ALL-UNNAMED"
+                    + " --add-opens=java.desktop/java.awt=ALL-UNNAMED";
+            env.put("JAVA_TOOL_OPTIONS", (oldJto == null ? "" : oldJto) + opens);
+        }
+
+        int exit = runProcessStreaming(project, cmd, viewer, null, env);
+
+        if (exit != 0) {
+            viewer.accept("[EvoSuite] Generation failed (exit=" + exit + ")");
+            return false;
+        }
+
+        viewer.accept("[EvoSuite] Generation finished successfully.");
+
+        // --- After generation: locate native ESTest and run it against the refactored preview ---
+        NativeEvoSuiteTest nativeTest;
+        try {
+            nativeTest = locateNativeEvoSuiteTests(project, outDir, targetClass, sourceFilePath, viewer);
         } catch (Throwable t) {
-            evoViewer.accept("[EvoSuite] Post-process/run warning: " + t.getMessage());
-            refactoredPass = false;
+            viewer.accept("[EvoSuite] Failed to locate native ESTest: " + t.getMessage());
+            return false;
         }
 
-        if (refactoredPass) {
-            notify(project, "EvoSuite finished for " + targetClass + " (refactored preview PASS)");
+        if (nativeTest == null) {
+            viewer.accept("[EvoSuite] No native ESTest found to execute.");
+            return false;
+        }
+
+        // Compile the refactored preview source so it overrides the project's compiled class
+        String refactoredOut;
+        try {
+            refactoredOut = compileJavaSourceTextToTempOutput(project, targetClass, refactoredSourceText, classpath);
+        } catch (Throwable t) {
+            viewer.accept("[EvoSuite] Failed to compile refactored preview for test run: " + t.getMessage());
+            return false;
+        }
+
+        Consumer<String> junitViewer = openStreamingViewer(project, "EvoSuite Test Run");
+        boolean ok;
+        try {
+            ok = runNativeEvoSuiteJUnit4(project, javaExe, classpath, refactoredOut, nativeTest, junitViewer, evoSuiteJarPath);
+        } catch (Throwable t) {
+            if (junitViewer != null) junitViewer.accept("[TEST] Failed to run native ESTest: " + t.getMessage());
+            ok = false;
+        }
+
+        if (ok) {
+            if (junitViewer != null) junitViewer.accept("[TEST] Native EvoSuite tests PASSED.");
         } else {
-            notify(project, "EvoSuite finished for " + targetClass + " (refactored preview FAIL)");
+            if (junitViewer != null) junitViewer.accept("[TEST] Native EvoSuite tests FAILED.");
         }
 
-        return refactoredPass;
-    }
-    /**
-     * Create a permissive Java security policy file for EvoSuite runs.
-     *
-     * Why: On Windows, EvoSuite scaffolding may initialize Swing/AWT internals which can trigger
-     * native font library loads (e.g., freetype) and temporary file writes. EvoSuite sandbox mode
-     * can block these operations and cause errors like "Could not initialize class sun.font.SunFontManager".
-     *
-     * This policy is intentionally permissive and is only used for the EvoSuite subprocess.
-     */
-    private static String createPermissiveJavaPolicyFile() throws IOException {
-        String policyText = "grant {\n" +
-                "  permission java.security.AllPermission;\n" +
-                "};\n";
-
-        java.nio.file.Path p = java.nio.file.Files.createTempFile("evosuite-permissive-", ".policy");
-        p.toFile().deleteOnExit();
-        java.nio.file.Files.writeString(p, policyText, StandardCharsets.UTF_8);
-        return p.toAbsolutePath().toString();
+        return ok;
     }
 
-    private static final class JUnitConversionResult {
-        final File testFile;
-        final String testClassFqn;
-
-        private JUnitConversionResult(File testFile, String testClassFqn) {
-            this.testFile = testFile;
-            this.testClassFqn = testClassFqn;
+    private static String deriveJavaHomeFromJavaExe(String javaExe) {
+        if (javaExe == null || javaExe.isBlank()) return null;
+        try {
+            java.io.File f = new java.io.File(javaExe);
+            // .../Contents/Home/bin/java  -> .../Contents/Home
+            java.io.File bin = f.getParentFile();
+            if (bin == null) return null;
+            java.io.File home = bin.getParentFile();
+            if (home == null) return null;
+            if (new java.io.File(home, "bin").exists()) return home.getAbsolutePath();
+            return home.getAbsolutePath();
+        } catch (Throwable t) {
+            return null;
         }
     }
 
     /**
-     * Locate EvoSuite-generated *_ESTest.java under <project>/evosuite-tests (or next to the source for plain files),
-     * remove EvoSuite runtime/scaffolding dependencies, and write a pure JUnit4 test file.
-     *
-     * Output file name example: Main_EvoSuiteJUnit4Test.java
+     * Parse major Java version from `java -version` output.
+     * Supports Java 8 style:  java version "1.8.0_XXX"
+     * and Java 9+ style:      java version "11.0.X" / openjdk version "17.0.X"
      */
-    private static JUnitConversionResult postProcessEvoSuiteTestsToPureJUnit4(Project project,
-                                                                              File evoOutputBaseDir,
-                                                                              String targetClassFqn,
-                                                                              String sourceFilePath,
-                                                                              Consumer<String> viewer) throws IOException {
+    private static int parseJavaMajorVersion(String javaVersionOutput) {
+        if (javaVersionOutput == null) return -1;
+        String s = javaVersionOutput;
+
+        // Common forms include lines like:
+        //   java version "1.8.0_452"
+        //   openjdk version "11.0.22" 2024-01-16
+        //   openjdk version "17" 2021-09-14
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?m)\\b(?:openjdk|java)\\s+version\\s+\\\"([^\\\"]+)\\\"")
+                .matcher(s);
+        String ver = null;
+        if (m.find()) {
+            ver = m.group(1);
+        } else {
+            // Fallback: sometimes the first quoted token is the version
+            java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("\\\"(\\d+(?:\\.\\d+){0,2}(?:_\\d+)?)\\\"").matcher(s);
+            if (m2.find()) ver = m2.group(1);
+        }
+        if (ver == null || ver.isBlank()) return -1;
+
+        ver = ver.trim();
+        // Java 8: 1.8.x -> major 8
+        if (ver.startsWith("1.")) {
+            String[] parts = ver.split("\\.");
+            if (parts.length >= 2) {
+                try {
+                    return Integer.parseInt(parts[1]);
+                } catch (NumberFormatException ignored) {
+                    return -1;
+                }
+            }
+            return -1;
+        }
+
+        // Java 9+: starts with major
+        java.util.regex.Matcher m3 = java.util.regex.Pattern.compile("^(\\d+)").matcher(ver);
+        if (m3.find()) {
+            try {
+                return Integer.parseInt(m3.group(1));
+            } catch (NumberFormatException ignored) {
+                return -1;
+            }
+        }
+        return -1;
+    }
+
+
+    private static final class NativeEvoSuiteTest {
+        final File estestFile;
+        final String estestFqn;
+        final File scaffoldingFile;
+        final String scaffoldingFqn;
+
+        private NativeEvoSuiteTest(File estestFile, String estestFqn, File scaffoldingFile, String scaffoldingFqn) {
+            this.estestFile = estestFile;
+            this.estestFqn = estestFqn;
+            this.scaffoldingFile = scaffoldingFile;
+            this.scaffoldingFqn = scaffoldingFqn;
+        }
+    }
+
+    /**
+     * Locate native EvoSuite tests (<CUT>_ESTest.java and <CUT>_ESTest_scaffolding.java) under evosuite-tests.
+     */
+    private static NativeEvoSuiteTest locateNativeEvoSuiteTests(Project project,
+                                                                File evoOutputBaseDir,
+                                                                String targetClassFqn,
+                                                                String sourceFilePath,
+                                                                Consumer<String> viewer) throws IOException {
         String simpleName = targetClassFqn;
         if (simpleName != null && simpleName.contains(".")) {
             simpleName = simpleName.substring(simpleName.lastIndexOf('.') + 1);
@@ -1661,180 +1235,158 @@ public class AiderHelper {
             throw new IllegalArgumentException("targetClassFqn is empty");
         }
 
-        // Deterministic location (preferred): <evoOutputBaseDir>/evosuite-tests/**/<SimpleName>_ESTest.java
-        // EvoSuite often writes tests under package folders (e.g., evosuite-tests/org/foo/Bar_ESTest.java),
-        // so we must search recursively.
         File evoDir = null;
         File estest = null;
+        File scaffolding = null;
 
         String estestName = simpleName + "_ESTest.java";
+        String scaffName = simpleName + "_ESTest_scaffolding.java";
 
         if (evoOutputBaseDir != null) {
-            evoDir = new File(evoOutputBaseDir, "evosuite-tests");
+            // Newer flow: when we pass -Dtest_dir=<dir>, EvoSuite writes directly into that directory
+            // (possibly with package subfolders). So first search the base dir itself.
+            evoDir = evoOutputBaseDir;
             estest = findFileRecursivelyByName(evoDir, estestName);
-        }
+            scaffolding = findFileRecursivelyByName(evoDir, scaffName);
 
-        // Fallback #1: project base path (older behavior)
-        if (estest == null || !estest.exists()) {
-            String basePath = project.getBasePath();
-            if (basePath != null && !basePath.isBlank()) {
-                File base = new File(basePath);
-                evoDir = new File(base, "evosuite-tests");
-                estest = findFileRecursivelyByName(evoDir, estestName);
-            }
-        }
-
-        // Fallback #2: next to the source file (last resort)
-        if (estest == null || !estest.exists()) {
-            if (sourceFilePath != null && !sourceFilePath.isBlank()) {
-                File src = new File(sourceFilePath);
-                File parent = src.getParentFile();
-                if (parent != null) {
-                    evoDir = new File(parent, "evosuite-tests");
-                    estest = findFileRecursivelyByName(evoDir, estestName);
+            // Legacy/alternate layout: <base>/evosuite-tests/**
+            if ((estest == null || !estest.exists())) {
+                File legacy = new File(evoOutputBaseDir, "evosuite-tests");
+                File e2 = findFileRecursivelyByName(legacy, estestName);
+                File s2 = findFileRecursivelyByName(legacy, scaffName);
+                if (e2 != null && e2.exists()) {
+                    evoDir = legacy;
+                    estest = e2;
+                    scaffolding = s2;
                 }
             }
         }
 
-        if (estest == null || !estest.exists()) {
-            StringBuilder sb = new StringBuilder();
-            sb.append("[EvoSuite] No *_ESTest.java found to convert.");
-            sb.append(" Expected file name: ").append(estestName);
-            if (evoDir != null) {
-                sb.append(" under: ").append(evoDir.getAbsolutePath());
+        if ((estest == null || !estest.exists()) && project.getBasePath() != null) {
+            File base = new File(project.getBasePath());
+            evoDir = new File(base, "evosuite-tests");
+            estest = findFileRecursivelyByName(evoDir, estestName);
+            scaffolding = findFileRecursivelyByName(evoDir, scaffName);
+        }
+
+        if ((estest == null || !estest.exists()) && sourceFilePath != null && !sourceFilePath.isBlank()) {
+            File src = new File(sourceFilePath);
+            File parent = src.getParentFile();
+            if (parent != null) {
+                evoDir = new File(parent, "evosuite-tests");
+                estest = findFileRecursivelyByName(evoDir, estestName);
+                scaffolding = findFileRecursivelyByName(evoDir, scaffName);
             }
-            viewer.accept(sb.toString());
+        }
+
+        if (estest == null || !estest.exists()) {
+            if (viewer != null) {
+                viewer.accept("[EvoSuite] No *_ESTest.java found. Expected: " + estestName
+                        + (evoDir != null ? (" under: " + evoDir.getAbsolutePath()) : ""));
+            }
             return null;
         }
-
-        // DEBUG ONLY: persist original EvoSuite ESTest for inspection (Windows newline issues)
-        try {
-            File debugDir = new File(project.getBasePath(), "evosuite-debug/original");
-            if (!debugDir.exists()) {
-                debugDir.mkdirs();
+        if (scaffolding == null || !scaffolding.exists()) {
+            if (viewer != null) {
+                viewer.accept("[EvoSuite] Warning: scaffolding file not found. Expected: " + scaffName
+                        + ". Running ESTest only may fail.");
             }
-
-            File debugCopy = new File(debugDir, estest.getName());
-            Files.copy(estest.toPath(), debugCopy.toPath(), StandardCopyOption.REPLACE_EXISTING);
-
-            viewer.accept("[EvoSuite][DEBUG] Saved original ESTest to: " + debugCopy.getAbsolutePath());
-        } catch (Exception e) {
-            viewer.accept("[EvoSuite][DEBUG] Failed to save original ESTest: " + e.getMessage());
         }
 
-        String code = Files.readString(estest.toPath(), StandardCharsets.UTF_8);
+        String estCode = Files.readString(estest.toPath(), StandardCharsets.UTF_8);
+        String estPkg = extractPackageName(estCode);
+        String estFqn = (estPkg == null || estPkg.isBlank()) ? (simpleName + "_ESTest") : (estPkg + "." + simpleName + "_ESTest");
 
-        if (looksLikeLiteralNNewlineCorruption(code)) {
-            viewer.accept("[EvoSuite] Detected newline corruption (literal 'n' tokens). Applying adaptive repair.");
-            code = repairLiteralNNewlineCorruption(code);
-        }
-        code = normalizeBrokenNewlines(code);
-
-        String outClass = simpleName + "_EvoSuiteJUnit4Test";
-        String converted = convertEvoSuiteToPureJUnit4(code, outClass);
-
-        // Ensure output directory exists
-        if (evoDir != null && !evoDir.exists()) {
-            //noinspection ResultOfMethodCallIgnored
-            evoDir.mkdirs();
+        String scFqn = null;
+        if (scaffolding != null && scaffolding.exists()) {
+            String scCode = Files.readString(scaffolding.toPath(), StandardCharsets.UTF_8);
+            String scPkg = extractPackageName(scCode);
+            scFqn = (scPkg == null || scPkg.isBlank()) ? (simpleName + "_ESTest_scaffolding") : (scPkg + "." + simpleName + "_ESTest_scaffolding");
         }
 
-        File outFile = new File(evoDir != null ? evoDir : estest.getParentFile(), outClass + ".java");
-        Files.writeString(outFile.toPath(), converted, StandardCharsets.UTF_8);
-
-        String pkg = extractPackageName(converted);
-        String fqn = (pkg == null || pkg.isBlank()) ? outClass : (pkg + "." + outClass);
-
-        // Cache last-known-good converted test for this CUT as a fallback.
-        try {
-            LAST_GOOD_TEST_BY_CUT.put(targetClassFqn, new CachedJUnitTest(fqn, converted));
-            viewer.accept("[EvoSuite] Cached last-known-good JUnit4 test for: " + targetClassFqn);
-        } catch (Throwable ignored) {
-            // best-effort only
+        if (viewer != null) {
+            viewer.accept("[EvoSuite] Native test found: " + estest.getAbsolutePath());
+            if (scaffolding != null && scaffolding.exists()) {
+                viewer.accept("[EvoSuite] Native scaffolding found: " + scaffolding.getAbsolutePath());
+            }
+            viewer.accept("[EvoSuite] Native test FQN: " + estFqn);
         }
 
-        viewer.accept("[EvoSuite] Wrote pure JUnit4 test: " + outFile.getAbsolutePath());
-        return new JUnitConversionResult(outFile, fqn);
+        return new NativeEvoSuiteTest(estest, estFqn, scaffolding, scFqn);
+    }
+
+    private static String buildRunClasspath(String extraFirstCp, String tempOut, String projectCp, String evoSuiteJarPath) {
+        String sep = File.pathSeparator;
+        StringBuilder sb = new StringBuilder();
+        if (extraFirstCp != null && !extraFirstCp.isBlank()) sb.append(extraFirstCp).append(sep);
+        if (tempOut != null && !tempOut.isBlank()) sb.append(tempOut).append(sep);
+        if (projectCp != null && !projectCp.isBlank()) sb.append(projectCp);
+        if (evoSuiteJarPath != null && !evoSuiteJarPath.isBlank()) {
+            if (sb.length() > 0) sb.append(sep);
+            sb.append(evoSuiteJarPath);
+        }
+        return sb.toString();
     }
 
     /**
-     * Strip EvoSuite runtime dependencies (EvoRunner/EvoRunnerParameters) and scaffolding inheritance from a generated test.
-     * This is a best-effort conversion meant for simple projects. It keeps @Test methods and JUnit assertions.
+     * Compile and run native EvoSuite tests via JUnitCore.
+     * Adds EvoSuite jar to the classpath so the generated tests compile/run.
      */
-    private static String convertEvoSuiteToPureJUnit4(String code, String outputClassName) {
-        if (code == null) return "";
+    private static boolean runNativeEvoSuiteJUnit4(Project project,
+                                                   String javaExe,
+                                                   String projectCp,
+                                                   String extraFirstCp,
+                                                   NativeEvoSuiteTest nativeTest,
+                                                   Consumer<String> junitViewer,
+                                                   String evoSuiteJarPath) throws IOException, InterruptedException {
+        if (nativeTest == null) return false;
 
-        // Normalize broken newlines that sometimes appear as literal 'n' / 'nn' tokens in generated files
-        String s = normalizeBrokenNewlines(code);
+        java.nio.file.Path outDir = java.nio.file.Files.createTempDirectory("temp_test_classes");
+        outDir.toFile().deleteOnExit();
 
-        // Drop EvoSuite runtime imports
-        s = s.replaceAll("(?m)^\\s*import\\s+org\\.evosuite\\..*;\\s*$\\n?", "");
+        String javac = resolveJavacExecutable();
 
-        // Drop EvoSuite-shaded Mockito imports (generated tests may use shaded Mockito; we don't ship it)
-        s = s.replaceAll("(?m)^\\s*import\\s+static\\s+org\\.evosuite\\.shaded\\.org\\.mockito\\.Mockito\\.\\*;\\s*$\\n?", "");
+        String cpForCompile = buildRunClasspath(extraFirstCp, outDir.toAbsolutePath().toString(), projectCp, evoSuiteJarPath);
 
-        // Drop EvoSuite runtime static assertion helper (some tests use verifyException())
-        s = s.replaceAll("(?m)^\\s*import\\s+static\\s+org\\.evosuite\\.runtime\\.EvoAssertions\\.\\*;\\s*$\\n?", "");
+        java.util.List<String> javacCmd = new java.util.ArrayList<>();
+        javacCmd.add(javac);
+        javacCmd.add("-encoding");
+        javacCmd.add("UTF-8");
+        javacCmd.add("-cp");
+        javacCmd.add(cpForCompile);
+        javacCmd.add("-d");
+        javacCmd.add(outDir.toAbsolutePath().toString());
+        if (nativeTest.scaffoldingFile != null && nativeTest.scaffoldingFile.exists()) {
+            javacCmd.add(nativeTest.scaffoldingFile.getAbsolutePath());
+        }
+        javacCmd.add(nativeTest.estestFile.getAbsolutePath());
 
-        // Remove direct calls to EvoSuite-only helpers that won't compile without the runtime
-        // (best-effort: keep the test structure and JUnit asserts)
-        s = s.replaceAll("(?m)^\\s*verifyException\\(.*\\)\\s*;\\s*$\\n?", "");
-
-        // Best-effort: strip Mockito-based mock/stub lines if EvoSuite generated them.
-        // Without Mockito on the classpath these tests won't compile, and for our preview gating we prefer compilable tests.
-        s = s.replaceAll("(?m)^.*\\bmock\\(.*\\)\\s*;\\s*$\\n?", "");
-        s = s.replaceAll("(?m)^.*\\bdoReturn\\(.*\\)\\.when\\(.*\\)\\..*;\\s*$\\n?", "");
-        s = s.replaceAll("(?m)^.*\\.when\\(.*\\)\\..*;\\s*$\\n?", "");
-        s = s.replaceAll("(?m)^.*ViolatedAssumptionAnswer.*$\\n?", "");
-        s = s.replaceAll("(?m)^.*FileSystemHandling.*$\\n?", "");
-
-        // Best-effort: strip EvoSuite runtime "mock" helpers that remain in the body after we drop imports.
-        // IMPORTANT: do NOT blanket-delete every "Mock*" reference, because projects may legitimately have Mock classes.
-        // Instead, remove only common EvoSuite runtime helper classes and allow extension via patterns.
-        // You can extend this list safely without changing logic.
-        final String[] evoSuiteOnlyLinePatterns = new String[] {
-                // Common EvoSuite file-system / UI mocks (runtime)
-                "(?m)^.*\\bMockFileSystemView\\b.*$\\n?",
-                "(?m)^.*\\bMockJFileChooser\\b.*$\\n?",
-                "(?m)^.*\\bMockFile\\b.*$\\n?",
-                "(?m)^.*\\bMockResources\\b.*$\\n?",
-                "(?m)^.*\\bMockToolkit\\b.*$\\n?",
-                "(?m)^.*\\bMockGraphics\\b.*$\\n?",
-
-                // EvoSuite internal fake/mocking infra often leaks as class names in statements
-                "(?m)^.*\\bEvoSuite\\w*Mock\\w*\\b.*$\\n?",
-
-                // If a line references org.evosuite.* symbols directly (not just imports), it won't compile without runtime
-                "(?m)^.*\\borg\\.evosuite\\..*$\\n?"
-        };
-        for (String p : evoSuiteOnlyLinePatterns) {
-            s = s.replaceAll(p, "");
+        if (junitViewer != null) {
+            junitViewer.accept("[TEST] Compiling generated test (native EvoSuite)...");
+            junitViewer.accept("[TEST] Executing: " + String.join(" ", javacCmd));
+        }
+        int cExit = runProcessStreaming(project, javacCmd, junitViewer);
+        if (cExit != 0) {
+            if (junitViewer != null) junitViewer.accept("[TEST] Compilation failed (exit=" + cExit + ")");
+            return false;
         }
 
-        // If the file contains the literal 'n' newline corruption, try one more repair pass after removals.
-        s = normalizeBrokenNewlines(s);
+        String cpForRun = buildRunClasspath(extraFirstCp, outDir.toAbsolutePath().toString(), projectCp, evoSuiteJarPath);
 
-        // Drop RunWith import (not needed after removing @RunWith)
-        s = s.replaceAll("(?m)^\\s*import\\s+org\\.junit\\.runner\\.RunWith\\s*;\\s*$\\n?", "");
-        // Drop EvoSuite runner annotations (often on the same line)
-        s = s.replaceAll("(?m)^.*@RunWith\\(EvoRunner\\.class\\).*$\\n?", "");
-        s = s.replaceAll("(?m)^.*@EvoRunnerParameters\\(.*\\).*$\\n?", "");
+        java.util.List<String> runCmd = new java.util.ArrayList<>();
+        runCmd.add(javaExe);
+        runCmd.add("-cp");
+        runCmd.add(cpForRun);
+        runCmd.add("org.junit.runner.JUnitCore");
+        runCmd.add(nativeTest.estestFqn);
 
-        // Replace class declaration: remove "extends *_ESTest_scaffolding"
-        s = s.replaceAll("(?m)public\\s+class\\s+([A-Za-z0-9_]+)\\s+extends\\s+[A-Za-z0-9_]+\\s*\\{",
-                "public class " + outputClassName + " {");
+        if (junitViewer != null) {
+            junitViewer.accept("[TEST] Running native EvoSuite tests via JUnitCore...");
+            junitViewer.accept("[TEST] Executing: " + String.join(" ", runCmd));
+        }
 
-        // If for some reason it doesn't extend scaffolding, still rename the class
-        s = s.replaceAll("(?m)public\\s+class\\s+([A-Za-z0-9_]+)\\s*\\{",
-                "public class " + outputClassName + " {");
-
-        // Clean up excessive blank lines
-        s = s.replace("\r\n", "\n");
-        s = s.replace("\r", "\n");
-        s = s.replaceAll("(?m)^[ \\t]*\\n{3,}", "\n\n");
-        s = s.replaceAll("\\n{3,}", "\n\n");
-
-        return s.trim() + "\n";
+        int exit = runProcessStreaming(project, runCmd, junitViewer);
+        return exit == 0;
     }
 
     /**
@@ -1939,6 +1491,13 @@ public class AiderHelper {
     }
 
     private static int countOccurrences(String s, String needle) {
+    /**
+     * Best-effort detection of the major Java version for the given java executable.
+     *
+     * We parse `java -version` output.
+     * - Java 8 prints:  java version "1.8.0_..."
+     * - Java 9+ prints: java version "11.0. ..." / "17.0. ..." etc.
+     */
         if (s == null || needle == null || needle.isEmpty()) return 0;
         int count = 0;
         int idx = 0;
@@ -1967,7 +1526,7 @@ public class AiderHelper {
                                            File workingDirOverride)
             throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.redirectErrorStream(true); // 合并 stdout 和 stderr
+        pb.redirectErrorStream(true); // combine stdout and stderr
 
         if (workingDirOverride != null) {
             pb.directory(workingDirOverride);
@@ -2017,13 +1576,9 @@ public class AiderHelper {
         outputGobbler.setDaemon(true);
         outputGobbler.start();
 
-        // === Replace the fixed waitFor with a polling loop that honors -Dglobal_timeout and prints heartbeats ===
-        // Default hard cap (seconds) if EvoSuite doesn't exit (Windows sometimes hangs during teardown).
         int maxWaitSeconds = 240;
         int globalTimeoutSeconds = -1;
 
-        // If caller provided -Dglobal_timeout=NN, cap the overall wait.
-        // On Windows we keep the buffer SMALL so we can always escape hard hangs (startup + teardown are often the hang point).
         boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
         try {
             for (String a : cmd) {
@@ -2039,16 +1594,14 @@ public class AiderHelper {
             // keep defaults
         }
 
-        // Extra safety net: regardless of output/heartbeats, never let Windows runs exceed 150s.
         if (isWindows) {
             maxWaitSeconds = Math.min(maxWaitSeconds, 150);
         }
 
         long start = System.currentTimeMillis();
         long lastBeat = start;
-        boolean finished = false;
         while (true) {
-            finished = process.waitFor(1, java.util.concurrent.TimeUnit.SECONDS);
+            boolean finished = process.waitFor(1, java.util.concurrent.TimeUnit.SECONDS);
             if (finished) break;
 
             long now = System.currentTimeMillis();
@@ -2059,8 +1612,6 @@ public class AiderHelper {
                 lastBeat = now;
             }
 
-            // If we have seen no output for a long time, assume the process is hung.
-            // Windows tends to hang earlier (often during client teardown), so use a shorter threshold.
             long silentMs = now - lastOutputAt.get();
             long silentThresholdMs = isWindows ? 45_000 : 90_000;
             if (silentMs >= silentThresholdMs) {
@@ -2078,7 +1629,133 @@ public class AiderHelper {
             }
         }
 
-        // Wait briefly for output thread to flush
+        outputGobbler.join(2000);
+        return process.exitValue();
+    }
+
+    private static int runProcessStreaming(Project project,
+                                           java.util.List<String> cmd,
+                                           Consumer<String> viewer,
+                                           File workingDirOverride,
+                                           java.util.Map<String, String> envOverrides)
+            throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true); // combine stdout and stderr
+
+        if (workingDirOverride != null) {
+            pb.directory(workingDirOverride);
+        } else {
+            String basePath = project.getBasePath();
+            if (basePath != null && !basePath.isEmpty()) {
+                pb.directory(new File(basePath));
+            }
+        }
+
+        if (envOverrides != null && !envOverrides.isEmpty()) {
+            pb.environment().putAll(envOverrides);
+        }
+
+        // Prevent a parent-shell JAVA_TOOL_OPTIONS (eg, --add-opens) from breaking Java 8.
+        // We only add module opens explicitly when running on Java 9+ in the command line.
+        if (pb.environment().containsKey("JAVA_TOOL_OPTIONS")) {
+            String jto = pb.environment().get("JAVA_TOOL_OPTIONS");
+            if (jto != null && jto.contains("--add-opens")) {
+                pb.environment().remove("JAVA_TOOL_OPTIONS");
+            }
+        }
+
+        Process process = pb.start();
+
+        // Track last time we saw output; if output stops for too long, treat as hang.
+        final java.util.concurrent.atomic.AtomicLong lastOutputAt = new java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis());
+        Thread outputGobbler = new Thread(() -> {
+            try (InputStream is = process.getInputStream()) {
+                StringBuilder buf = new StringBuilder();
+                int b;
+                while ((b = is.read()) != -1) {
+                    char ch = (char) b;
+                    // EvoSuite often prints progress using carriage returns (\r) without newlines.
+                    if (ch == '\n' || ch == '\r') {
+                        if (buf.length() > 0) {
+                            String cleaned = stripNonPrintable(stripAnsi(buf.toString()));
+                            if (cleaned != null && !cleaned.trim().isEmpty()) {
+                                lastOutputAt.set(System.currentTimeMillis());
+                                if (viewer != null) viewer.accept(cleaned);
+                            }
+                            buf.setLength(0);
+                        }
+                    } else {
+                        buf.append(ch);
+                    }
+                }
+                // flush any remaining partial line
+                if (buf.length() > 0) {
+                    String cleaned = stripNonPrintable(stripAnsi(buf.toString()));
+                    if (cleaned != null && !cleaned.trim().isEmpty()) {
+                        lastOutputAt.set(System.currentTimeMillis());
+                        if (viewer != null) viewer.accept(cleaned);
+                    }
+                }
+            } catch (IOException e) {
+                // stream closes when process exits; ignore
+            }
+        });
+        outputGobbler.setDaemon(true);
+        outputGobbler.start();
+
+        int maxWaitSeconds = 240;
+        int globalTimeoutSeconds = -1;
+
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        try {
+            for (String a : cmd) {
+                if (a != null && a.startsWith("-Dglobal_timeout=")) {
+                    String v = a.substring("-Dglobal_timeout=".length()).trim();
+                    globalTimeoutSeconds = Integer.parseInt(v);
+                    int buffer = isWindows ? 30 : 90;
+                    maxWaitSeconds = Math.max(45, globalTimeoutSeconds + buffer);
+                    break;
+                }
+            }
+        } catch (Throwable ignored) {
+            // keep defaults
+        }
+
+        if (isWindows) {
+            maxWaitSeconds = Math.min(maxWaitSeconds, 150);
+        }
+
+        long start = System.currentTimeMillis();
+        long lastBeat = start;
+        while (true) {
+            boolean finished = process.waitFor(1, java.util.concurrent.TimeUnit.SECONDS);
+            if (finished) break;
+
+            long now = System.currentTimeMillis();
+            long elapsedSec = (now - start) / 1000;
+
+            if (viewer != null && (now - lastBeat) >= 15_000) {
+                viewer.accept("[INFO] Process still running... elapsed=" + elapsedSec + "s (max=" + maxWaitSeconds + "s)");
+                lastBeat = now;
+            }
+
+            long silentMs = now - lastOutputAt.get();
+            long silentThresholdMs = isWindows ? 45_000 : 90_000;
+            if (silentMs >= silentThresholdMs) {
+                if (viewer != null) viewer.accept("[ERROR] Process appears hang (no output for " + (silentMs / 1000) + "s). Killing it forcefully...");
+                process.destroyForcibly();
+                process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                return -1;
+            }
+
+            if (elapsedSec >= maxWaitSeconds) {
+                if (viewer != null) viewer.accept("[ERROR] Process timed out (elapsed=" + elapsedSec + "s). Killing it forcefully...");
+                process.destroyForcibly();
+                process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+                return -1;
+            }
+        }
+
         outputGobbler.join(2000);
         return process.exitValue();
     }
@@ -2162,15 +1839,33 @@ public class AiderHelper {
      * Then fall back to JAVA_11_HOME, JAVA_HOME, else "java".
      */
     private static String resolveJavaExecutable() {
-        String java8 = System.getenv("JAVA_8_HOME");
+        // 0) Prefer explicit Java 8 home if provided
+        String java8 = getConfiguredJavaHome("JAVA_8_HOME");
         String p = resolveExeUnderHome(java8, "java");
         if (p != null) return p;
 
-        String java11 = System.getenv("JAVA_11_HOME");
+        // 1) Use IntelliJ Project SDK if available
+        try {
+            Project project = ProjectManager.getInstance().getOpenProjects().length > 0
+                    ? ProjectManager.getInstance().getOpenProjects()[0]
+                    : null;
+            if (project != null) {
+                ProjectRootManager prm = ProjectRootManager.getInstance(project);
+                if (prm != null && prm.getProjectSdk() != null && prm.getProjectSdk().getHomePath() != null) {
+                    p = resolveExeUnderHome(prm.getProjectSdk().getHomePath(), "java");
+                    if (p != null) return p;
+                }
+            }
+        } catch (Throwable ignored) {
+            // best-effort only
+        }
+
+        // 2) Fall back to JAVA_11_HOME, then JAVA_HOME
+        String java11 = getConfiguredJavaHome("JAVA_11_HOME");
         p = resolveExeUnderHome(java11, "java");
         if (p != null) return p;
 
-        String javaHome = System.getenv("JAVA_HOME");
+        String javaHome = getConfiguredJavaHome("JAVA_HOME");
         p = resolveExeUnderHome(javaHome, "java");
         if (p != null) return p;
 
@@ -2178,51 +1873,21 @@ public class AiderHelper {
     }
 
     /**
-     * Best-effort tools.jar discovery for EvoSuite 1.0.6.
-     * For a java executable like /path/to/jdk8/bin/java, tools.jar is usually at /path/to/jdk8/lib/tools.jar.
-     *
-     * @return absolute path to tools.jar if found; otherwise null.
-     */
-    private static String findToolsJarForJavaExe(String javaExe) {
-        try {
-            if (javaExe == null || javaExe.isBlank()) return null;
-
-            File javaFile = new File(javaExe);
-            if (!javaFile.exists()) return null;
-
-            // If javaExe points to ".../bin/java", then javaHome is the parent of "bin"
-            File binDir = javaFile.getParentFile();
-            if (binDir == null) return null;
-
-            File javaHome = binDir.getParentFile();
-            if (javaHome == null) return null;
-
-            File tools = new File(javaHome, "lib" + File.separator + "tools.jar");
-            if (tools.exists() && tools.isFile()) {
-                return tools.getAbsolutePath();
-            }
-        } catch (Throwable t) {
-            // ignore
-        }
-        return null;
-    }
-
-    /**
      * Option B: EvoSuite jar is bundled inside the plugin resources.
      * This method extracts it to a temp file and returns the absolute path.
      *
      * Expected resource path (inside plugin jar):
-     *   /tools/evosuite.jar
+     *   /tools/evosuite-1.2.0.jar
      *
-     * Put the jar at: src/main/resources/tools/evosuite.jar
+     * Put the jar at: src/main/resources/tools/evosuite-1.2.0.jar
      */
     private static String resolveBundledEvoSuiteJarPath() throws IOException {
         // Resource inside the plugin jar
-        String resourcePath = "/tools/evosuite.jar";
+        String resourcePath = "/tools/evosuite-1.2.0.jar";
 
         InputStream in = AiderHelper.class.getResourceAsStream(resourcePath);
         if (in == null) {
-            throw new FileNotFoundException("Resource not found: " + resourcePath + " (ensure src/main/resources/tools/evosuite.jar exists)");
+            throw new FileNotFoundException("Resource not found: " + resourcePath + " (ensure src/main/resources/tools/evosuite-1.2.0.jar exists)");
         }
 
         java.nio.file.Path tmp = java.nio.file.Files.createTempFile("evosuite-", ".jar");
@@ -2246,116 +1911,6 @@ public class AiderHelper {
                 .matcher(javaSource);
         if (m.find()) return m.group(1);
         return null;
-    }
-
-    /**
-     * Extract a tool jar bundled in plugin resources to a temp file and return its absolute path.
-     */
-    private static String extractBundledToolJar(String resourcePath, String prefix) throws IOException {
-        InputStream in = AiderHelper.class.getResourceAsStream(resourcePath);
-        if (in == null) {
-            throw new FileNotFoundException("Resource not found: " + resourcePath);
-        }
-        java.nio.file.Path tmp = java.nio.file.Files.createTempFile(prefix, ".jar");
-        tmp.toFile().deleteOnExit();
-        try (in) {
-            java.nio.file.Files.copy(in, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        }
-        return tmp.toAbsolutePath().toString();
-    }
-
-    /**
-     * Resolve bundled JUnit4 jar path. Put the jar at: src/main/resources/tools/junit-4.13.2.jar
-     */
-    private static String resolveBundledJUnit4JarPath() throws IOException {
-        return extractBundledToolJar("/tools/junit-4.13.2.jar", "junit4-");
-    }
-
-    /**
-     * Resolve bundled Hamcrest jar path. Put the jar at: src/main/resources/tools/hamcrest-core-1.3.jar
-     */
-    private static String resolveBundledHamcrestJarPath() throws IOException {
-        return extractBundledToolJar("/tools/hamcrest-core-1.3.jar", "hamcrest-");
-    }
-
-
-    private static boolean runJUnit4ForGeneratedTest(Project project,
-                                                     String javaExe,
-                                                     String projectCp,
-                                                     String overrideFirstCp,
-                                                     String testJavaFilePath,
-                                                     String testClassFqn,
-                                                     Consumer<String> viewer) throws IOException, InterruptedException {
-        if (projectCp == null || projectCp.isBlank()) {
-            if (viewer != null) viewer.accept("[JUnit] Skipped: project classpath is empty.");
-            return false;
-        }
-        if (testJavaFilePath == null || testJavaFilePath.isBlank()) {
-            if (viewer != null) viewer.accept("[JUnit] Skipped: test file path is empty.");
-            return false;
-        }
-        if (testClassFqn == null || testClassFqn.isBlank()) {
-            if (viewer != null) viewer.accept("[JUnit] Skipped: test class name is empty.");
-            return false;
-        }
-
-        String junitJar = resolveBundledJUnit4JarPath();
-        String hamcrestJar = resolveBundledHamcrestJarPath();
-        String javac = resolveJavacExecutable();
-
-        java.nio.file.Path testOutDir = java.nio.file.Files.createTempDirectory("evosuite-junit-classes-");
-        testOutDir.toFile().deleteOnExit();
-
-        StringBuilder compileCp = new StringBuilder();
-        if (overrideFirstCp != null && !overrideFirstCp.isBlank()) {
-            compileCp.append(overrideFirstCp).append(File.pathSeparator);
-        }
-        compileCp.append(projectCp)
-                .append(File.pathSeparator).append(junitJar)
-                .append(File.pathSeparator).append(hamcrestJar);
-
-        java.util.List<String> javacCmd = new java.util.ArrayList<>();
-        javacCmd.add(javac);
-        javacCmd.add("-encoding");
-        javacCmd.add("UTF-8");
-        javacCmd.add("-cp");
-        javacCmd.add(compileCp.toString());
-        javacCmd.add("-d");
-        javacCmd.add(testOutDir.toAbsolutePath().toString());
-        javacCmd.add(testJavaFilePath);
-
-        if (viewer != null) viewer.accept("[JUnit] Compiling generated test: " + String.join(" ", javacCmd));
-        int cExit = runProcessStreaming(project, javacCmd, viewer);
-        if (cExit != 0) {
-            if (viewer != null) viewer.accept("[JUnit] FAIL: javac exited with code " + cExit);
-            return false;
-        }
-
-        StringBuilder runCp = new StringBuilder();
-        runCp.append(testOutDir.toAbsolutePath().toString()).append(File.pathSeparator);
-        if (overrideFirstCp != null && !overrideFirstCp.isBlank()) {
-            runCp.append(overrideFirstCp).append(File.pathSeparator);
-        }
-        runCp.append(projectCp)
-                .append(File.pathSeparator).append(junitJar)
-                .append(File.pathSeparator).append(hamcrestJar);
-
-        java.util.List<String> javaCmd = new java.util.ArrayList<>();
-        javaCmd.add(javaExe);
-        javaCmd.add("-cp");
-        javaCmd.add(runCp.toString());
-        javaCmd.add("org.junit.runner.JUnitCore");
-        javaCmd.add(testClassFqn);
-
-        if (viewer != null) viewer.accept("[JUnit] Running: " + String.join(" ", javaCmd));
-        int tExit = runProcessStreaming(project, javaCmd, viewer);
-        if (tExit == 0) {
-            if (viewer != null) viewer.accept("[JUnit] PASS: all tests passed.");
-            return true;
-        } else {
-            if (viewer != null) viewer.accept("[JUnit] FAIL: test run exited with code " + tExit);
-            return false;
-        }
     }
 
     /**

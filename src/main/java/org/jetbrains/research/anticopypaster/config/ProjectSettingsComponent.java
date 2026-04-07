@@ -20,8 +20,8 @@ import java.net.URISyntaxException;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.Hashtable;
 
-import org.jetbrains.research.anticopypaster.ide.AiderHelper;
 
 public class ProjectSettingsComponent {
 
@@ -54,18 +54,64 @@ public class ProjectSettingsComponent {
     private JLabel upToLabel;
     private JPanel manualHeuristicsPanel;
     private JPanel aiSettingsPanel;
+    private JPanel multiAgentSettingsPanel;
+
     private JPanel aiderSettingsPanel;
+
+    // Original (Multi-agent panel) widget references (preserved before we alias to duplicated Aider widgets)
+    private JComboBox multiAgentLlmProviderComboBox;
+    private JComboBox multiAgentAidermodelComboBox;
+    private JPasswordField multiAgentApiKey;
+
+    private JPanel multiAgentProviderPanel;
+    private JPanel multiAgentApiKeyPanel;
+    private JPanel multiAgentModelPanel;
+
+    private JPanel multiAgentAzureApiVersion;
+    private JTextField multiAgentApiVersion;
+
+    private JPanel multiAgentAzureApiBase;
+    private JTextField multiAgentApiBase;
+    private JLabel multiAgentApiBaseHelp;
+
+    private JPanel multiAgentOllamaModelPanel;
+    private JTextField multiAgentOllamaModel;
+
+    private JSlider multiAgentIterationSlider;
+    private JPanel multiAgentIterationNumberPanel;
+    private JLabel multiAgentIterationHelp;
+
+    // Aider panel bindings (copied from multiAgentSettingsPanel with `aider*` prefixes)
+    private JComboBox aiderLlmProviderComboBox;
+    private JComboBox aiderAidermodelComboBox;
+    private JPasswordField aiderAiderApiKey;
+
+    private JPanel aiderProviderPanel;
+    private JPanel aiderApiKeyPanel;
+    private JPanel aiderModelPanel;
+
+    private JPanel aiderAzureApiVersion;
+    private JTextField aiderApiVersion;
+
+    private JPanel aiderAzureApiBase;
+    private JTextField aiderApiBase;
+    private JLabel aiderApiBaseHelp;
+
+    private JPanel aiderOllamaModelPanel;
+    private JTextField aiderOllamaModel;
+
+    private JSlider aiderIterationSlider;
+    private JPanel aiderIterationNumberPanel;
+    private JLabel aiderIterationHelp;
     private JSpinner timeBufferSelector;
     private JSpinner minimumMethodSelector;
     private JSpinner maxParamsSpinner;
-    private JPasswordField aiderApiKey;
+    private JPasswordField agentApiKey;
     private JComboBox aidermodelComboBox;
     private JComboBox llmProviderComboBox;
     private JPanel providerPanel;
     private JPanel apiKeyPanel;
     private JPanel modelPanel;
-    private JTextField aiderPath;
-    private JPanel pathPanel;
     private JButton reset;
     private JPanel filesPanel;
     private ButtonGroup analysisSelectionButtonGroup;
@@ -91,21 +137,24 @@ public class ProjectSettingsComponent {
     private JPanel ollamaModelPanel;
     private JTextField ollamaModel;
     private JPanel fileSelectionPanel;
-    private JPanel aiderHelper;
+    private JSlider iterationSlider;
+    private JPanel iterationNumberPanel;
+    private JLabel iterationHelp;
+    private JTextField textField1;
+    private JLabel aiderPath;
+    private JPanel numberMethodPanel;
+    private JPanel waitSecondPanel;
+    private JPanel cloneTypePanel;
+    private JPanel nameModelPanel;
+    private JPanel nameNumberPanel;
+    private JPanel parameterNamePanel;
+    private JScrollPane scrollpanel;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     private final Project projectRef;
     private Integer pendingMainModelIndex = null;
     private Integer pendingNameModelIndex = null;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
-    private JButton toggleApiKeyVisibilityButton;
-    private JPanel passwordWithEyePanel;
-    private boolean apiKeyVisible = false;
-    private char defaultApiKeyEchoChar;
-    private boolean azurePlaceholderActive = false;
-    private Color apiBaseNormalForeground;
-
-    private boolean apiVersionPlaceholderActive = false;
 
     // Suppress auto-close of Aider windows during initial render
     private boolean suppressAutoCloseOnInit = true;
@@ -114,11 +163,8 @@ public class ProjectSettingsComponent {
     private Object lastNameModel = null;
     private JLabel apiBaseWarningLabel;
     private JLabel ollamaModelWarningLabel;
-    // Remember the last user-entered Azure API Base and the fixed Ollama base
-    private String lastAzureApiBase = "";
-    private static final String OLLAMA_DEFAULT_API_BASE = "http://127.0.0.1:11434";
-    private static final String AZURE_DEFAULT_API_BASE = "https://aider3.cognitiveservices.azure.com/";
-
+    private JLabel apiKeyWarningLabel;
+    private JLabel multiAgentApiKeyWarningLabel;
     /**
      * Builds and wires the Project Settings UI for AntiCopyPaster, including provider/model pickers,
      * Aider fields, validation, and dynamic panel visibility.
@@ -138,75 +184,110 @@ public class ProjectSettingsComponent {
             boolean displayAndResolveCredentials = credentialsDialog.showAndGet();
             credentialsDialog.saveSettings(displayAndResolveCredentials);
         });
-        reset.addActionListener(e -> {
-            aiderPath.setText("aider");
-            notifySettingsChanged();
-        });
+
         // Add tooltips for Aider-related fields
-        aiderPath.setToolTipText("Specify the path to the aider executable (The path to where you installed Aider). Default is 'aider'.");
         llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, DeepSeek or Azure.");
         aidermodelComboBox.setToolTipText("Select the specific model you want to use from the provider.");
-        aiderApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
+        agentApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
+
+        // Preserve the original (multi-agent panel) widgets before we alias to the duplicated Aider panel widgets.
+        multiAgentLlmProviderComboBox = llmProviderComboBox;
+        multiAgentAidermodelComboBox = aidermodelComboBox;
+        multiAgentApiKey = agentApiKey;
+
+        multiAgentProviderPanel = providerPanel;
+        multiAgentApiKeyPanel = apiKeyPanel;
+        multiAgentModelPanel = modelPanel;
+
+        multiAgentAzureApiVersion = azureApiVersion;
+        multiAgentApiVersion = apiVersion;
+
+        multiAgentAzureApiBase = azureApiBase;
+        multiAgentApiBase = apiBase;
+        multiAgentApiBaseHelp = apiBaseHelp;
+
+        multiAgentOllamaModelPanel = ollamaModelPanel;
+        multiAgentOllamaModel = ollamaModel;
+
+        multiAgentIterationSlider = iterationSlider;
+        multiAgentIterationNumberPanel = iterationNumberPanel;
+        multiAgentIterationHelp = iterationHelp;
+
+        // If the new duplicated Aider panel exists (aiderSettingsPanel + aider* bindings),
+        // alias those components into the existing fields so the rest of this class continues to work.
+        // This lets us keep all provider/model/api-key logic in one place.
+        if (aiderSettingsPanel != null) {
+            if (aiderLlmProviderComboBox != null) {
+                llmProviderComboBox = aiderLlmProviderComboBox;
+            }
+            if (aiderAidermodelComboBox != null) {
+                aidermodelComboBox = aiderAidermodelComboBox;
+            }
+            if (aiderAiderApiKey != null) {
+                agentApiKey = aiderAiderApiKey;
+            }
+
+            if (aiderProviderPanel != null) {
+                providerPanel = aiderProviderPanel;
+            }
+            if (aiderApiKeyPanel != null) {
+                apiKeyPanel = aiderApiKeyPanel;
+            }
+            if (aiderModelPanel != null) {
+                modelPanel = aiderModelPanel;
+            }
+
+            if (aiderAzureApiVersion != null) {
+                azureApiVersion = aiderAzureApiVersion;
+            }
+            if (aiderApiVersion != null) {
+                apiVersion = aiderApiVersion;
+            }
+
+            if (aiderAzureApiBase != null) {
+                azureApiBase = aiderAzureApiBase;
+            }
+            if (aiderApiBase != null) {
+                apiBase = aiderApiBase;
+            }
+            if (aiderApiBaseHelp != null) {
+                apiBaseHelp = aiderApiBaseHelp;
+            }
+
+            if (aiderOllamaModelPanel != null) {
+                ollamaModelPanel = aiderOllamaModelPanel;
+            }
+            if (aiderOllamaModel != null) {
+                ollamaModel = aiderOllamaModel;
+            }
+
+            if (aiderIterationSlider != null) {
+                iterationSlider = aiderIterationSlider;
+            }
+            if (aiderIterationNumberPanel != null) {
+                iterationNumberPanel = aiderIterationNumberPanel;
+            }
+            if (aiderIterationHelp != null) {
+                iterationHelp = aiderIterationHelp;
+            }
+        }
         filesPath.setToolTipText("Specify the path to the directory with the files you would like to search for clones in.");
 
         // Add warning icon and tooltip for empty API key
         Icon warningIcon = AllIcons.General.Error;
-        JLabel apiKeyWarningLabel = new JLabel(warningIcon);
+        apiKeyWarningLabel = new JLabel(warningIcon);
         apiKeyWarningLabel.setToolTipText("API key not found for selected provider");
         apiKeyWarningLabel.setVisible(false);
 
+        multiAgentApiKeyWarningLabel = new JLabel(warningIcon);
+        multiAgentApiKeyWarningLabel.setToolTipText("API key not found for selected provider");
+        multiAgentApiKeyWarningLabel.setVisible(false);
 
-        // Set layout and add aiderApiKey and warning label with proper constraints
+
+        // Set layout and add agentApiKey and warning label with proper constraints
         apiKeyPanel.setLayout(new GridBagLayout());
-        defaultApiKeyEchoChar = aiderApiKey.getEchoChar();
-
         // Wrap the password field with an eye icon drawn "inside" the field at the far right
-        passwordWithEyePanel = new JPanel();
-        passwordWithEyePanel.setLayout(new OverlayLayout(passwordWithEyePanel));
-        passwordWithEyePanel.setOpaque(false);
-        // Ensure the wrapper uses the same height as the field (prevents icon from floating vertically)
-        Dimension fieldSize = aiderApiKey.getPreferredSize();
-        passwordWithEyePanel.setPreferredSize(new Dimension(fieldSize.width, fieldSize.height));
-        passwordWithEyePanel.setMinimumSize(new Dimension(0, fieldSize.height));
-        passwordWithEyePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, fieldSize.height));
-
-        Icon eyeIcon = AllIcons.General.InspectionsEye;
-        toggleApiKeyVisibilityButton = new JButton(eyeIcon); // IntelliJ eye icon
-        toggleApiKeyVisibilityButton.setFocusable(false);
-        toggleApiKeyVisibilityButton.setBorderPainted(false);
-        toggleApiKeyVisibilityButton.setContentAreaFilled(false);
-        toggleApiKeyVisibilityButton.setOpaque(false);
-        toggleApiKeyVisibilityButton.setMargin(new Insets(0, 0, 0, 0));
-        toggleApiKeyVisibilityButton.setBorder(BorderFactory.createEmptyBorder());
-        // Tight preferred size around the icon to avoid extra blank space
-        toggleApiKeyVisibilityButton.setPreferredSize(new Dimension(eyeIcon.getIconWidth() + 2, eyeIcon.getIconHeight() + 2));
-        toggleApiKeyVisibilityButton.setToolTipText("Show/Hide the API key");
-
-        // Align eye icon horizontally with combo-box arrows by adding a right inset
-        int eyeRightInset = 6; // tweak this to nudge left/right as desired
-        int eyePad = eyeIcon.getIconWidth() + eyeRightInset + 4; // keep a small gap between text and icon
-        aiderApiKey.setBorder(BorderFactory.createCompoundBorder(
-                aiderApiKey.getBorder(),
-                BorderFactory.createEmptyBorder(0, 0, 0, eyePad)
-        ));
-
-        // A transparent right-aligned holder laid over the password field, vertically centered
-        int vpad = Math.max(0, (fieldSize.height - eyeIcon.getIconHeight()) / 2 - 1); // -1 to visually nudge to true center
-        JPanel eyeOverlay = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        eyeOverlay.setOpaque(false);
-        eyeOverlay.setBorder(BorderFactory.createEmptyBorder(vpad, 0, vpad, eyeRightInset));
-        eyeOverlay.add(toggleApiKeyVisibilityButton);
-
-        // Ensure both components fill the same bounds for proper overlay
-        aiderApiKey.setAlignmentX(0.0f);
-        aiderApiKey.setAlignmentY(0.5f);
-        eyeOverlay.setAlignmentX(0.0f);
-        eyeOverlay.setAlignmentY(0.5f);
-
-        passwordWithEyePanel.add(eyeOverlay);
-        passwordWithEyePanel.add(aiderApiKey);
-
-        // Add aiderApiKey field (now wrapped) with constraints
+        JComponent passwordWithEyePanel = createPasswordFieldWithEye(agentApiKey);
         GridBagConstraints apiKeyGbc = new GridBagConstraints();
         apiKeyGbc.gridx = 1;
         apiKeyGbc.gridy = 0;
@@ -215,61 +296,6 @@ public class ProjectSettingsComponent {
         apiKeyGbc.anchor = GridBagConstraints.WEST;
         apiKeyGbc.insets = new Insets(0, 0, 0, 0);
         apiKeyPanel.add(passwordWithEyePanel, apiKeyGbc);
-        scrollApiKeyToStart();
-        if (apiBase != null) {
-            apiBaseNormalForeground = apiBase.getForeground();
-            apiBase.addFocusListener(new java.awt.event.FocusAdapter() {
-                @Override
-                public void focusGained(java.awt.event.FocusEvent e) {
-                    if (azurePlaceholderActive) {
-                        azurePlaceholderActive = false;
-                        apiBase.setText("");
-                        if (apiBaseNormalForeground != null) {
-                            apiBase.setForeground(apiBaseNormalForeground);
-                        }
-                    }
-                }
-
-                @Override
-                public void focusLost(java.awt.event.FocusEvent e) {
-                    Object providerObj = llmProviderComboBox.getSelectedItem();
-                    boolean isAzureProvider = providerObj != null
-                            && "Azure".equalsIgnoreCase(providerObj.toString());
-                    if (isAzureProvider) {
-                        String text = apiBase.getText();
-                        if (text == null || text.trim().isEmpty()) {
-                            showAzurePlaceholder();
-                        }
-                    }
-                }
-            });
-        }
-
-        if (apiVersion != null) {
-            apiVersion.addFocusListener(new java.awt.event.FocusAdapter() {
-                @Override
-                public void focusGained(java.awt.event.FocusEvent e) {
-                    if (apiVersionPlaceholderActive) {
-                        apiVersionPlaceholderActive = false;
-                        apiVersion.setText("");
-                        apiVersion.setForeground(apiBaseNormalForeground);
-                    }
-                }
-
-                @Override
-                public void focusLost(java.awt.event.FocusEvent e) {
-                    Object providerObj = llmProviderComboBox.getSelectedItem();
-                    boolean isAzureProvider = providerObj != null
-                            && "Azure".equalsIgnoreCase(providerObj.toString());
-                    if (isAzureProvider) {
-                        String text = apiVersion.getText();
-                        if (text == null || text.trim().isEmpty()) {
-                            showAzureVersionPlaceholder();
-                        }
-                    }
-                }
-            });
-        }
 
         // Add warning icon with constraints
         GridBagConstraints warningGbc = new GridBagConstraints();
@@ -278,6 +304,27 @@ public class ProjectSettingsComponent {
         warningGbc.anchor = GridBagConstraints.WEST;
         warningGbc.insets = new Insets(0, 5, 0, 0);
         apiKeyPanel.add(apiKeyWarningLabel, warningGbc);
+
+        if (multiAgentApiKeyPanel != null && multiAgentApiKeyPanel != apiKeyPanel) {
+            multiAgentApiKeyPanel.setLayout(new GridBagLayout());
+
+            GridBagConstraints multiApiKeyGbc = new GridBagConstraints();
+            multiApiKeyGbc.gridx = 1;
+            multiApiKeyGbc.gridy = 0;
+            multiApiKeyGbc.weightx = 1.0;
+            multiApiKeyGbc.fill = GridBagConstraints.HORIZONTAL;
+            multiApiKeyGbc.anchor = GridBagConstraints.WEST;
+            multiApiKeyGbc.insets = new Insets(0, 0, 0, 0);
+            JComponent multiPasswordWithEyePanel = createPasswordFieldWithEye(multiAgentApiKey);
+            multiAgentApiKeyPanel.add(multiPasswordWithEyePanel, multiApiKeyGbc);
+
+            GridBagConstraints multiWarningGbc = new GridBagConstraints();
+            multiWarningGbc.gridx = 2;
+            multiWarningGbc.gridy = 0;
+            multiWarningGbc.anchor = GridBagConstraints.WEST;
+            multiWarningGbc.insets = new Insets(0, 5, 0, 0);
+            multiAgentApiKeyPanel.add(multiAgentApiKeyWarningLabel, multiWarningGbc);
+        }
 
         // Warning labels for Ollama-required fields (simple and consistent with API key)
         apiBaseWarningLabel = new JLabel(AllIcons.General.Error);
@@ -300,21 +347,6 @@ public class ProjectSettingsComponent {
             }
         } catch (Exception ignored) {}
 
-        // Toggle API key visibility via the eye button
-        toggleApiKeyVisibilityButton.addActionListener(e2 -> {
-            apiKeyVisible = !apiKeyVisible;
-            if (apiKeyVisible) {
-                aiderApiKey.setEchoChar((char) 0); // show characters
-                toggleApiKeyVisibilityButton.setIcon(AllIcons.General.InspectionsEye); // fallback: use eye icon for both states
-                toggleApiKeyVisibilityButton.setToolTipText("Hide the API key");
-                scrollApiKeyToStart();
-            } else {
-                aiderApiKey.setEchoChar(defaultApiKeyEchoChar); // restore default echo char
-                toggleApiKeyVisibilityButton.setIcon(AllIcons.General.InspectionsEye); // eye icon
-                toggleApiKeyVisibilityButton.setToolTipText("Show the API key");
-                scrollApiKeyToStart();
-            }
-        });
 
         // Set layout for filesPanel and filesCheckboxesPanel; initialize ArrayList to keep track of checkboxes
         filesPanel.setLayout(new GridBagLayout());
@@ -464,20 +496,39 @@ public class ProjectSettingsComponent {
         });
 
         // Watch for API key input changes and toggle warning visibility
-        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+        agentApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             public void insertUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
             public void removeUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
             public void changedUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
 
             private void updateWarning() {
-                boolean isEmpty = new String(aiderApiKey.getPassword()).trim().isEmpty();
-                apiKeyWarningLabel.setVisible(isEmpty);
+                boolean isClone = isCloneSelected();
+                boolean isEmpty = new String(agentApiKey.getPassword()).trim().isEmpty();
+                updateApiKeyWarningForPanel(apiKeyPanel, apiKeyWarningLabel, isClone && isEmpty);
             }
         });
 
+        if (multiAgentApiKey != null && multiAgentApiKey != agentApiKey) {
+            multiAgentApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+                public void insertUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
+                public void removeUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
+                public void changedUpdate(javax.swing.event.DocumentEvent e) { updateWarning(); }
+
+                private void updateWarning() {
+                    boolean isCloneMulti = isCloneMultiAgentSelected();
+                    boolean isEmpty = new String(multiAgentApiKey.getPassword()).trim().isEmpty();
+                    updateApiKeyWarningForPanel(multiAgentApiKeyPanel, multiAgentApiKeyWarningLabel, isCloneMulti && isEmpty);
+                }
+            });
+        }
+
         // Initialize visibility based on current field state
-        boolean initialEmpty = new String(aiderApiKey.getPassword()).trim().isEmpty();
-        apiKeyWarningLabel.setVisible(initialEmpty);
+        boolean initialIsCloneMulti = isCloneMultiAgentSelected();
+        boolean initialIsClone = isCloneSelected();
+        boolean initialSingleEmpty = agentApiKey == null || new String(agentApiKey.getPassword()).trim().isEmpty();
+        boolean initialMultiEmpty = multiAgentApiKey == null || new String(multiAgentApiKey.getPassword()).trim().isEmpty();
+        updateApiKeyWarningForPanel(apiKeyPanel, apiKeyWarningLabel, initialIsClone && initialSingleEmpty);
+        updateApiKeyWarningForPanel(multiAgentApiKeyPanel, multiAgentApiKeyWarningLabel, initialIsCloneMulti && initialMultiEmpty);
         addConditionallyEnabledMetricGroup(keywordsEnabledCheckBox,keywordsSlider,keywordsRequiredCheckBox);
         addConditionallyEnabledMetricGroup(couplingEnabledCheckBox,couplingSlider,couplingRequiredCheckBox);
         addConditionallyEnabledMetricGroup(complexityEnabledCheckBox, complexitySlider, complexityRequiredCheckBox);
@@ -524,7 +575,9 @@ public class ProjectSettingsComponent {
             public void removeUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
             public void changedUpdate(javax.swing.event.DocumentEvent e) { updateOllamaWarnings(); }
         });
+        // Ensure initial provider/model state is applied
         String initProvider = (String) llmProviderComboBox.getSelectedItem();
+        setModelOptionsForProvider(initProvider, aidermodelComboBox);
         updateProviderSpecificPanels(initProvider);
 
         if ("Ollama".equalsIgnoreCase(initProvider)) {
@@ -538,81 +591,50 @@ public class ProjectSettingsComponent {
             llmProviderComboBox.setSelectedItem("OpenAI");
         }
 
-        // Manually trigger action listener to populate models
-        if (llmProviderComboBox.getActionListeners().length > 0) {
-            llmProviderComboBox.getActionListeners()[0].actionPerformed(null);
-        }
-        // Watch for changes in the Aider API key field
-//        aiderApiKey.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-//            public void insertUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
-//            public void removeUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
-//            public void changedUpdate(javax.swing.event.DocumentEvent e) { notifySettingsChanged(); }
-//        });
-
         // Watch for changes in the model selection combo box
         aidermodelComboBox.addActionListener(e -> notifySettingsChanged());
-        // Update model list when provider changes. You can add different providers and their models here.
-        llmProviderComboBox.addActionListener(e -> {
-            String selectedProvider = (String) llmProviderComboBox.getSelectedItem();
-            if (selectedProvider != null) {
-                switch (selectedProvider) {
-                    case "OpenAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
-                            "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-chat", "gpt-5-nano", "gpt-5-mini", "gpt-5.1", "gpt-5.1-2025-11-13", "gpt-5.1-chat-latest", "o1", "o1-mini", "o3", "o3-mini", "o4-mini"
-                    }));
-                    case "Gemini" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-pro-exp-03-25", "gemini-2.5-flash", "gemini-2.5-flash-lite-preview-06-17", "gemini-2.5-flash-lite-preview-09-2025", "gemini-2.5-flash-preview-09-2025", "gemini-3-pro-preview"
-                    }));
-                    case "Anthropic" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                           "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-20250219",
-                            "claude-3-7-sonnet-latest", "claude-3-opus-latest", "claude-3-sonnet-20240229", "claude-4-opus-20250514", "claude-4-sonnet-20250514",
-                            "claude-opus-4-1", "claude-opus-4-1-20250805", "claude-opus-4-5-20251101", "claude-haiku-4-5", "claude-sonnet-4-5", "claude-sonnet-4-5-20250929",
-                    }));
-                    case "DeepSeek" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "deepseek-chat", "deepseek-coder", "deepseek-reasoner", "deepseek-v3"
-                    }));
-                    case "Azure" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
-                    }));
-                    case "xAI" -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                           "grok-2", "grok-2-latest", "grok-3", "grok-3-beta", "grok-3-fast-beta", "grok-3-latest", "grok-3-mini", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-4", "grok-4-0709", "grok-4-fast-non-reasoning", "grok-4-latest", "grok-beta", "grok-code-fast", "grok-code-fast-1", "grok-code-fast-1-0825"
-                    }));
 
-                    default -> aidermodelComboBox.setModel(new DefaultComboBoxModel<>(new String[] {
-                            "gpt-5" // fallback
-                    }));
-                }
-                // Toggle Azure/Ollama-specific fields and API base behavior on provider change
-                updateProviderSpecificPanels(selectedProvider);
+        // Unified provider/model wiring for BOTH Clone (Aider panel alias) and Clone_multiagent (original panel)
+        wireProviderAndModel(llmProviderComboBox, aidermodelComboBox, apiKeyPanel, modelPanel, azureApiVersion, azureApiBase, ollamaModelPanel);
 
-                // Normalize API base according to provider
-                if ("Ollama".equalsIgnoreCase(selectedProvider)) {
-                    if (apiBase != null) {
-                        apiBase.setText(OLLAMA_DEFAULT_API_BASE);
-                    }
-                } else if ("Azure".equalsIgnoreCase(selectedProvider)) {
-                    if (apiBase != null && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
-                        apiBase.setText(lastAzureApiBase);
-                    }
-                }
-
-                // Refresh layout to reflect visibility changes
-                azureApiVersion.revalidate();
-                azureApiVersion.repaint();
-                azureApiBase.revalidate();
-                azureApiBase.repaint();
-                mainPanel.revalidate();
-                mainPanel.repaint();
-            }
-        });
-
-        // Ensure warning icons are up-to-date at startup
-        updateOllamaWarnings();
+        if (multiAgentLlmProviderComboBox != null && multiAgentLlmProviderComboBox != llmProviderComboBox) {
+            wireProviderAndModel(
+                    multiAgentLlmProviderComboBox,
+                    multiAgentAidermodelComboBox,
+                    multiAgentApiKeyPanel,
+                    multiAgentModelPanel,
+                    multiAgentAzureApiVersion,
+                    multiAgentAzureApiBase,
+                    multiAgentOllamaModelPanel
+            );
+        }
 
         timeBufferSelector.setModel(new SpinnerNumberModel(10, 0, Integer.MAX_VALUE, 1));
         minimumMethodSelector.setModel(new SpinnerNumberModel(2, 2, Integer.MAX_VALUE, 1));
         maxParamsSpinner.setModel(new SpinnerNumberModel(10, 0, 255, 1));
         createUIComponents();
+
+        // Make iteration slider move in discrete steps and show ticks
+        // Show ONLY min/max labels (not every tick)
+        if (iterationSlider != null) {
+            iterationSlider.setPaintTicks(true);
+            iterationSlider.setSnapToTicks(true);
+
+            if (iterationSlider.getMajorTickSpacing() <= 0) {
+                iterationSlider.setMajorTickSpacing(1);
+            }
+            // Minor ticks are optional; keep them only if already configured.
+            // If you want minor ticks, you can set them in the .form; we won't force them here.
+
+            // Only show labels at the two ends
+            int min = iterationSlider.getMinimum();
+            int max = iterationSlider.getMaximum();
+            Hashtable<Integer, JLabel> labelTable = new Hashtable<>();
+            labelTable.put(min, new JLabel(String.valueOf(min)));
+            labelTable.put(max, new JLabel(String.valueOf(max)));
+            iterationSlider.setLabelTable(labelTable);
+            iterationSlider.setPaintLabels(true);
+        }
 
         // Record initial model state
         lastMainModel = modelComboBox.getSelectedItem();
@@ -623,14 +645,13 @@ public class ProjectSettingsComponent {
     }
 
     /**
-     * Applies pending model combo-box changes and closes any open Aider viewer tabs if models changed.
+     * Applies pending model combo-box changes.
      */
     public void applyModelChanges() {
         boolean mainModelChanged = (pendingMainModelIndex != null);
         boolean nameModelChanged = (pendingNameModelIndex != null);
 
         if (mainModelChanged || nameModelChanged) {
-            AiderHelper.closeAllViewers(projectRef);
             lastMainModel = modelComboBox.getSelectedItem();
             lastNameModel = nameModel.getSelectedItem();
             pendingMainModelIndex = null;
@@ -652,43 +673,134 @@ public class ProjectSettingsComponent {
      * and synchronizes the available options in the name model dropdown.
      */
     private void updatePanelVisibilities() {
-        boolean isMainModelAider = (modelComboBox.getSelectedIndex() == 2);
-        boolean isNameModelAider = (nameModel.getSelectedIndex() == 2);
-        boolean isMainModelCopilot = (modelComboBox.getSelectedIndex() == 3);
+        String mainModel = (String) modelComboBox.getSelectedItem();
+        String nameModelValue = (String) nameModel.getSelectedItem();
 
-        manualHeuristicsPanel.setVisible(modelComboBox.getSelectedIndex() == 1);
-        aiSettingsPanel.setVisible(modelComboBox.getSelectedIndex() == 0);
+        boolean isMainClone = "Clone".equals(mainModel);
+        boolean isMainCloneMulti = "Clone_multiagent".equals(mainModel);
+        boolean isMainCopilot = "Copilot".equals(mainModel);
 
-        // Show Aider settings if either model selection is Aider, but hide if main model is Copilot
-        boolean showAiderSettings = (isMainModelAider || isNameModelAider) && !isMainModelCopilot;
-        aiderSettingsPanel.setVisible(showAiderSettings);
-        aiderSettingsPanel.revalidate();
-        aiderSettingsPanel.repaint();
-//        aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
-        // Keep Aider help label visibility in sync with the Aider settings panel.
+        boolean isNameClone = "Clone".equals(nameModelValue);
+        boolean isNameCloneMulti = "Clone_multiagent".equals(nameModelValue);
+
+        boolean isMainManual = "my manual heuristics".equals(mainModel);
+        boolean isMainAiModel = "the AI model".equals(mainModel);
+
+        manualHeuristicsPanel.setVisible(isMainManual);
+        aiSettingsPanel.setVisible(isMainAiModel);
+
+        // Show Aider (single-agent) clone settings when either selection is "Clone",
+        // but hide if the main model is Copilot.
+        boolean showAiderSettings = (isMainClone || isNameClone) && !isMainCopilot;
+
+        // Show multi-agent clone settings when either selection is "Clone_multiagent",
+        // but hide if the main model is Copilot.
+        boolean showMultiAgentSettings = (isMainCloneMulti || isNameCloneMulti) && !isMainCopilot;
+
+        if (aiderSettingsPanel != null) {
+            aiderSettingsPanel.setVisible(showAiderSettings);
+            aiderSettingsPanel.revalidate();
+            aiderSettingsPanel.repaint();
+            aiderSettingsPanel.setMinimumSize(new Dimension(200, 100));
+        }
+
+        if (multiAgentSettingsPanel != null) {
+            multiAgentSettingsPanel.setVisible(showMultiAgentSettings);
+            multiAgentSettingsPanel.revalidate();
+            multiAgentSettingsPanel.repaint();
+            if (showMultiAgentSettings) {
+                multiAgentSettingsPanel.setMinimumSize(new Dimension(200, 100));
+            }
+        }
+
+        // Keep Aider help label visibility in sync with the Clone (Aider) panel.
         if (aiderHelpLabel != null) {
             aiderHelpLabel.setVisible(showAiderSettings);
             aiderHelpLabel.revalidate();
             aiderHelpLabel.repaint();
         }
 
-        // Show file-selection scope controls only for Aider or Copilot as main model
-        boolean showFileSelection = isMainModelAider || isMainModelCopilot;
+        // Ensure provider-specific rows are correct for the currently visible clone settings panel
+        if (showAiderSettings && aiderLlmProviderComboBox != null) {
+            String provider = (String) aiderLlmProviderComboBox.getSelectedItem();
+            updateProviderSpecificPanelsFor(provider, apiKeyPanel, modelPanel, azureApiVersion, azureApiBase, ollamaModelPanel);
+        }
+        if (showMultiAgentSettings && multiAgentLlmProviderComboBox != null) {
+            String provider = (String) multiAgentLlmProviderComboBox.getSelectedItem();
+            updateProviderSpecificPanelsFor(provider, multiAgentApiKeyPanel, multiAgentModelPanel, multiAgentAzureApiVersion, multiAgentAzureApiBase, multiAgentOllamaModelPanel);
+        }
+
+        // Show file-selection scope controls for Clone/Clone_multiagent/Copilot as main model
+        boolean showFileSelection = isMainClone || isMainCloneMulti || isMainCopilot;
         if (fileSelectionPanel != null) {
             fileSelectionPanel.setVisible(showFileSelection);
             fileSelectionPanel.revalidate();
             fileSelectionPanel.repaint();
         }
 
-        // Filter nameModel options based on whether main model is Aider or Copilot, preserving selection if possible
+        boolean showSingleApiKeyWarning = showAiderSettings
+                && (agentApiKey == null || new String(agentApiKey.getPassword()).trim().isEmpty());
+        boolean showMultiApiKeyWarning = showMultiAgentSettings
+                && (multiAgentApiKey == null || new String(multiAgentApiKey.getPassword()).trim().isEmpty());
+        updateApiKeyWarningForPanel(apiKeyPanel, apiKeyWarningLabel, showSingleApiKeyWarning);
+        updateApiKeyWarningForPanel(multiAgentApiKeyPanel, multiAgentApiKeyWarningLabel, showMultiApiKeyWarning);
+
+        // Hide method/name/clone configuration panels for Clone and Clone_multiagent in the main model selection.
+        boolean hideClonePanelsForClone = isMainClone;
+        boolean hideClonePanelsForCloneMulti = isMainCloneMulti;
+        boolean hideClonePanels = hideClonePanelsForClone || hideClonePanelsForCloneMulti;
+
+        if (numberMethodPanel != null) {
+            numberMethodPanel.setVisible(!hideClonePanelsForClone);
+            numberMethodPanel.revalidate();
+            numberMethodPanel.repaint();
+        }
+
+        if (cloneTypePanel != null) {
+            cloneTypePanel.setVisible(!hideClonePanels);
+            cloneTypePanel.revalidate();
+            cloneTypePanel.repaint();
+        }
+
+        if (nameModelPanel != null) {
+            nameModelPanel.setVisible(!hideClonePanels);
+            nameModelPanel.revalidate();
+            nameModelPanel.repaint();
+        }
+
+        if (parameterNamePanel != null) {
+            parameterNamePanel.setVisible(!hideClonePanels);
+            parameterNamePanel.revalidate();
+            parameterNamePanel.repaint();
+        }
+
+        if (nameNumberPanel != null) {
+            nameNumberPanel.setVisible(!hideClonePanels);
+            nameNumberPanel.revalidate();
+            nameNumberPanel.repaint();
+        }
+
+        if (iterationNumberPanel != null) {
+            iterationNumberPanel.setVisible(isMainCloneMulti);
+            iterationNumberPanel.revalidate();
+            iterationNumberPanel.repaint();
+        }
+
+        // Filter nameModel options based on whether main model is Clone, Clone_multiagent, or Copilot, preserving selection if possible
         Object currentSelection = nameModel.getSelectedItem();
-        if (isMainModelAider) {
-            // When Aider is selected as the main model, only allow "Aider" in name model
+        if (isMainClone) {
+            // When Clone is selected as the main model, only allow "Clone" in name model
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Clone"});
             nameModel.setModel(model);
             nameModel.setSelectedItem("Clone");
         }
-        else if (isMainModelCopilot) {
+        else if (isMainCloneMulti) {
+            // When Clone_multiagent is selected as the main model, only allow "Clone_multiagent" in name model
+            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Clone_multiagent"});
+            nameModel.setModel(model);
+            nameModel.setSelectedItem("Clone_multiagent");
+        }
+        else if (isMainCopilot) {
             // When Copilot is selected as the main model, only allow "Copilot" in name model
             DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Copilot"});
             nameModel.setModel(model);
@@ -696,15 +808,14 @@ public class ProjectSettingsComponent {
         }
         else {
             // When other main models are selected, restore all options
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Clone"});
+            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Clone", "Clone_multiagent", "Copilot"});
             nameModel.setModel(model);
             if (currentSelection != null && model.getIndexOf(currentSelection) != -1) {
                 nameModel.setSelectedItem(currentSelection);
             } else {
-                nameModel.setSelectedIndex(0); // fallback to first item if previous selection no longer valid
+                nameModel.setSelectedIndex(0);
             }
         }
-
     }
 
     /**
@@ -728,8 +839,8 @@ public class ProjectSettingsComponent {
     /**
      * Returns the root settings panel for embedding into dialogs.
      */
-    public JPanel getPanel() {
-        return mainPanel;
+    public JComponent getPanel() {
+        return scrollpanel;
     }
 
     /**
@@ -763,13 +874,43 @@ public class ProjectSettingsComponent {
      * Returns which judgement model to use (ML, manual heuristics, or Aider).
      */
     public ProjectSettingsState.JudgementModel getJudgementModel() {
-        return switch (modelComboBox.getSelectedIndex()) {
-            case 0 -> ProjectSettingsState.JudgementModel.TENSORFLOW;
-            case 1 -> ProjectSettingsState.JudgementModel.USER_SETTINGS;
-            case 2 -> ProjectSettingsState.JudgementModel.AIDER;
-            case 3 -> ProjectSettingsState.JudgementModel.COPILOT;
-            default -> throw new IllegalStateException("Unknown option selected.");
-        };
+        String mainModel = (String) modelComboBox.getSelectedItem();
+        if ("the AI model".equals(mainModel)) return ProjectSettingsState.JudgementModel.TENSORFLOW;
+        if ("my manual heuristics".equals(mainModel)) return ProjectSettingsState.JudgementModel.USER_SETTINGS;
+        if ("Clone".equals(mainModel)) return ProjectSettingsState.JudgementModel.AIDER;
+        if ("Clone_multiagent".equals(mainModel)) return ProjectSettingsState.JudgementModel.AIDER; // treat as AIDER for now
+        if ("Copilot".equals(mainModel)) return ProjectSettingsState.JudgementModel.COPILOT;
+        throw new IllegalStateException("Unknown option selected: " + mainModel);
+    }
+
+    /**
+     * Returns which clone pipeline mode is selected based on the main model combo-box.
+     */
+    public ProjectSettingsState.CloneMode getCloneMode() {
+        String mainModel = (String) modelComboBox.getSelectedItem();
+        if ("Clone_multiagent".equals(mainModel)) {
+            return ProjectSettingsState.CloneMode.MULTI_AGENT;
+        }
+        // Default and "Clone"
+        return ProjectSettingsState.CloneMode.SINGLE_AGENT;
+    }
+
+    /**
+     * Sets the clone pipeline mode by updating the main model combo-box.
+     */
+    public void setCloneMode(ProjectSettingsState.CloneMode mode) {
+        isLoadingSettings = true;
+        try {
+            if (mode == ProjectSettingsState.CloneMode.MULTI_AGENT) {
+                modelComboBox.setSelectedItem("Clone_multiagent");
+            } else {
+                modelComboBox.setSelectedItem("Clone");
+            }
+            lastMainModel = modelComboBox.getSelectedItem();
+            updatePanelVisibilities();
+        } finally {
+            isLoadingSettings = false;
+        }
     }
 
     /**
@@ -778,7 +919,13 @@ public class ProjectSettingsComponent {
     public void setJudgementModel(ProjectSettingsState.JudgementModel model) {
         isLoadingSettings = true;
         try {
-            modelComboBox.setSelectedIndex(model.getIdx());
+            switch (model) {
+                case TENSORFLOW -> modelComboBox.setSelectedItem("the AI model");
+                case USER_SETTINGS -> modelComboBox.setSelectedItem("my manual heuristics");
+                case AIDER -> modelComboBox.setSelectedItem("Clone");
+                case COPILOT -> modelComboBox.setSelectedItem("Copilot");
+                default -> modelComboBox.setSelectedItem("the AI model");
+            }
             lastMainModel = modelComboBox.getSelectedItem();
             updatePanelVisibilities();
         } finally {
@@ -991,17 +1138,36 @@ public class ProjectSettingsComponent {
         return complexityRequiredCheckBox.isSelected();
     }
 
+
+    private boolean isCloneMultiAgentSelected() {
+        Object mainSel = modelComboBox != null ? modelComboBox.getSelectedItem() : null;
+        Object nameSel = nameModel != null ? nameModel.getSelectedItem() : null;
+        return "Clone_multiagent".equals(mainSel) || "Clone_multiagent".equals(nameSel);
+    }
+
+    private boolean isCloneSelected() {
+        Object mainSel = modelComboBox != null ? modelComboBox.getSelectedItem() : null;
+        Object nameSel = nameModel != null ? nameModel.getSelectedItem() : null;
+        return "Clone".equals(mainSel) || "Clone".equals(nameSel);
+    }
+
     /**
-     * Returns the Aider API key from the password field.
+     * Returns the API key from the password field.
      */
     public String getAiderApiKey() {
-        return new String(aiderApiKey.getPassword());
+        if (isCloneMultiAgentSelected() && multiAgentApiKey != null) {
+            return new String(multiAgentApiKey.getPassword());
+        }
+        return new String(agentApiKey.getPassword());
     }
 
     /**
      * Returns the selected Aider model name.
      */
     public String getSelectedAiderModel() {
+        if (isCloneMultiAgentSelected() && multiAgentAidermodelComboBox != null) {
+            return (String) multiAgentAidermodelComboBox.getSelectedItem();
+        }
         return (String) aidermodelComboBox.getSelectedItem();
     }
 
@@ -1009,14 +1175,27 @@ public class ProjectSettingsComponent {
      * Sets the Aider API key and scrolls the field to the start.
      */
     public void setAiderApiKey(String apiKey) {
-        aiderApiKey.setText(apiKey);
-        scrollApiKeyToStart();
+        if (isCloneMultiAgentSelected() && multiAgentApiKey != null) {
+            multiAgentApiKey.setText(apiKey);
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    multiAgentApiKey.setCaretPosition(0);
+                } catch (Exception ignored) {
+                }
+            });
+            return;
+        }
+        agentApiKey.setText(apiKey);
     }
 
     /**
      * Selects the Aider model in the combo box.
      */
     public void setSelectedAiderModel(String model) {
+        if (isCloneMultiAgentSelected() && multiAgentAidermodelComboBox != null) {
+            multiAgentAidermodelComboBox.setSelectedItem(model);
+            return;
+        }
         aidermodelComboBox.setSelectedItem(model);
     }
 
@@ -1024,6 +1203,9 @@ public class ProjectSettingsComponent {
      * Returns the selected LLM provider.
      */
     public String getLlmProvider() {
+        if (isCloneMultiAgentSelected() && multiAgentLlmProviderComboBox != null) {
+            return (String) multiAgentLlmProviderComboBox.getSelectedItem();
+        }
         return (String) llmProviderComboBox.getSelectedItem();
     }
 
@@ -1031,74 +1213,69 @@ public class ProjectSettingsComponent {
      * Selects the LLM provider in the combo box.
      */
     public void setLlmProvider(String provider) {
+        if (isCloneMultiAgentSelected() && multiAgentLlmProviderComboBox != null) {
+            multiAgentLlmProviderComboBox.setSelectedItem(provider);
+            return;
+        }
         llmProviderComboBox.setSelectedItem(provider);
     }
 
     /**
      * Returns the Azure/OpenAI API base URL text.
      */
-    public String getApiBase() {return apiBase.getText(); }
+    public String getApiBase() {
+        if (isCloneMultiAgentSelected() && multiAgentApiBase != null) {
+            return multiAgentApiBase.getText();
+        }
+        return apiBase.getText();
+    }
+
     public void setOllamaModel(String model) {
+        if (isCloneMultiAgentSelected() && multiAgentOllamaModel != null) {
+            multiAgentOllamaModel.setText(model);
+            return;
+        }
         ollamaModel.setText(model);
     }
 
     public String getOllamaModel() {
+        if (isCloneMultiAgentSelected() && multiAgentOllamaModel != null) {
+            return multiAgentOllamaModel.getText();
+        }
         return ollamaModel.getText();
     }
 
     /**
      * Sets the Azure/OpenAI API base URL text.
-     * Ensures any placeholder styling is cleared so real values
-     * appear with the normal text color.
      */
     public void setApiBase(String base) {
-        if (apiBase == null) return;
-
-        if (base == null || base.trim().isEmpty()) {
-            // Treat empty as "no saved value"; leave text empty for placeholder logic
-            azurePlaceholderActive = false;
-            apiBase.setText("");
-            if (apiBaseNormalForeground != null) {
-                apiBase.setForeground(apiBaseNormalForeground);
-            }
-        } else {
-            // Real user value: clear placeholder state and restore normal color
-            azurePlaceholderActive = false;
-            if (apiBaseNormalForeground != null) {
-                apiBase.setForeground(apiBaseNormalForeground);
-            }
-            apiBase.setText(base);
-            // Remember last Azure base so we don't show placeholder next time
-            lastAzureApiBase = base.trim();
+        if (isCloneMultiAgentSelected() && multiAgentApiBase != null) {
+            multiAgentApiBase.setText(base);
+            return;
         }
+        apiBase.setText(base);
     }
 
     /**
      * Returns the Azure API version text.
      */
-    public String getApiVersion() {return apiVersion.getText(); }
+    public String getApiVersion() {
+        if (isCloneMultiAgentSelected() && multiAgentApiVersion != null) {
+            return multiAgentApiVersion.getText();
+        }
+        return apiVersion.getText();
+    }
 
     /**
      * Sets the Azure API version text.
      * Clears placeholder state so saved values are rendered as normal text.
      */
     public void setApiVersion(String version) {
-        if (apiVersion == null) return;
-
-        if (version == null || version.trim().isEmpty()) {
-            // No saved version; keep field logically empty so placeholder may be shown
-            apiVersionPlaceholderActive = false;
-            apiVersion.setText("");
-            if (apiBaseNormalForeground != null) {
-                apiVersion.setForeground(apiBaseNormalForeground);
-            }
-        } else {
-            apiVersionPlaceholderActive = false;
-            if (apiBaseNormalForeground != null) {
-                apiVersion.setForeground(apiBaseNormalForeground);
-            }
-            apiVersion.setText(version);
+        if (isCloneMultiAgentSelected() && multiAgentApiVersion != null) {
+            multiAgentApiVersion.setText(version);
+            return;
         }
+        apiVersion.setText(version);
     }
 
     /**
@@ -1158,21 +1335,45 @@ public class ProjectSettingsComponent {
     }
 
     /**
-     * Sets the name-model selection by index while suppressing change side-effects during load.
+     * Sets the name-model selection by value while suppressing change side-effects during load.
      */
-    public void setNameModel(int selectedIndex) {
+    public void setNameModel(String selectedValue) {
         isLoadingSettings = true;
         try {
-            nameModel.setSelectedIndex(selectedIndex);
+            if (selectedValue == null || selectedValue.isBlank()) {
+                selectedValue = "code2vec";
+            }
+
+            ComboBoxModel<String> model = nameModel.getModel();
+            boolean found = false;
+            for (int i = 0; i < model.getSize(); i++) {
+                String value = model.getElementAt(i);
+                if (selectedValue.equals(value)) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (found) {
+                nameModel.setSelectedItem(selectedValue);
+            } else {
+                nameModel.setSelectedItem("code2vec");
+            }
+
             lastNameModel = nameModel.getSelectedItem();
+            pendingNameModelIndex = nameModel.getSelectedIndex();
+            updatePanelVisibilities();
         } finally {
             isLoadingSettings = false;
         }
     }
     /**
-     * Returns the index of the selected name-model option.
+     * Returns the selected name-model option.
      */
-    public int getNameModel() { return (nameModel.getSelectedIndex()); }
+    public String getNameModel() {
+        Object selected = nameModel.getSelectedItem();
+        return selected == null ? "code2vec" : selected.toString();
+    }
     /**
      * Returns the number of predicted names to request for suggestions.
      */
@@ -1188,20 +1389,6 @@ public class ProjectSettingsComponent {
     }
 
     /**
-     * Returns the configured path to the Aider executable.
-     */
-    public String getAiderPath() {
-        return aiderPath.getText();
-    }
-
-    /**
-     * Sets the path to the Aider executable.
-     */
-    public void setAiderPath(String path) {
-        aiderPath.setText(path);
-    }
-
-    /**
      * Returns the directory path used for multi-file analysis.
      */
     public String getFilesPath() {
@@ -1213,6 +1400,41 @@ public class ProjectSettingsComponent {
      */
     public void setFilesPath(String path) {
         filesPath.setText(path);
+    }
+
+    /**
+     * Returns the configured Aider executable path.
+     */
+    public String getAiderPath() {
+        return textField1.getText();
+    }
+
+    /**
+     * Sets the configured Aider executable path.
+     */
+    public void setAiderPath(String path) {
+        textField1.setText(path == null ? "" : path);
+    }
+
+    /**
+     * Gets the maximum number of refactoring attempts from the iteration slider.
+     */
+    public int getMaxAttempts() {
+        if (isCloneMultiAgentSelected() && multiAgentIterationSlider != null) {
+            return multiAgentIterationSlider.getValue();
+        }
+        return iterationSlider.getValue();
+    }
+
+    /**
+     * Sets the maximum number of refactoring attempts on the iteration slider.
+     */
+    public void setMaxAttempts(int maxAttempts) {
+        if (isCloneMultiAgentSelected() && multiAgentIterationSlider != null) {
+            multiAgentIterationSlider.setValue(maxAttempts);
+            return;
+        }
+        iterationSlider.setValue(maxAttempts);
     }
 
     /**
@@ -1238,6 +1460,14 @@ public class ProjectSettingsComponent {
         aiderHelpLabel.setIcon(AllIcons.Ide.External_link_arrow);
         apiBaseHelp = new JLabel();
         apiBaseHelp.setIcon(AllIcons.General.ContextHelp);
+        iterationHelp = new JLabel();
+        iterationHelp.setIcon(AllIcons.General.ContextHelp);
+
+        // Help labels for the duplicated Aider settings panel (custom-create bindings)
+        aiderApiBaseHelp = new JLabel();
+        aiderApiBaseHelp.setIcon(AllIcons.General.ContextHelp);
+        aiderIterationHelp = new JLabel();
+        aiderIterationHelp.setIcon(AllIcons.General.ContextHelp);
     }
 
     /**
@@ -1268,148 +1498,143 @@ public class ProjectSettingsComponent {
      * Warns the user if the entered API key's prefix does not match the selected provider.
      */
     void validateApiKeyPrefix() {
-        if (!apiKeyPanel.isVisible()) return;
-
-        String apiKey = new String(aiderApiKey.getPassword()).trim();
-        String provider = (String) llmProviderComboBox.getSelectedItem();
-        boolean mismatch = false;
-
-        if (provider != null && !apiKey.isEmpty()) {
-            switch (provider) {
-                case "OpenAI":
-                    mismatch = !apiKey.startsWith("sk-proj-");
-                    break;
-                case "Gemini":
-                    mismatch = !apiKey.startsWith("AIzaSy");
-                    break;
-                case "DeepSeek":
-                    mismatch = !apiKey.startsWith("sk-");
-                    break;
-                case "Anthropic":
-                    mismatch = !apiKey.startsWith("sk-ant-");
-                    break;
-            }
-        }
-    }
-
-    private void showAzureVersionPlaceholder() {
-        if (apiVersion == null) return;
-        apiVersionPlaceholderActive = true;
-        Color placeholderColor = UIManager.getColor("TextField.inactiveForeground");
-        if (placeholderColor == null && apiBaseNormalForeground != null) {
-            placeholderColor = apiBaseNormalForeground.brighter();
-        }
-        if (placeholderColor != null) {
-            apiVersion.setForeground(placeholderColor);
-        }
-        apiVersion.setText("2025-01-01");
-    }
-
-    /**
-     * Shows or hides Azure-specific fields based on the selected provider.
-     */
-    private void showAzurePlaceholder() {
-        if (apiBase == null) return;
-        azurePlaceholderActive = true;
-        Color placeholderColor = UIManager.getColor("TextField.inactiveForeground");
-        if (placeholderColor == null && apiBaseNormalForeground != null) {
-            placeholderColor = apiBaseNormalForeground.brighter();
-        }
-        if (placeholderColor != null) {
-            apiBase.setForeground(placeholderColor);
+        String error = getApiKeyPrefixValidationError();
+        if (error != null) {
+            JOptionPane.showMessageDialog(
+                    mainPanel,
+                    error,
+                    "API Key Provider Mismatch",
+                    JOptionPane.WARNING_MESSAGE
+            );
         }
         apiBase.setText(AZURE_DEFAULT_API_BASE);
+    }
+
+    public String getApiKeyPrefixValidationError() {
+        return ApiKeyPrefixValidator.validate(getLlmProvider(), getAiderApiKey());
     }
 
     /**
      * Shows or hides Azure-specific fields based on the selected provider.
      */
     private void updateProviderSpecificPanels(String provider) {
-        boolean isAzure = provider != null && "Azure".equalsIgnoreCase(provider);
-        boolean isOllama = provider != null && "Ollama".equalsIgnoreCase(provider);
-
-        // Hide API key column when using Ollama (no API key needed)
-        if (apiKeyPanel != null) {
-            apiKeyPanel.setVisible(!isOllama);
-        }
-
-        // Azure-specific fields only for Azure
-        azureApiVersion.setVisible(isAzure);
-        azureApiBase.setVisible(isAzure || isOllama);
-
-        if (ollamaModelPanel != null) {
-            ollamaModelPanel.setVisible(isOllama);
-        }
-        if (modelPanel != null) {
-            modelPanel.setVisible(!isOllama);
-        }
-
-        // Auto-assign or suggest API base depending on provider.
-        // For Ollama: always use the fixed base as actual text (required field).
-        // For Azure: show last user-entered base if present; otherwise, show a grey placeholder example
-        // that clears when the user focuses the field.
-        if (isOllama) {
-            if (apiBase != null) {
-                azurePlaceholderActive = false;
-                if (apiBaseNormalForeground != null) {
-                    apiBase.setForeground(apiBaseNormalForeground);
-                }
-                apiBase.setText(OLLAMA_DEFAULT_API_BASE);
-            }
-        } else if (isAzure) {
-            if (apiBase != null) {
-                if (lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
-                    azurePlaceholderActive = false;
-                    if (apiBaseNormalForeground != null) {
-                        apiBase.setForeground(apiBaseNormalForeground);
-                    }
-                    apiBase.setText(lastAzureApiBase);
-                } else {
-                    showAzurePlaceholder();
-                }
-            }
-            // API Version placeholder (only when field is empty and no stored value)
-            String versionText = apiVersion.getText();
-            if (versionText == null || versionText.trim().isEmpty()) {
-                showAzureVersionPlaceholder();
-            } else {
-                apiVersionPlaceholderActive = false;
-                apiVersion.setForeground(apiBaseNormalForeground);
-            }
-        } else {
-            // Other providers: clear any Azure-style placeholder and text
-            if (apiBase != null) {
-                if (azurePlaceholderActive) {
-                    azurePlaceholderActive = false;
-                    if (apiBaseNormalForeground != null) {
-                        apiBase.setForeground(apiBaseNormalForeground);
-                    }
-                    if (AZURE_DEFAULT_API_BASE.equals(apiBase.getText())) {
-                        apiBase.setText("");
-                    }
-                }
-            }
-        }
-
-        // Refresh layouts so UI updates immediately
-        if (apiKeyPanel != null) { apiKeyPanel.revalidate(); apiKeyPanel.repaint(); }
-        if (mainPanel != null) { mainPanel.revalidate(); mainPanel.repaint(); }
-
+        updateProviderSpecificPanelsFor(provider, apiKeyPanel, modelPanel, azureApiVersion, azureApiBase, ollamaModelPanel);
         updateOllamaWarnings();
     }
 
+    private void setModelOptionsForProvider(String provider, JComboBox modelComboBoxToUpdate) {
+        if (modelComboBoxToUpdate == null) return;
+        if (provider == null) {
+            modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {"gpt-5"}));
+            return;
+        }
+
+        switch (provider) {
+            case "OpenAI" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
+                    "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.1", "gpt-5.2", "gpt-5.2-pro"
+            }));
+            case "Gemini" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro-preview", "gemini-3-flash-preview"
+            }));
+            case "Anthropic" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "claude-3-haiku-20240307", "claude-sonnet-4-20250514", "claude-sonnet-4-5-20250929",
+                    "claude-opus-4-20250514", "claude-opus-4-1-20250805", "claude-haiku-4-5-20251001", "claude-opus-4-5-20251101", "claude-opus-4-6"
+            }));
+            case "DeepSeek" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "deepseek-chat",  "deepseek-reasoner"
+            }));
+            case "Azure" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1", "gpt-4o", "gpt-5", "o1", "o1-mini", "o3", "o3-mini", "o4-mini", "DeepSeek-V3-0324", "DeepSeek-V3.1", "grok-3"
+            }));
+            case "xAI" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+                    "grok-2", "grok-2-latest", "grok-3", "grok-3-beta", "grok-3-fast-beta", "grok-3-latest", "grok-3-mini", "grok-3-mini-beta", "grok-3-mini-fast-beta", "grok-4", "grok-4-0709", "grok-4-fast-non-reasoning", "grok-4-latest", "grok-beta", "grok-code-fast", "grok-code-fast-1", "grok-code-fast-1-0825"
+            }));
+            default -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {"gpt-5"}));
+        }
+    }
+
+    private void wireProviderAndModel(
+            JComboBox providerCombo,
+            JComboBox modelCombo,
+            JPanel apiKeyPanelX,
+            JPanel modelPanelX,
+            JPanel azureApiVersionX,
+            JPanel azureApiBaseX,
+            JPanel ollamaModelPanelX
+    ) {
+        if (providerCombo == null) return;
+
+        providerCombo.addActionListener(e -> {
+            String selectedProvider = (String) providerCombo.getSelectedItem();
+            setModelOptionsForProvider(selectedProvider, modelCombo);
+            updateProviderSpecificPanelsFor(selectedProvider, apiKeyPanelX, modelPanelX, azureApiVersionX, azureApiBaseX, ollamaModelPanelX);
+        });
+
+        // Apply initial state
+        String initProviderLocal = (String) providerCombo.getSelectedItem();
+        setModelOptionsForProvider(initProviderLocal, modelCombo);
+        updateProviderSpecificPanelsFor(initProviderLocal, apiKeyPanelX, modelPanelX, azureApiVersionX, azureApiBaseX, ollamaModelPanelX);
+    }
+
+
     /**
-     * Scrolls the API key field to the beginning so the prefix is visible.
+     * Helper to create a password field with an eye icon for toggling visibility.
      */
-    private void scrollApiKeyToStart() {
-        SwingUtilities.invokeLater(() -> {
-            aiderApiKey.setCaretPosition(0);
-            try {
-                aiderApiKey.setScrollOffset(0);
-            } catch (Exception ignored) {
-                // setScrollOffset may behave differently across LAFs; caret is enough
+    private JComponent createPasswordFieldWithEye(JPasswordField passwordField) {
+        JPanel passwordWithEyePanel = new JPanel();
+        passwordWithEyePanel.setLayout(new OverlayLayout(passwordWithEyePanel));
+        passwordWithEyePanel.setOpaque(false);
+
+        Dimension fieldSize = passwordField.getPreferredSize();
+        passwordWithEyePanel.setPreferredSize(new Dimension(fieldSize.width, fieldSize.height));
+        passwordWithEyePanel.setMinimumSize(new Dimension(0, fieldSize.height));
+        passwordWithEyePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, fieldSize.height));
+
+        Icon eyeIcon = AllIcons.General.InspectionsEye;
+        JButton toggleButton = new JButton(eyeIcon);
+        toggleButton.setFocusable(false);
+        toggleButton.setBorderPainted(false);
+        toggleButton.setContentAreaFilled(false);
+        toggleButton.setOpaque(false);
+        toggleButton.setMargin(new Insets(0, 0, 0, 0));
+        toggleButton.setBorder(BorderFactory.createEmptyBorder());
+        toggleButton.setPreferredSize(new Dimension(eyeIcon.getIconWidth() + 2, eyeIcon.getIconHeight() + 2));
+        toggleButton.setToolTipText("Show/Hide the API key");
+
+        int eyeRightInset = 6;
+        int eyePad = eyeIcon.getIconWidth() + eyeRightInset + 4;
+        passwordField.setBorder(BorderFactory.createCompoundBorder(
+                passwordField.getBorder(),
+                BorderFactory.createEmptyBorder(0, 0, 0, eyePad)
+        ));
+
+        int vpad = Math.max(0, (fieldSize.height - eyeIcon.getIconHeight()) / 2 - 1);
+        JPanel eyeOverlay = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        eyeOverlay.setOpaque(false);
+        eyeOverlay.setBorder(BorderFactory.createEmptyBorder(vpad, 0, vpad, eyeRightInset));
+        eyeOverlay.add(toggleButton);
+
+        passwordField.setAlignmentX(0.0f);
+        passwordField.setAlignmentY(0.5f);
+        eyeOverlay.setAlignmentX(0.0f);
+        eyeOverlay.setAlignmentY(0.5f);
+
+        passwordWithEyePanel.add(eyeOverlay);
+        passwordWithEyePanel.add(passwordField);
+
+        char defaultEchoChar = passwordField.getEchoChar();
+        toggleButton.addActionListener(ev -> {
+            if (passwordField.getEchoChar() == 0) {
+                passwordField.setEchoChar(defaultEchoChar);
+                toggleButton.setToolTipText("Show the API key");
+            } else {
+                passwordField.setEchoChar((char) 0);
+                toggleButton.setToolTipText("Hide the API key");
             }
         });
+
+        return passwordWithEyePanel;
     }
 
     private void updateOllamaWarnings() {
@@ -1427,5 +1652,87 @@ public class ProjectSettingsComponent {
 
         if (azureApiBase != null) { azureApiBase.revalidate(); azureApiBase.repaint(); }
         if (ollamaModelPanel != null) { ollamaModelPanel.revalidate(); ollamaModelPanel.repaint(); }
+    }
+
+    /**
+     * Shows or hides provider-specific fields for an arbitrary set of panels (used for both Aider and Clone_multiagent).
+     */
+    private void updateProviderSpecificPanelsFor(
+            String provider,
+            JPanel apiKeyPanelX,
+            JPanel modelPanelX,
+            JPanel azureApiVersionX,
+            JPanel azureApiBaseX,
+            JPanel ollamaModelPanelX
+    ) {
+        boolean isAzure = provider != null && "Azure".equalsIgnoreCase(provider);
+        boolean isOllama = provider != null && "Ollama".equalsIgnoreCase(provider);
+
+        if (apiKeyPanelX != null) {
+            apiKeyPanelX.setVisible(!isOllama);
+        }
+        if (azureApiVersionX != null) {
+            azureApiVersionX.setVisible(isAzure);
+        }
+        if (azureApiBaseX != null) {
+            azureApiBaseX.setVisible(isAzure || isOllama);
+        }
+        if (ollamaModelPanelX != null) {
+            ollamaModelPanelX.setVisible(isOllama);
+        }
+        if (modelPanelX != null) {
+            modelPanelX.setVisible(!isOllama);
+        }
+
+        JLabel helpLabel = null;
+        if (azureApiBaseX == azureApiBase) {
+            helpLabel = apiBaseHelp;
+        } else if (azureApiBaseX == multiAgentAzureApiBase) {
+            helpLabel = multiAgentApiBaseHelp;
+        }
+        updateApiBaseHelpLabel(helpLabel, provider);
+
+        // Refresh layouts so UI updates immediately
+        if (apiKeyPanelX != null) { apiKeyPanelX.revalidate(); apiKeyPanelX.repaint(); }
+        if (azureApiVersionX != null) { azureApiVersionX.revalidate(); azureApiVersionX.repaint(); }
+        if (azureApiBaseX != null) { azureApiBaseX.revalidate(); azureApiBaseX.repaint(); }
+        if (ollamaModelPanelX != null) { ollamaModelPanelX.revalidate(); ollamaModelPanelX.repaint(); }
+        if (modelPanelX != null) { modelPanelX.revalidate(); modelPanelX.repaint(); }
+        if (mainPanel != null) { mainPanel.revalidate(); mainPanel.repaint(); }
+    }
+
+    private void updateApiKeyWarningForPanel(JPanel targetApiKeyPanel, JLabel warningLabel, boolean visible) {
+        if (warningLabel != null) {
+            warningLabel.setVisible(visible);
+        } else if (targetApiKeyPanel != null) {
+            for (java.awt.Component component : targetApiKeyPanel.getComponents()) {
+                if (component instanceof JLabel label && label.getIcon() == AllIcons.General.Error) {
+                    label.setVisible(visible);
+                }
+            }
+        }
+        if (targetApiKeyPanel != null) {
+            targetApiKeyPanel.revalidate();
+            targetApiKeyPanel.repaint();
+        }
+    }
+
+    private void updateApiBaseHelpLabel(JLabel helpLabel, String provider) {
+        if (helpLabel == null) {
+            return;
+        }
+
+        String p = provider == null ? "" : provider.trim();
+
+        if ("Ollama".equalsIgnoreCase(provider)) {
+//            helpLabel.setText("API base for Ollama");
+            helpLabel.setToolTipText("API Base for the Ollama server, for example http://localhost:11434");
+        } else if ("Azure".equalsIgnoreCase(provider)) {
+//            helpLabel.setText("API base for Azure");
+            helpLabel.setToolTipText("API Base for the Azure OpenAI endpoint, for example https://your-resource.openai.azure.com");
+        } else {
+//            helpLabel.setText(p + " API base");
+            helpLabel.setToolTipText("Base URL used by " + p + " provider.");
+        }
     }
 }
