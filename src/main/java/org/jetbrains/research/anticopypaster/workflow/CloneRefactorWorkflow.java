@@ -70,6 +70,7 @@ import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
 import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 public final class CloneRefactorWorkflow {
     // ===== Log persistence helpers =====
@@ -2654,6 +2655,11 @@ Your refactoring is not useful. You must actually remove or significantly reduce
 
                 boolean ok = dialog.showAndGet(); // OK => Apply
                 decision.set(ok);
+                if (ok) {
+                    AntiCopyPasterUsageStatistics.getInstance(project).refactoringApplied();
+                } else {
+                    AntiCopyPasterUsageStatistics.getInstance(project).refactoringCancelled();
+                }
 
             } catch (Throwable t) {
                 decision.set(false);

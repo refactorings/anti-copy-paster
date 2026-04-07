@@ -43,6 +43,7 @@ import java.util.List;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.roots.ProjectRootManager;
+import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 public class AiderHelper {
 
@@ -234,6 +235,7 @@ public class AiderHelper {
             );
 
             if (choice == Messages.YES) {
+                AntiCopyPasterUsageStatistics.getInstance(project).refactoringApplied();
                 ApplicationManager.getApplication().executeOnPooledThread(() -> {
                     try {
                         Files.write(originalPath, refactoredContent.getBytes(StandardCharsets.UTF_8));
@@ -253,6 +255,7 @@ public class AiderHelper {
                     }
                 });
             } else {
+                AntiCopyPasterUsageStatistics.getInstance(project).refactoringCancelled();
                 notify(project, "Refactoring for file " + fileName + " was canceled.");
             }
         }, ModalityState.any());
