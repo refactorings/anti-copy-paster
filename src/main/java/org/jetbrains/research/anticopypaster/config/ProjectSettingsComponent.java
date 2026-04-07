@@ -1474,37 +1474,19 @@ public class ProjectSettingsComponent {
      * Warns the user if the entered API key's prefix does not match the selected provider.
      */
     void validateApiKeyPrefix() {
-        if (!apiKeyPanel.isVisible()) return;
-
-        String apiKey = new String(agentApiKey.getPassword()).trim();
-        String provider = (String) llmProviderComboBox.getSelectedItem();
-        boolean mismatch = false;
-
-        if (provider != null && !apiKey.isEmpty()) {
-            switch (provider) {
-                case "OpenAI":
-                    mismatch = !apiKey.startsWith("sk-proj-");
-                    break;
-                case "Gemini":
-                    mismatch = !apiKey.startsWith("AIzaSy");
-                    break;
-                case "DeepSeek":
-                    mismatch = !apiKey.startsWith("sk-");
-                    break;
-                case "Anthropic":
-                    mismatch = !apiKey.startsWith("sk-ant-");
-                    break;
-            }
-        }
-
-        if (mismatch) {
+        String error = getApiKeyPrefixValidationError();
+        if (error != null) {
             JOptionPane.showMessageDialog(
                     mainPanel,
-                    "The API key prefix does not match the selected provider.\nPlease verify your key.",
+                    error,
                     "API Key Provider Mismatch",
                     JOptionPane.WARNING_MESSAGE
             );
         }
+    }
+
+    public String getApiKeyPrefixValidationError() {
+        return ApiKeyPrefixValidator.validate(getLlmProvider(), getAiderApiKey());
     }
 
     /**
@@ -1729,4 +1711,3 @@ public class ProjectSettingsComponent {
         }
     }
 }
-

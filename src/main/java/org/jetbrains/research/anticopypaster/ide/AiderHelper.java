@@ -759,7 +759,7 @@ public class AiderHelper {
                     throw new IllegalArgumentException("Azure provider selected but API base is empty");
                 }
                 if (apiBase.contains("11434")) {
-                    System.err.println("[AIDER] Warning: Azure API base points to 11434 (Ollama). This will 404.");
+                    System.err.println("[Clone] Warning: Azure API base points to 11434 (Ollama). This will 404.");
                 }
                 pb.environment().put("AZURE_API_KEY", apikey);
                 pb.environment().put("AZURE_API_VERSION", apiVersion);
@@ -821,7 +821,6 @@ public class AiderHelper {
             if (viewer != null) {
                 viewer.accept(cleaned);
             }
-            System.out.println("[AIDER] " + cleaned);
             output.append(cleaned).append("\n");
         }
 
