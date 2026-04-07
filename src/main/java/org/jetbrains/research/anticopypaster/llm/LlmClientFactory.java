@@ -31,6 +31,7 @@ public final class LlmClientFactory {
 
             if (provider.equalsIgnoreCase("Ollama")) {
                 String base = apiBase.isBlank() ? "http://localhost:11434" : apiBase;
+                base = OpenAICompatibleChatClient.normalizeBaseUrl(base);
                 String m = !ollamaModel.isBlank() ? ollamaModel : model;
                 if (m.isBlank()) m = "llama3";
                 log(viewer, "Ollama", m, base, "", "");
@@ -68,6 +69,7 @@ public final class LlmClientFactory {
             if (provider.equalsIgnoreCase("DeepSeek")) {
                 String m = model.isBlank() ? "deepseek-chat" : model;
                 String base = apiBase.isBlank() ? "https://api.deepseek.com" : apiBase;
+                base = OpenAICompatibleChatClient.normalizeBaseUrl(base);
                 log(viewer, "DeepSeek", m, base, "", apiKey);
                 return apiKey.isBlank() ? new NoopLlmClient() : new OpenAICompatibleChatClient(base, apiKey, m);
             }
@@ -75,6 +77,7 @@ public final class LlmClientFactory {
             if (provider.equalsIgnoreCase("xAI")) {
                 String m = model.isBlank() ? "grok-3" : model;
                 String base = apiBase.isBlank() ? "https://api.x.ai" : apiBase;
+                base = OpenAICompatibleChatClient.normalizeBaseUrl(base);
                 log(viewer, "xAI", m, base, "", apiKey);
                 return apiKey.isBlank() ? new NoopLlmClient() : new OpenAICompatibleChatClient(base, apiKey, m);
             }

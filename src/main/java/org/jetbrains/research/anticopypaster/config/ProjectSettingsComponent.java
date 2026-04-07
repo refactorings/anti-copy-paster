@@ -1701,7 +1701,7 @@ public class ProjectSettingsComponent {
 
         if ("Ollama".equalsIgnoreCase(provider)) {
 //            helpLabel.setText("API base for Ollama");
-            helpLabel.setToolTipText("API Base for the Ollama server, for example http://localhost:11434/v1");
+            helpLabel.setToolTipText("API Base for the Ollama server, for example http://localhost:11434");
         } else if ("Azure".equalsIgnoreCase(provider)) {
 //            helpLabel.setText("API base for Azure");
             helpLabel.setToolTipText("API Base for the Azure OpenAI endpoint, for example https://your-resource.openai.azure.com");

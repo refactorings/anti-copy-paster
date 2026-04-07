@@ -750,6 +750,7 @@ public class AiderHelper {
                 if (apiBase == null || apiBase.isBlank()) {
                     apiBase = "http://127.0.0.1:11434";
                 }
+                apiBase = normalizeOllamaApiBase(apiBase);
                 pb.environment().put("OLLAMA_API_BASE", apiBase);
 
                 pb.environment().remove("AZURE_API_KEY");
@@ -887,6 +888,23 @@ public class AiderHelper {
             }
         }
         return sb.toString();
+    }
+
+    private static String normalizeOllamaApiBase(String rawApiBase) {
+        String normalized = rawApiBase == null ? "" : rawApiBase.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.endsWith("/chat/completions")) {
+            normalized = normalized.substring(0, normalized.length() - "/chat/completions".length());
+        }
+        if (normalized.endsWith("/v1")) {
+            normalized = normalized.substring(0, normalized.length() - "/v1".length());
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
     /**
      * Best-effort fallback: extracts the first fenced code block from {@code text} whose language is either empty
