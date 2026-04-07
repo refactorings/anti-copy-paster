@@ -580,6 +580,8 @@ public final class CloneRefactorWorkflow {
                 notify(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
 
                 final java.util.List<CloneMethodSnapshot> watchedCloneMethods = captureCloneMethodSnapshots(project, vf, clone, viewer);
+                final java.util.List<usefulnessChecker.TargetMethodHint> targetMethodHints =
+                        buildUsefulnessTargetMethodHints(wholeMethod, watchedCloneMethods, viewer);
                 trackedDocument = FileDocumentManager.getInstance().getDocument(vf);
                 if (trackedDocument != null && watchedCloneMethods != null && !watchedCloneMethods.isEmpty()) {
                     final java.util.List<CloneMethodSnapshot> listenerSnapshots = watchedCloneMethods;
@@ -735,19 +737,21 @@ public final class CloneRefactorWorkflow {
                                             fileName,
                                             currentSource,
                                             proposedSource,
-                                            new usefulnessChecker.UsefulnessConfig()
+                                            new usefulnessChecker.UsefulnessConfig(),
+                                            targetMethodHints.isEmpty() ? null : targetMethodHints
                                     );
 
                             if (urBeforeCompile != null && !urBeforeCompile.isUseful) {
                                 boolean overridden = false;
                                 try {
-                                    if (urBeforeCompile.reasons != null && urBeforeCompile.reasons.contains("EXTRACT_METHOD_NOT_CONFIRMED")) {
+                                    if (urBeforeCompile.reasons != null &&
+                                            urBeforeCompile.reasons.contains(usefulnessChecker.Reason.EXTRACT_METHOD_NOT_FOUND)) {
                                         String[] wrappers = parseWrapperNamesFromUsefulnessDebug(extractUsefulnessDebugText(urBeforeCompile));
                                         if (wrappers != null && wrappers.length == 2
                                                 && looksLikeValidExtractMethodDelegation(currentSource, proposedSource, wrappers[0], wrappers[1])) {
                                             overridden = true;
                                             isUseful = true;
-                                            logStage(viewer, "USEFUL", "override: both wrappers delegate to the same extracted helper (EXTRACT_METHOD_NOT_CONFIRMED)");
+                                            logStage(viewer, "USEFUL", "override: both wrappers delegate to the same extracted helper (EXTRACT_METHOD_NOT_FOUND)");
                                         }
                                     }
                                 } catch (Throwable ignored) {
@@ -3236,6 +3240,15 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         if (r.contains("delegation") || r.contains("delegate")) {
             return "The original method is modified to delegate behavior, and the clone calls this modified method instead of a new abstraction.";
         }
+        if ((r.contains("non") && r.contains("target")) || r.contains("non_target")) {
+            return "A different clone pair appears to have been refactored while the intended target clone remains essentially unchanged.";
+        }
+        if ((r.contains("without") && r.contains("replacement")) || r.contains("clone_replacement")) {
+            return "A helper method was introduced, but the original duplicated clone body was not actually replaced by calls to that helper.";
+        }
+        if ((r.contains("not") && r.contains("found")) || r.contains("no extract method")) {
+            return "No valid Extract Method refactoring was found for the intended target clone; the shared logic was not clearly moved into a new helper.";
+        }
 
         return "The refactoring does not properly remove duplication or introduce a correct shared abstraction. Please ensure both clones delegate to a newly extracted helper method.";
     }
@@ -3276,6 +3289,7 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         final String className;
         final String methodName;
         final int parameterCount;
+        final String methodKey;
         final String baselineBodyText;
         final String displayName;
 
@@ -3283,12 +3297,14 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                             String className,
                             String methodName,
                             int parameterCount,
+                            String methodKey,
                             String baselineBodyText,
                             String displayName) {
             this.pointer = pointer;
             this.className = className == null ? "<no-class>" : className;
             this.methodName = methodName == null ? "<unknown>" : methodName;
             this.parameterCount = parameterCount;
+            this.methodKey = methodKey == null ? "" : methodKey;
             this.baselineBodyText = baselineBodyText == null ? "" : baselineBodyText;
             this.displayName = displayName == null ? "<unknown>" : displayName;
         }
@@ -3319,6 +3335,25 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                 : (cls.getQualifiedName() != null ? cls.getQualifiedName() : cls.getName());
         if (className == null || className.isBlank()) className = "<no-class>";
         return className;
+    }
+
+    private static String buildUsefulnessMethodKey(PsiMethod method) {
+        if (method == null) return "";
+        String className = getMethodClassName(method);
+        StringBuilder sb = new StringBuilder();
+        sb.append(className).append("#").append(method.getName()).append("(");
+        try {
+            com.intellij.psi.PsiParameter[] params = method.getParameterList() == null
+                    ? new com.intellij.psi.PsiParameter[0]
+                    : method.getParameterList().getParameters();
+            for (int i = 0; i < params.length; i++) {
+                if (i > 0) sb.append(",");
+                com.intellij.psi.PsiType type = params[i] == null ? null : params[i].getType();
+                sb.append(type == null ? "" : type.getCanonicalText());
+            }
+        } catch (Throwable ignored) {}
+        sb.append(")");
+        return sb.toString();
     }
 
     private static String getMethodBodyText(PsiMethod method) {
@@ -3434,14 +3469,69 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                 String className = getMethodClassName(method);
                 String methodName = method.getName();
                 int parameterCount = method.getParameterList().getParametersCount();
+                String methodKey = buildUsefulnessMethodKey(method);
                 String baselineBodyText = normalizeMethodBodyText(getMethodBodyText(method));
-                out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, baselineBodyText, displayName));
+                out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, methodKey, baselineBodyText, displayName));
                 logStage(viewer, "WATCH", "tracking cloned method: " + displayName);
             }
         } catch (Throwable t) {
             logStage(viewer, "WATCH", "failed to capture cloned method snapshots: " + t.getMessage());
         }
         return new java.util.ArrayList<>(out.values());
+    }
+
+    private static java.util.List<usefulnessChecker.TargetMethodHint> buildUsefulnessTargetMethodHints(
+            PsiMethod wholeMethod,
+            java.util.List<CloneMethodSnapshot> watchedCloneMethods,
+            Consumer<String> viewer
+    ) {
+        java.util.LinkedHashMap<String, usefulnessChecker.TargetMethodHint> out = new java.util.LinkedHashMap<>();
+        try {
+            if (wholeMethod != null) {
+                usefulnessChecker.TargetMethodHint hint = new usefulnessChecker.TargetMethodHint(
+                        getMethodClassName(wholeMethod),
+                        wholeMethod.getName(),
+                        wholeMethod.getParameterList() == null ? 0 : wholeMethod.getParameterList().getParametersCount(),
+                        buildUsefulnessMethodKey(wholeMethod)
+                );
+                out.put(hint.methodKey.isBlank()
+                        ? (hint.className + "#" + hint.methodName + "#" + hint.parameterCount)
+                        : hint.methodKey, hint);
+            }
+
+            if (watchedCloneMethods != null) {
+                for (CloneMethodSnapshot snapshot : watchedCloneMethods) {
+                    if (snapshot == null) continue;
+                    usefulnessChecker.TargetMethodHint hint = new usefulnessChecker.TargetMethodHint(
+                            snapshot.className,
+                            snapshot.methodName,
+                            snapshot.parameterCount,
+                            snapshot.methodKey
+                    );
+                    out.put(hint.methodKey.isBlank()
+                            ? (hint.className + "#" + hint.methodName + "#" + hint.parameterCount)
+                            : hint.methodKey, hint);
+                }
+            }
+        } catch (Throwable t) {
+            logStage(viewer, "USEFUL", "failed to build target method hints: " + t.getMessage());
+        }
+
+        java.util.ArrayList<usefulnessChecker.TargetMethodHint> hints = new java.util.ArrayList<>(out.values());
+        if (hints.size() >= 2) {
+            String joined = hints.stream()
+                    .map(h -> h.methodKey == null || h.methodKey.isBlank()
+                            ? (h.className + "#" + h.methodName + "#" + h.parameterCount)
+                            : h.methodKey)
+                    .collect(java.util.stream.Collectors.joining(", "));
+            logStage(viewer, "USEFUL", "target method hints=" + hints.size() + ": " + joined);
+            return hints;
+        }
+
+        if (!hints.isEmpty()) {
+            logStage(viewer, "USEFUL", "insufficient target method hints for target-only analysis: " + hints.size());
+        }
+        return java.util.List.of();
     }
 
 
