@@ -48,7 +48,7 @@ public final class LlmClientFactory {
                 return new NoopLlmClient();
             }
 
-            if (provider.equalsIgnoreCase("Gemini")) {
+            if (provider.equalsIgnoreCase("Google") || provider.equalsIgnoreCase("Gemini")) {
                 String m = model.isBlank() ? "gemini-2.5-pro" : model;
                 log(viewer, "Gemini", m, "", "", apiKey);
                 return apiKey.isBlank() ? new NoopLlmClient() : new GeminiGenerateContentClient(apiKey, m);

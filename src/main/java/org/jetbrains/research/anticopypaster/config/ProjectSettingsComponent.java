@@ -188,7 +188,7 @@ public class ProjectSettingsComponent {
         });
 
         // Add tooltips for Aider-related fields
-        llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, DeepSeek or Azure.");
+        llmProviderComboBox.setToolTipText("Select the Model suite, such as OpenAI, Google, Anthropic, DeepSeek or Azure.");
         aidermodelComboBox.setToolTipText("Select the specific model you want to use from the provider.");
         agentApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
 
@@ -1540,7 +1540,7 @@ public class ProjectSettingsComponent {
                     "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
                     "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.1", "gpt-5.2", "gpt-5.2-pro"
             }));
-            case "Gemini" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+            case "Google", "Gemini" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
                     "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro-preview", "gemini-3-flash-preview"
             }));
             case "Anthropic" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {

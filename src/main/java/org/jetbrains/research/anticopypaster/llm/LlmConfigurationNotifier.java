@@ -77,6 +77,7 @@ public final class LlmConfigurationNotifier {
     private static boolean isSupportedProvider(String provider) {
         return provider.equalsIgnoreCase("OpenAI")
                 || provider.equalsIgnoreCase("Azure")
+                || provider.equalsIgnoreCase("Google")
                 || provider.equalsIgnoreCase("Gemini")
                 || provider.equalsIgnoreCase("Anthropic")
                 || provider.equalsIgnoreCase("DeepSeek")

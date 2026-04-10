@@ -17,6 +17,7 @@ class ApiKeyPrefixValidatorTest {
     @Test
     void acceptsKnownPrefixes() {
         assertNull(ApiKeyPrefixValidator.validate("OpenAI", "sk-proj-demo"));
+        assertNull(ApiKeyPrefixValidator.validate("Google", "AIzaSyDemo"));
         assertNull(ApiKeyPrefixValidator.validate("Gemini", "AIzaSyDemo"));
         assertNull(ApiKeyPrefixValidator.validate("DeepSeek", "sk-demo"));
         assertNull(ApiKeyPrefixValidator.validate("Anthropic", "sk-ant-demo"));
@@ -31,6 +32,10 @@ class ApiKeyPrefixValidatorTest {
         assertEquals(
                 "API key for Gemini must start with 'AIzaSy'.",
                 ApiKeyPrefixValidator.validate("Gemini", "sk-demo")
+        );
+        assertEquals(
+                "API key for Google must start with 'AIzaSy'.",
+                ApiKeyPrefixValidator.validate("Google", "sk-demo")
         );
     }
 
