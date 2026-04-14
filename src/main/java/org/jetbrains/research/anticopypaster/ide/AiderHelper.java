@@ -41,7 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.List;
 import org.jetbrains.research.anticopypaster.rag.RagService;
-import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
+import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.roots.ProjectRootManager;
 
@@ -235,7 +235,7 @@ public class AiderHelper {
             );
 
             if (choice == Messages.YES) {
-                AntiCopyPasterUsageStatistics.getInstance(project).refactoringAccepted();
+                CloneUsageStatistics.getInstance(project).refactoringAccepted();
                 ApplicationManager.getApplication().executeOnPooledThread(() -> {
                     try {
                         Files.write(originalPath, refactoredContent.getBytes(StandardCharsets.UTF_8));
@@ -255,7 +255,7 @@ public class AiderHelper {
                     }
                 });
             } else {
-                AntiCopyPasterUsageStatistics.getInstance(project).refactoringCancelled();
+                CloneUsageStatistics.getInstance(project).refactoringCancelled();
                 notify(project, "Refactoring for file " + fileName + " was canceled.");
             }
         }, ModalityState.any());

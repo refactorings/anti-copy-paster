@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.llm;
 
 import com.intellij.openapi.project.Project;
 
+import java.util.Locale;
 import java.util.function.Consumer;
 
 public final class LlmClientFactory {
@@ -30,7 +31,7 @@ public final class LlmClientFactory {
             }
 
             if (provider.equalsIgnoreCase("Ollama")) {
-                String base = apiBase.isBlank() ? "http://localhost:11434" : apiBase;
+                String base = resolveProviderBaseUrl(provider, apiBase);
                 String m = !ollamaModel.isBlank() ? ollamaModel : model;
                 if (m.isBlank()) m = "llama3";
                 log(viewer, "Ollama", m, base, "", "");
@@ -67,14 +68,16 @@ public final class LlmClientFactory {
 
             if (provider.equalsIgnoreCase("DeepSeek")) {
                 String m = model.isBlank() ? "deepseek-chat" : model;
-                String base = apiBase.isBlank() ? "https://api.deepseek.com" : apiBase;
+                String base = resolveProviderBaseUrl(provider, apiBase);
+                logIgnoredStoredBase(viewer, "DeepSeek", apiBase, base);
                 log(viewer, "DeepSeek", m, base, "", apiKey);
                 return apiKey.isBlank() ? new NoopLlmClient() : new OpenAICompatibleChatClient(base, apiKey, m);
             }
 
             if (provider.equalsIgnoreCase("xAI")) {
                 String m = model.isBlank() ? "grok-3" : model;
-                String base = apiBase.isBlank() ? "https://api.x.ai" : apiBase;
+                String base = resolveProviderBaseUrl(provider, apiBase);
+                logIgnoredStoredBase(viewer, "xAI", apiBase, base);
                 log(viewer, "xAI", m, base, "", apiKey);
                 return apiKey.isBlank() ? new NoopLlmClient() : new OpenAICompatibleChatClient(base, apiKey, m);
             }
@@ -86,6 +89,28 @@ public final class LlmClientFactory {
             if (viewer != null) viewer.accept("[LLM_SETTINGS] factory failed: " + t.getMessage());
             return new NoopLlmClient();
         }
+    }
+
+    static String resolveProviderBaseUrl(String provider, String configuredBase) {
+        String normalizedProvider = provider == null ? "" : provider.trim().toLowerCase(Locale.ROOT);
+        String trimmedBase = configuredBase == null ? "" : configuredBase.trim();
+
+        return switch (normalizedProvider) {
+            case "ollama" -> trimmedBase.isBlank() ? "http://localhost:11434" : trimmedBase;
+            // DeepSeek/xAI API base is not editable in the UI, so stale stored values from
+            // Azure/Ollama should never leak into these providers.
+            case "deepseek" -> "https://api.deepseek.com";
+            case "xai" -> "https://api.x.ai";
+            default -> trimmedBase;
+        };
+    }
+
+    static boolean shouldLogApiBase(String provider) {
+        if (provider == null) return false;
+        return switch (provider.trim().toLowerCase(Locale.ROOT)) {
+            case "ollama", "azure", "deepseek", "xai" -> true;
+            default -> false;
+        };
     }
 
     private static void log(Consumer<String> viewer, String provider, String model, String base, String version, String key) {
@@ -103,11 +128,7 @@ public final class LlmClientFactory {
         msg.append("[LLM_SETTINGS] provider=").append(provider)
                 .append(", model=").append(model);
 
-        // Only include base/version for providers that use them
-        if (provider != null && (
-                provider.equalsIgnoreCase("Ollama") ||
-                        provider.equalsIgnoreCase("Azure")
-        )) {
+        if (shouldLogApiBase(provider)) {
             msg.append(", apiBase=").append(base);
             if (provider.equalsIgnoreCase("Azure")) {
                 msg.append(", apiVersion=").append(version);
@@ -117,5 +138,25 @@ public final class LlmClientFactory {
         msg.append(", apiKey=").append(keyPreview);
 
         viewer.accept(msg.toString());
+    }
+
+    private static void logIgnoredStoredBase(Consumer<String> viewer, String provider, String configuredBase, String resolvedBase) {
+        if (viewer == null) return;
+        if (configuredBase == null || configuredBase.isBlank()) return;
+        if (sameBase(configuredBase, resolvedBase)) return;
+
+        viewer.accept("[LLM_SETTINGS] ignoring stored apiBase for " + provider + "; using " + resolvedBase);
+    }
+
+    private static boolean sameBase(String left, String right) {
+        return normalizeBase(left).equals(normalizeBase(right));
+    }
+
+    private static String normalizeBase(String value) {
+        String normalized = value == null ? "" : value.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 }

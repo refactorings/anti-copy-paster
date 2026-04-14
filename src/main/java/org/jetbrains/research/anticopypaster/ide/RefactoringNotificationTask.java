@@ -18,6 +18,7 @@ import org.jetbrains.research.anticopypaster.cloneprocessors.Clone;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.models.*;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
+import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
 import org.jetbrains.research.anticopypaster.utils.MetricsGatherer;
 import org.jetbrains.research.anticopypaster.metrics.MetricCalculator;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
@@ -177,13 +178,15 @@ public class RefactoringNotificationTask extends TimerTask {
             //result is equal to 0 if a user accepted the suggestion and clicked on OK button, 1 otherwise
             AntiCopyPasterUsageStatistics usageStatistics =
                     AntiCopyPasterUsageStatistics.getInstance(event.getProject());
+            CloneUsageStatistics cloneUsageStatistics =
+                    CloneUsageStatistics.getInstance(event.getProject());
             if (result == MessageConstants.OK) {
                 new ExtractionTask(event).run();
                 usageStatistics.extractMethodApplied();
-                usageStatistics.refactoringAccepted();
+                cloneUsageStatistics.refactoringAccepted();
             } else {
                 usageStatistics.extractMethodRejected();
-                usageStatistics.refactoringCancelled();
+                cloneUsageStatistics.refactoringCancelled();
             }
         };
     }

@@ -11,7 +11,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Stores information about the plugin usage on the project level in the ./idea/anticopypaster-plugin.xml file.
+ * Stores information about the plugin usage on the project level in the
+ * {@code .idea/anticopypaster-plugin-usage.xml} file.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "AntiCopyPasterUsageStatistics", storages = {@Storage("anticopypaster-plugin-usage.xml")})
@@ -56,22 +57,12 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
         usageState.onPaste();
     }
 
-    public void refactoringAccepted() {
-        usageState.refactoringAccepted();
-    }
-
-    public void refactoringCancelled() {
-        usageState.refactoringCancelled();
-    }
-
     public static class PluginState {
         public int notificationCount = 0;
         public int extractMethodAppliedCount = 0;
         public int extractMethodRejectedCount = 0;
         public int copyCount = 0;
         public int pasteCount = 0;
-        public int refactoringAcceptedCount = 0;
-        public int refactoringCancelledCount = 0;
         public long lastTransmissionTime = 0;
 
         public void notification() {
@@ -94,15 +85,10 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
             pasteCount += 1;
         }
 
-        public void refactoringAccepted() {
-            refactoringAcceptedCount += 1;
-        }
-
-        public void refactoringCancelled() {
-            refactoringCancelledCount += 1;
-        }
-
         public void saveToMongoDB(Project project) {
+            CloneUsageStatistics.PluginState cloneUsageState = CloneUsageStatistics.getInstance(project).getState();
+            int applyCount = cloneUsageState == null ? 0 : cloneUsageState.applyCount;
+            int cancelCount = cloneUsageState == null ? 0 : cloneUsageState.cancelCount;
             AntiCopyPasterTelemetry.saveStatistics(
                     project,
                     notificationCount,
@@ -110,8 +96,8 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
                     extractMethodRejectedCount,
                     copyCount,
                     pasteCount,
-                    refactoringAcceptedCount,
-                    refactoringCancelledCount
+                    applyCount,
+                    cancelCount
             );
         }
     }
