@@ -510,10 +510,10 @@ public final class CloneRefactorWorkflow {
 
                         detectionAgent.saveAsNiCadXml(det, vf.getPath(), nicadOut);
 
-                        logStage(viewer, "DETECTION", "NiCad file saved: " + nicadOut);
+//                        logStage(viewer, "DETECTION", "NiCad file saved: " + nicadOut);
                     }
                 } catch (Exception e) {
-                    logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
+//                    logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
                 }
 
 
