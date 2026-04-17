@@ -67,6 +67,7 @@ import com.intellij.openapi.ui.DialogWrapper;
 import javax.swing.*;
 import org.jetbrains.research.anticopypaster.llm.LlmClient;
 import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
+import org.jetbrains.research.anticopypaster.llm.LlmConfigurationNotifier;
 import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
@@ -451,9 +452,20 @@ public final class CloneRefactorWorkflow {
                 notify(project, "[Clone] Workflow started for: " + fileName, NotificationType.INFORMATION);
 
                 if (LLM instanceof NoopLlmClient) {
-                    notify(project,
-                            "[Clone] LLM is not configured (missing/invalid provider settings or API key). LLM calls will return empty and detection will always be 'no clones'. Configure provider/model/API key in Settings.",
-                            NotificationType.ERROR);
+                    String llmConfigurationProblem = LlmConfigurationNotifier.getConfigurationProblem(project, true);
+                    if (llmConfigurationProblem != null) {
+                        logStage(viewer, "LLM_SETTINGS", llmConfigurationProblem);
+                        LlmConfigurationNotifier.notifyConfigurationProblem(
+                                project,
+                                "Clone Refactoring",
+                                llmConfigurationProblem
+                        );
+                    } else {
+                        notify(project,
+                                "[Clone] LLM is not configured (missing/invalid provider settings or API key). Configure provider/model/API key in Settings.",
+                                NotificationType.ERROR);
+                    }
+                    return;
                 }
 
                 detection detectionAgent = new detection();
@@ -498,10 +510,10 @@ public final class CloneRefactorWorkflow {
 
                         detectionAgent.saveAsNiCadXml(det, vf.getPath(), nicadOut);
 
-                        logStage(viewer, "DETECTION", "NiCad file saved: " + nicadOut);
+//                        logStage(viewer, "DETECTION", "NiCad file saved: " + nicadOut);
                     }
                 } catch (Exception e) {
-                    logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
+//                    logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
                 }
 
 

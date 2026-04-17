@@ -30,7 +30,7 @@ final class ApiKeyPrefixValidator {
 
         return switch (provider) {
             case "OpenAI" -> "sk-proj-";
-            case "Gemini" -> "AIzaSy";
+            case "Google", "Gemini" -> "AIzaSy";
             case "DeepSeek" -> "sk-";
             case "Anthropic" -> "sk-ant-";
             default -> null;

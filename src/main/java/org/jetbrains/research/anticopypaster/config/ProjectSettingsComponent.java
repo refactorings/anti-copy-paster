@@ -165,6 +165,8 @@ public class ProjectSettingsComponent {
     private JLabel ollamaModelWarningLabel;
     private JLabel apiKeyWarningLabel;
     private JLabel multiAgentApiKeyWarningLabel;
+    private String lastAzureApiBase = "";
+    private static final String OLLAMA_DEFAULT_API_BASE = "http://127.0.0.1:11434";
     /**
      * Builds and wires the Project Settings UI for AntiCopyPaster, including provider/model pickers,
      * Aider fields, validation, and dynamic panel visibility.
@@ -186,7 +188,7 @@ public class ProjectSettingsComponent {
         });
 
         // Add tooltips for Aider-related fields
-        llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, DeepSeek or Azure.");
+        llmProviderComboBox.setToolTipText("Select the Model suite, such as OpenAI, Google, Anthropic, DeepSeek or Azure.");
         aidermodelComboBox.setToolTipText("Select the specific model you want to use from the provider.");
         agentApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
 
@@ -557,9 +559,6 @@ public class ProjectSettingsComponent {
 
             private void onChange() {
                 updateOllamaWarnings();
-                if (azurePlaceholderActive) {
-                    return;
-                }
                 Object providerObj = llmProviderComboBox.getSelectedItem();
                 if (providerObj != null && "Azure".equalsIgnoreCase(providerObj.toString())) {
                     String text = apiBase.getText();
@@ -1251,9 +1250,17 @@ public class ProjectSettingsComponent {
     public void setApiBase(String base) {
         if (isCloneMultiAgentSelected() && multiAgentApiBase != null) {
             multiAgentApiBase.setText(base);
+            String provider = multiAgentLlmProviderComboBox == null ? null : (String) multiAgentLlmProviderComboBox.getSelectedItem();
+            if ("Azure".equalsIgnoreCase(provider) && base != null && !base.isBlank()) {
+                lastAzureApiBase = base.trim();
+            }
             return;
         }
         apiBase.setText(base);
+        String provider = llmProviderComboBox == null ? null : (String) llmProviderComboBox.getSelectedItem();
+        if ("Azure".equalsIgnoreCase(provider) && base != null && !base.isBlank()) {
+            lastAzureApiBase = base.trim();
+        }
     }
 
     /**
@@ -1507,7 +1514,6 @@ public class ProjectSettingsComponent {
                     JOptionPane.WARNING_MESSAGE
             );
         }
-        apiBase.setText(AZURE_DEFAULT_API_BASE);
     }
 
     public String getApiKeyPrefixValidationError() {
@@ -1534,7 +1540,7 @@ public class ProjectSettingsComponent {
                     "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
                     "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.1", "gpt-5.2", "gpt-5.2-pro"
             }));
-            case "Gemini" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+            case "Google", "Gemini" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
                     "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro-preview", "gemini-3-flash-preview"
             }));
             case "Anthropic" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
@@ -1569,12 +1575,37 @@ public class ProjectSettingsComponent {
             String selectedProvider = (String) providerCombo.getSelectedItem();
             setModelOptionsForProvider(selectedProvider, modelCombo);
             updateProviderSpecificPanelsFor(selectedProvider, apiKeyPanelX, modelPanelX, azureApiVersionX, azureApiBaseX, ollamaModelPanelX);
+            syncApiBaseForProvider(selectedProvider, resolveApiBaseField(azureApiBaseX));
         });
 
         // Apply initial state
         String initProviderLocal = (String) providerCombo.getSelectedItem();
         setModelOptionsForProvider(initProviderLocal, modelCombo);
         updateProviderSpecificPanelsFor(initProviderLocal, apiKeyPanelX, modelPanelX, azureApiVersionX, azureApiBaseX, ollamaModelPanelX);
+        syncApiBaseForProvider(initProviderLocal, resolveApiBaseField(azureApiBaseX));
+    }
+
+    private JTextField resolveApiBaseField(JPanel azureApiBasePanel) {
+        if (azureApiBasePanel == azureApiBase) {
+            return apiBase;
+        }
+        if (azureApiBasePanel == multiAgentAzureApiBase) {
+            return multiAgentApiBase;
+        }
+        return null;
+    }
+
+    private void syncApiBaseForProvider(String provider, JTextField apiBaseField) {
+        if (apiBaseField == null) {
+            return;
+        }
+        if ("Ollama".equalsIgnoreCase(provider)) {
+            apiBaseField.setText(OLLAMA_DEFAULT_API_BASE);
+            return;
+        }
+        if ("Azure".equalsIgnoreCase(provider) && lastAzureApiBase != null && !lastAzureApiBase.isBlank()) {
+            apiBaseField.setText(lastAzureApiBase);
+        }
     }
 
 
