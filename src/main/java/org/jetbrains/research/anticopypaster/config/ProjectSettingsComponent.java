@@ -815,6 +815,8 @@ public class ProjectSettingsComponent {
                 nameModel.setSelectedIndex(0);
             }
         }
+
+        refreshScrollableLayout();
     }
 
     /**
@@ -836,10 +838,24 @@ public class ProjectSettingsComponent {
     }
 
     /**
+     * Recomputes the preferred size of the settings page after dynamic sections are shown or hidden.
+     */
+    private void refreshScrollableLayout() {
+        if (mainPanel != null) {
+            mainPanel.revalidate();
+            mainPanel.repaint();
+        }
+        Window window = SwingUtilities.getWindowAncestor(mainPanel);
+        if (window != null) {
+            window.validate();
+        }
+    }
+
+    /**
      * Returns the root settings panel for embedding into dialogs.
      */
     public JComponent getPanel() {
-        return scrollpanel;
+        return mainPanel;
     }
 
     /**
