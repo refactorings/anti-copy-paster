@@ -12,6 +12,35 @@ public class refactoring {
     private static final String DEFAULT_REFACTOR_DB_PATH = "refactor_database.csv";
     private static final int DEFAULT_RAG_TOP_K = 2;
     private static final int DEFAULT_RAG_MAX_CHARS = 700;
+    private static final int CURATOR_CANDIDATE_MAX_CHARS = 12000;
+    private static final List<PanelistSpec> PANELIST_SPECS = List.of(
+            new PanelistSpec("P1", "Refactoring Panelist 1"),
+            new PanelistSpec("P2", "Refactoring Panelist 2"),
+            new PanelistSpec("P3", "Refactoring Panelist 3")
+    );
+    private static final Map<String, String> USEFULNESS_CATEGORY_GUIDANCE = Map.ofEntries(
+            Map.entry("EXTRACT_METHOD_CONFIRMED", "The candidate clearly extracts one helper and replaces all target clone occurrences with calls to it."),
+            Map.entry("EXTRACT_METHOD_NOT_FOUND", "No valid Extract Method is visible for the target clone."),
+            Map.entry("INCOMPLETE_REFACTORING_DETECTED", "Some duplicated logic still remains in the original target methods after refactoring."),
+            Map.entry("EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED", "A helper was introduced, but the original duplicate body still remains instead of being replaced."),
+            Map.entry("DIRECT_CLONE_REMOVAL_DETECTED", "A clone occurrence was deleted directly instead of extracting shared logic."),
+            Map.entry("POST_EXTRACTION_CLONE_DELETION_DETECTED", "A helper was added, but one target clone was deleted afterward."),
+            Map.entry("CALL_BASED_CLONE_SUBSTITUTION_DETECTED", "One target clone now calls another existing method instead of using a new shared helper."),
+            Map.entry("CLONE_REMOVAL_BY_DELEGATION_DETECTED", "The candidate relies on delegation without clearly extracting one shared helper for all target clones."),
+            Map.entry("FRAGMENTATION_OF_LOGIC_DETECTED", "Shared logic is split across multiple helpers instead of one coherent extraction."),
+            Map.entry("NON_TARGET_CLONE_REFACTORING_DETECTED", "The candidate seems to refactor some other duplication while the intended target remains unresolved."),
+            Map.entry("EXCESSIVE_REFACTORING_DETECTED", "The candidate pulls in code beyond the intended cloned fragment.")
+    );
+
+    private static final class PanelistSpec {
+        final String id;
+        final String title;
+
+        private PanelistSpec(String id, String title) {
+            this.id = id;
+            this.title = title;
+        }
+    }
 
     public static class CloneRange {
         public int startLine;
@@ -96,6 +125,54 @@ public class refactoring {
         public boolean recognized;
         public String newSource;
         public String error;
+        public String helperMethod;
+        public List<OccurrenceRewrite> occurrenceReplacements;
+    }
+
+    private static final class PanelistOutcome {
+        public final String panelistId;
+        public final String rawResponse;
+        public final RefactorResult result;
+        public final boolean parsed;
+        public final String error;
+        public final String helperMethod;
+        public final List<OccurrenceRewrite> occurrenceReplacements;
+
+        private PanelistOutcome(String panelistId,
+                                String rawResponse,
+                                RefactorResult result,
+                                boolean parsed,
+                                String error,
+                                String helperMethod,
+                                List<OccurrenceRewrite> occurrenceReplacements) {
+            this.panelistId = panelistId == null ? "" : panelistId;
+            this.rawResponse = rawResponse == null ? "" : rawResponse;
+            this.result = result;
+            this.parsed = parsed;
+            this.error = error == null ? "" : error;
+            this.helperMethod = helperMethod == null ? "" : helperMethod;
+            this.occurrenceReplacements = occurrenceReplacements == null ? List.of() : List.copyOf(occurrenceReplacements);
+        }
+    }
+
+    private static final class CuratorSelectionResult {
+        public boolean parsed;
+        public String selectedPanelistId;
+        public List<String> matchedCategories;
+        public String summary;
+        public String feedback;
+        public double confidence;
+        public String rawResponse;
+        public String error;
+
+        private CuratorSelectionResult() {
+            this.matchedCategories = List.of();
+            this.summary = "";
+            this.feedback = "";
+            this.rawResponse = "";
+            this.error = "";
+            this.selectedPanelistId = "";
+        }
     }
 
     private static class TextSpan {
@@ -123,12 +200,22 @@ public class refactoring {
         public String file;
         public String newSource;
         public String message;
+        public String selectedPanelistId;
+        public List<String> curatorMatchedCategories;
+        public String curatorSummary;
+        public String curatorFeedback;
+        public double curatorConfidence;
 
         public RefactorResult(String status, String file, String newSource, String message) {
             this.status = status;
             this.file = file;
             this.newSource = newSource;
             this.message = message;
+            this.selectedPanelistId = "";
+            this.curatorMatchedCategories = List.of();
+            this.curatorSummary = "";
+            this.curatorFeedback = "";
+            this.curatorConfidence = 0.0d;
         }
     }
 
@@ -149,7 +236,7 @@ public class refactoring {
             return fail(fileName, "Prompt is empty");
         }
         String revisionPrompt = buildFeedbackRevisionPrompt(fileName, fileSource, clone, prompt);
-        return executePrompt(fileName, fileSource, clone, revisionPrompt, llmCaller);
+        return executePanelistsAndCurator(fileName, fileSource, clone, revisionPrompt, llmCaller);
     }
 
     /**
@@ -179,14 +266,53 @@ public class refactoring {
         }
 
         String prompt = buildRefactorPrompt(fileName, fileSource, clone, rag);
-        return executePrompt(fileName, fileSource, clone, prompt, llmCaller);
+        return executePanelistsAndCurator(fileName, fileSource, clone, prompt, llmCaller);
     }
 
-    private RefactorResult executePrompt(String fileName,
-                                         String fileSource,
-                                         DetectedClone clone,
-                                         String prompt,
-                                         Function<String, String> llmCaller) {
+    private RefactorResult executePanelistsAndCurator(String fileName,
+                                                      String fileSource,
+                                                      DetectedClone clone,
+                                                      String basePrompt,
+                                                      Function<String, String> llmCaller) {
+        if (llmCaller == null) {
+            return fail(fileName, "LLM caller is null");
+        }
+
+        List<PanelistOutcome> panelistOutcomes = new ArrayList<>();
+        for (PanelistSpec spec : PANELIST_SPECS) {
+            String panelistPrompt = buildPanelistPrompt(spec, basePrompt);
+            panelistOutcomes.add(executePanelistPrompt(spec, fileName, fileSource, clone, panelistPrompt, llmCaller));
+        }
+
+        CuratorSelectionResult curatorSelection = runCuratorSelection(fileName, fileSource, clone, panelistOutcomes, llmCaller);
+        PanelistOutcome selectedOutcome = resolveSelectedOutcome(curatorSelection, panelistOutcomes);
+        if (selectedOutcome == null || selectedOutcome.result == null
+                || selectedOutcome.result.newSource == null || selectedOutcome.result.newSource.isBlank()) {
+            String detail = curatorSelection != null && curatorSelection.parsed
+                    ? "Curator did not select a valid refactoring candidate."
+                    : "Curator selection failed and no valid refactoring candidate was available.";
+            return fail(fileName, detail);
+        }
+
+        RefactorResult selectedResult = selectedOutcome.result;
+        selectedResult.selectedPanelistId = selectedOutcome.panelistId;
+        if (curatorSelection != null) {
+            selectedResult.curatorMatchedCategories = curatorSelection.matchedCategories == null
+                    ? List.of()
+                    : List.copyOf(curatorSelection.matchedCategories);
+            selectedResult.curatorSummary = curatorSelection.summary == null ? "" : curatorSelection.summary;
+            selectedResult.curatorFeedback = curatorSelection.feedback == null ? "" : curatorSelection.feedback;
+            selectedResult.curatorConfidence = curatorSelection.confidence;
+        }
+        return selectedResult;
+    }
+
+    private PanelistOutcome executePanelistPrompt(PanelistSpec spec,
+                                                  String fileName,
+                                                  String fileSource,
+                                                  DetectedClone clone,
+                                                  String prompt,
+                                                  Function<String, String> llmCaller) {
         String rawOutput;
 
         try {
@@ -214,7 +340,15 @@ public class refactoring {
             } catch (Throwable ignored) {
             }
         } catch (Exception e) {
-            return fail(fileName, "LLM caller threw exception: " + e.getMessage());
+            return new PanelistOutcome(
+                    spec.id,
+                    "",
+                    fail(fileName, "LLM caller threw exception: " + e.getMessage()),
+                    false,
+                    "LLM caller threw exception: " + e.getMessage(),
+                    "",
+                    List.of()
+            );
         }
 
         try {
@@ -227,17 +361,34 @@ public class refactoring {
         }
 
         if (rawOutput == null || rawOutput.isEmpty()) {
-            return fail(fileName, "LLM caller returned empty output");
+            return new PanelistOutcome(
+                    spec.id,
+                    rawOutput,
+                    fail(fileName, "LLM caller returned empty output"),
+                    false,
+                    "LLM caller returned empty output",
+                    "",
+                    List.of()
+            );
         }
 
         StructuredRefactorOutcome structuredOutcome = tryApplyStructuredRefactor(rawOutput, fileSource, clone);
         String newSource = null;
+        String detail = "";
         if (structuredOutcome != null && structuredOutcome.recognized) {
             if (structuredOutcome.newSource == null || structuredOutcome.newSource.isBlank()) {
-                String detail = structuredOutcome.error == null || structuredOutcome.error.isBlank()
+                detail = structuredOutcome.error == null || structuredOutcome.error.isBlank()
                         ? "Structured JSON refactor output was recognized but could not be applied."
                         : "Failed to apply structured refactor output: " + structuredOutcome.error;
-                return fail(fileName, detail);
+                return new PanelistOutcome(
+                        spec.id,
+                        rawOutput,
+                        fail(fileName, detail),
+                        true,
+                        detail,
+                        structuredOutcome.helperMethod,
+                        structuredOutcome.occurrenceReplacements
+                );
             }
             newSource = structuredOutcome.newSource;
         } else {
@@ -253,21 +404,260 @@ public class refactoring {
                     } else if (obj.has("newSource")) {
                         newSource = obj.get("newSource").getAsString();
                     } else {
-                        return fail(fileName, "JSON output missing 'new_source' or 'newSource' field");
+                        detail = "JSON output missing 'new_source' or 'newSource' field";
+                        return new PanelistOutcome(
+                                spec.id,
+                                rawOutput,
+                                fail(fileName, detail),
+                                false,
+                                detail,
+                                structuredOutcome == null ? "" : structuredOutcome.helperMethod,
+                                structuredOutcome == null ? List.of() : structuredOutcome.occurrenceReplacements
+                        );
                     }
                 } catch (JsonSyntaxException e) {
-                    return fail(fileName, "Failed to parse JSON output: " + e.getMessage());
+                    detail = "Failed to parse JSON output: " + e.getMessage();
+                    return new PanelistOutcome(
+                            spec.id,
+                            rawOutput,
+                            fail(fileName, detail),
+                            false,
+                            detail,
+                            structuredOutcome == null ? "" : structuredOutcome.helperMethod,
+                            structuredOutcome == null ? List.of() : structuredOutcome.occurrenceReplacements
+                    );
                 }
             } else {
-                return fail(fileName, "Failed to extract Java code block or JSON from LLM output");
+                detail = "Failed to extract Java code block or JSON from LLM output";
+                return new PanelistOutcome(
+                        spec.id,
+                        rawOutput,
+                        fail(fileName, detail),
+                        false,
+                        detail,
+                        structuredOutcome == null ? "" : structuredOutcome.helperMethod,
+                        structuredOutcome == null ? List.of() : structuredOutcome.occurrenceReplacements
+                );
             }
         }
 
         if (newSource == null || newSource.isEmpty()) {
-            return fail(fileName, "Extracted new source is empty");
+            detail = "Extracted new source is empty";
+            return new PanelistOutcome(
+                    spec.id,
+                    rawOutput,
+                    fail(fileName, detail),
+                    false,
+                    detail,
+                    structuredOutcome == null ? "" : structuredOutcome.helperMethod,
+                    structuredOutcome == null ? List.of() : structuredOutcome.occurrenceReplacements
+            );
         }
 
-        return new RefactorResult("refactored", fileName, newSource, "Refactoring successful");
+        return new PanelistOutcome(
+                spec.id,
+                rawOutput,
+                new RefactorResult("refactored", fileName, newSource, "Refactoring successful"),
+                true,
+                "",
+                structuredOutcome == null ? "" : structuredOutcome.helperMethod,
+                structuredOutcome == null ? List.of() : structuredOutcome.occurrenceReplacements
+        );
+    }
+
+    private String buildPanelistPrompt(PanelistSpec spec, String basePrompt) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(spec.title).append(" (").append(spec.id).append(")\n");
+        sb.append("You are one of three independent Java refactoring panelists.\n");
+        sb.append("Produce your own best Extract Method candidate for the provided target clone.\n");
+        sb.append("Do not try to match the other panelists. Return the strongest valid candidate you can.\n\n");
+        sb.append(basePrompt == null ? "" : basePrompt);
+        return sb.toString();
+    }
+
+    private CuratorSelectionResult runCuratorSelection(String fileName,
+                                                       String fileSource,
+                                                       DetectedClone clone,
+                                                       List<PanelistOutcome> panelistOutcomes,
+                                                       Function<String, String> llmCaller) {
+        CuratorSelectionResult fallback = new CuratorSelectionResult();
+        if (llmCaller == null) {
+            fallback.error = "LLM caller is null";
+            return fallback;
+        }
+
+        String prompt = buildCuratorPrompt(fileName, fileSource, clone, panelistOutcomes);
+        String raw;
+        try {
+            raw = llmCaller.apply(prompt);
+        } catch (Exception e) {
+            fallback.error = "Curator LLM call failed: " + e.getMessage();
+            return fallback;
+        }
+        return parseCuratorSelection(raw);
+    }
+
+    private String buildCuratorPrompt(String fileName,
+                                      String fileSource,
+                                      DetectedClone clone,
+                                      List<PanelistOutcome> panelistOutcomes) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("You are the refactoring curator.\n");
+        sb.append("You must review three candidate Extract Method refactorings and choose the single best candidate.\n");
+        sb.append("Choose the candidate most likely to satisfy the PSI usefulness checker.\n");
+        sb.append("Prefer the candidate that most clearly achieves EXTRACT_METHOD_CONFIRMED and least likely triggers negative usefulness categories.\n\n");
+
+        sb.append("=== USEFULNESS CATEGORY GUIDANCE ===\n");
+        for (Map.Entry<String, String> entry : USEFULNESS_CATEGORY_GUIDANCE.entrySet()) {
+            sb.append("- ").append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
+        }
+        sb.append("\n");
+
+        sb.append("=== TARGET FILE ===\n");
+        sb.append("File name: ").append(fileName).append("\n");
+        sb.append("Full file source (for context only):\n");
+        sb.append("```\n").append(safeTruncate(fileSource, CURATOR_CANDIDATE_MAX_CHARS)).append("\n```\n\n");
+
+        sb.append("=== TARGET CLONE ===\n");
+        if (clone != null) {
+            if (clone.id != null && !clone.id.isBlank()) {
+                sb.append("Clone ID: ").append(clone.id).append("\n");
+            }
+            if (clone.refactorType != null && !clone.refactorType.isBlank()) {
+                sb.append("Requested refactor type: ").append(clone.refactorType).append("\n");
+            }
+            if (clone.reason != null && !clone.reason.isBlank()) {
+                sb.append("Detection rationale: ").append(safeTruncate(clone.reason, 800)).append("\n");
+            }
+            List<OccurrenceSpec> occurrences = buildOccurrenceSpecs(clone, fileSource);
+            if (!occurrences.isEmpty()) {
+                for (OccurrenceSpec occurrence : occurrences) {
+                    sb.append(occurrence.occurrenceId).append(":\n");
+                    sb.append("```\n").append(safeTruncate(occurrence.snippet, 1200)).append("\n```\n");
+                }
+            }
+        }
+        sb.append("\n");
+
+        sb.append("=== PANELIST CANDIDATES ===\n");
+        Gson gson = new GsonBuilder().setPrettyPrinting().create();
+        for (PanelistOutcome outcome : panelistOutcomes) {
+            JsonObject obj = new JsonObject();
+            obj.addProperty("panelist_id", outcome.panelistId);
+            obj.addProperty("parsed", outcome.parsed);
+            obj.addProperty("status", outcome.result == null ? "" : outcome.result.status);
+            obj.addProperty("message", outcome.result == null ? "" : outcome.result.message);
+            obj.addProperty("error", outcome.error);
+            obj.addProperty("helper_method", outcome.helperMethod);
+
+            JsonArray replacements = new JsonArray();
+            for (OccurrenceRewrite rewrite : outcome.occurrenceReplacements) {
+                if (rewrite == null) continue;
+                JsonObject replacement = new JsonObject();
+                replacement.addProperty("occurrence_id", rewrite.occurrenceId);
+                replacement.addProperty("replacement_code", rewrite.replacementCode);
+                replacements.add(replacement);
+            }
+            obj.add("occurrence_replacements", replacements);
+            obj.addProperty(
+                    "candidate_source_preview",
+                    outcome.result == null ? "" : safeTruncate(outcome.result.newSource, CURATOR_CANDIDATE_MAX_CHARS)
+            );
+            obj.addProperty("raw_response_preview", safeTruncate(outcome.rawResponse, 3000));
+
+            sb.append("[").append(outcome.panelistId).append("]\n");
+            sb.append(gson.toJson(obj)).append("\n\n");
+        }
+
+        sb.append("=== SELECTION RULES ===\n");
+        sb.append("1) Prefer candidates that clearly extract one helper and replace all target occurrences with calls to it.\n");
+        sb.append("2) Reject candidates that likely trigger EXTRACT_METHOD_NOT_FOUND, INCOMPLETE_REFACTORING_DETECTED, EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED, NON_TARGET_CLONE_REFACTORING_DETECTED, or DIRECT_CLONE_REMOVAL_DETECTED.\n");
+        sb.append("3) If several candidates look valid, prefer the most conservative change with the smallest safe extraction boundary.\n");
+        sb.append("4) If a candidate failed to parse or apply, do not choose it unless every candidate failed.\n\n");
+
+        sb.append("=== OUTPUT FORMAT ===\n");
+        sb.append("Return ONLY a JSON object with this exact shape:\n");
+        sb.append("{\n");
+        sb.append("  \"selected_panelist_id\": \"P1\",\n");
+        sb.append("  \"matched_categories\": [\"EXTRACT_METHOD_CONFIRMED\"],\n");
+        sb.append("  \"summary\": \"short explanation of why this candidate is best\",\n");
+        sb.append("  \"feedback\": \"optional short guidance about the remaining risk of the selected candidate\",\n");
+        sb.append("  \"confidence\": 0.85\n");
+        sb.append("}\n");
+        sb.append("If no candidate is acceptable, still select the least-bad candidate and explain the residual risks in feedback.\n");
+        return sb.toString();
+    }
+
+    private CuratorSelectionResult parseCuratorSelection(String raw) {
+        CuratorSelectionResult result = new CuratorSelectionResult();
+        result.rawResponse = raw == null ? "" : raw;
+        String jsonStr = extractJsonSubstring(raw);
+        if (jsonStr == null || jsonStr.isBlank()) {
+            result.error = "Could not extract curator JSON";
+            return result;
+        }
+
+        try {
+            JsonObject obj = JsonParser.parseString(jsonStr).getAsJsonObject();
+            result.parsed = true;
+            result.selectedPanelistId = getString(obj, "selected_panelist_id", "selectedPanelistId", "panelist_id", "panelistId");
+            JsonArray categories = getArray(obj, "matched_categories", "matchedCategories", "categories");
+            result.matchedCategories = parseStringArray(categories);
+            result.summary = optional(getString(obj, "summary"));
+            result.feedback = optional(getString(obj, "feedback"));
+            result.confidence = parseDouble(obj, "confidence");
+            return result;
+        } catch (Throwable t) {
+            result.error = "Could not parse curator JSON: " + t.getMessage();
+            return result;
+        }
+    }
+
+    private List<String> parseStringArray(JsonArray arr) {
+        List<String> out = new ArrayList<>();
+        if (arr == null) return out;
+        for (JsonElement element : arr) {
+            if (element == null || element.isJsonNull()) continue;
+            try {
+                String value = element.getAsString();
+                if (value != null && !value.isBlank()) out.add(value);
+            } catch (Throwable ignored) {
+                // ignore malformed items
+            }
+        }
+        return out;
+    }
+
+    private double parseDouble(JsonObject obj, String key) {
+        if (obj == null || key == null || !obj.has(key) || obj.get(key).isJsonNull()) return 0.0d;
+        try {
+            return obj.get(key).getAsDouble();
+        } catch (Throwable ignored) {
+            return 0.0d;
+        }
+    }
+
+    private PanelistOutcome resolveSelectedOutcome(CuratorSelectionResult curatorSelection,
+                                                   List<PanelistOutcome> panelistOutcomes) {
+        if (panelistOutcomes == null || panelistOutcomes.isEmpty()) return null;
+
+        if (curatorSelection != null && curatorSelection.selectedPanelistId != null && !curatorSelection.selectedPanelistId.isBlank()) {
+            for (PanelistOutcome outcome : panelistOutcomes) {
+                if (outcome == null || outcome.result == null) continue;
+                if (!outcome.panelistId.equals(curatorSelection.selectedPanelistId)) continue;
+                if (outcome.result.newSource != null && !outcome.result.newSource.isBlank()) {
+                    return outcome;
+                }
+            }
+        }
+
+        for (PanelistOutcome outcome : panelistOutcomes) {
+            if (outcome == null || outcome.result == null) continue;
+            if (outcome.result.newSource != null && !outcome.result.newSource.isBlank()) {
+                return outcome;
+            }
+        }
+        return null;
     }
 
 
@@ -575,6 +965,10 @@ public class refactoring {
                 outcome.error = "Structured JSON was recognized, but both helper_method and occurrence replacements were missing.";
                 return outcome;
             }
+            outcome.helperMethod = plan.helperMethod == null ? "" : plan.helperMethod;
+            outcome.occurrenceReplacements = plan.occurrenceReplacements == null
+                    ? List.of()
+                    : List.copyOf(plan.occurrenceReplacements);
             outcome.newSource = applyPartialRefactorPlan(fileSource, clone, plan);
             return outcome;
         } catch (JsonSyntaxException e) {
@@ -1206,6 +1600,10 @@ public class refactoring {
             }
         }
         return null;
+    }
+
+    private String optional(String value) {
+        return value == null ? "" : value;
     }
 
     private static class ResolvedReplacement {

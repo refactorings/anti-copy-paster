@@ -61,6 +61,25 @@ final class WorkflowJavaBuildSupport {
     private volatile String lastPatchedClassesDir;
     private volatile String lastTargetFqn;
 
+    static final class CompileAttempt {
+        final boolean success;
+        final File outputDir;
+        final String output;
+
+        private CompileAttempt(boolean success, File outputDir, String output) {
+            this.success = success;
+            this.outputDir = outputDir;
+            this.output = output == null ? "" : output;
+        }
+
+        String toCompileLog() {
+            if (success) {
+                return "BUILD SUCCESS\n" + output;
+            }
+            return "BUILD FAILED\nCompilation failed:\n" + output;
+        }
+    }
+
     WorkflowJavaBuildSupport(Project project,
                              Consumer<String> viewer,
                              AtomicReference<Process> currentProcessRef,
@@ -297,6 +316,17 @@ final class WorkflowJavaBuildSupport {
                                      String fileName,
                                      String proposedSource,
                                      String classpath) throws Exception {
+        CompileAttempt attempt = compileProposedSourceToTempAttempt(originalFile, fileName, proposedSource, classpath);
+        if (!attempt.success) {
+            throw new RuntimeException("Compilation failed:\n" + attempt.output);
+        }
+        return attempt.outputDir;
+    }
+
+    CompileAttempt compileProposedSourceToTempAttempt(File originalFile,
+                                                      String fileName,
+                                                      String proposedSource,
+                                                      String classpath) throws Exception {
         if (originalFile == null) throw new IllegalArgumentException("originalFile is null");
         if (proposedSource == null) throw new IllegalArgumentException("proposedSource is null");
 
@@ -398,10 +428,10 @@ final class WorkflowJavaBuildSupport {
         }
 
         if (exitCode != 0) {
-            throw new RuntimeException("Compilation failed:\n" + out);
+            return new CompileAttempt(false, tempOut, out);
         }
 
-        return tempOut;
+        return new CompileAttempt(true, tempOut, out);
     }
 
     String runTests(testing.TestRunRequest req) {

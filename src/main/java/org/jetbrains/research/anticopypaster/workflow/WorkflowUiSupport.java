@@ -33,6 +33,8 @@ import java.util.function.Consumer;
 final class WorkflowUiSupport {
     private static final DateTimeFormatter LOG_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
+    private static final java.util.concurrent.atomic.AtomicReference<String> STDOUT_LAST_STAGE =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
     private WorkflowUiSupport() {}
 
@@ -63,16 +65,18 @@ final class WorkflowUiSupport {
     }
 
     static Consumer<String> teeViewer(Consumer<String> viewer, BufferedWriter logWriter) {
+        final java.util.concurrent.atomic.AtomicReference<String> lastStage = new java.util.concurrent.atomic.AtomicReference<>();
         return (line) -> {
             if (line == null) return;
+            String formattedLine = addStageSpacing(line, lastStage);
             try {
-                if (viewer != null) viewer.accept(line);
+                if (viewer != null) viewer.accept(formattedLine);
             } catch (Throwable ignored) {
             }
             try {
                 if (logWriter != null) {
-                    logWriter.write(line);
-                    if (!line.endsWith("\n")) logWriter.write("\n");
+                    logWriter.write(formattedLine);
+                    if (!formattedLine.endsWith("\n")) logWriter.write("\n");
                     logWriter.flush();
                 }
             } catch (Throwable ignored) {
@@ -209,7 +213,8 @@ final class WorkflowUiSupport {
     }
 
     static void logStage(String stage, String msg) {
-        System.out.printf(Locale.ROOT, "[%s] %s%n", stage, msg);
+        String line = String.format(Locale.ROOT, "[%s] %s", stage, msg);
+        System.out.println(addStageSpacing(line, STDOUT_LAST_STAGE));
     }
 
     static void logStage(Consumer<String> viewer, String stage, String msg) {
@@ -227,6 +232,26 @@ final class WorkflowUiSupport {
         }
         Notification n = new Notification("AntiCopyPaster", "Clone Refactoring", content, type);
         Notifications.Bus.notify(n, project);
+    }
+
+    private static String addStageSpacing(String line, java.util.concurrent.atomic.AtomicReference<String> lastStage) {
+        String stage = extractStage(line);
+        if (stage == null || stage.isBlank()) {
+            return line;
+        }
+
+        String previous = lastStage.getAndSet(stage);
+        if (previous == null || previous.equals(stage) || line.startsWith("\n")) {
+            return line;
+        }
+        return "\n" + line;
+    }
+
+    private static String extractStage(String line) {
+        if (line == null || !line.startsWith("[")) return null;
+        int end = line.indexOf(']');
+        if (end <= 1) return null;
+        return line.substring(1, end);
     }
 
     private static String sanitizeForFilename(String s) {

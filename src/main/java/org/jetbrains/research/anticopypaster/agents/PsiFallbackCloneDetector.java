@@ -34,10 +34,11 @@ import java.util.Set;
  *       (The refactoring agent primarily relies on cloneCode; ranges are best-effort.)</li>
  * </ul>
  *
- * <p>Current v1 strategy:
+ * <p>Current strategy:
  * <ul>
- *   <li>Search the current file text for occurrences of the pasted snippet (plus a few robust variants).</li>
- *   <li>If we find 2+ occurrences, we return all of them as clone candidates.</li>
+ *   <li>Search the current file text for conservative exact matches of the pasted snippet.</li>
+ *   <li>If exact matching fails, fall back to a Type-1 token-exact match that ignores whitespace/comments.</li>
+ *   <li>Do NOT use Type-2/Type-3 approximate matching in PSI fallback, because high-recall matches caused false positives.</li>
  * </ul>
  *
  * <p>This intentionally does NOT attempt full project-wide clone detection.
@@ -102,8 +103,9 @@ public final class PsiFallbackCloneDetector {
             String fileText = psiFile.getText();
             if (fileText == null || fileText.isEmpty()) return Collections.emptyList();
 
-            // Build a small set of robust snippet variants.
-            // We keep this conservative so we don't create lots of false positives.
+            // Build a small set of exact-match variants.
+            // Keep this conservative: overlapping matches from aggressively normalized variants can
+            // inflate one real occurrence into multiple fake ones.
             Set<String> variants = buildSnippetVariants(snippet);
 
             // Collect occurrences across variants. Use LinkedHashSet to keep stable order.
@@ -111,31 +113,17 @@ public final class PsiFallbackCloneDetector {
             for (String v : variants) {
                 occurrences.addAll(findAllOccurrences(fileText, v));
             }
+            occurrences = collapseOverlappingOccurrences(occurrences);
 
             if (occurrences.size() < 2) {
-                // Exact/near-exact text match did not find duplicates.
-                // NEW: Type-1 (ignore whitespace/comments) fallback: tokenize both snippet and file,
-                // skip whitespace/comments, and look for exact token-text sequences.
+                // Exact text match did not find duplicates.
+                // Fall back only to Type-1 token-exact matching that ignores whitespace/comments.
                 occurrences = new LinkedHashSet<>();
                 occurrences.addAll(findType1OccurrencesIgnoreComments(psiFile, snippet, fileText));
+                occurrences = collapseOverlappingOccurrences(occurrences);
 
                 if (occurrences.size() < 2) {
-                    // Still nothing — try a lightweight Type-2 fallback: tokenize both snippet and file, normalize identifiers/literals,
-                    // and look for matching token-kind sequences.
-                    occurrences = new LinkedHashSet<>();
-                    occurrences.addAll(findType2Occurrences(project, psiFile, snippet, fileText));
-
-                    if (occurrences.size() < 2) {
-                        // Still nothing — try a high-recall Type-3-ish fallback based on token shingles (k-grams).
-                        // This can catch small edits/insertions/deletions while staying fast in same-file scope.
-                        occurrences = new LinkedHashSet<>();
-                        occurrences.addAll(findType3OccurrencesByShingles(psiFile, snippet, fileText));
-
-                        if (occurrences.size() < 2) {
-                            // Still nothing — return empty.
-                            return Collections.emptyList();
-                        }
-                    }
+                    return Collections.emptyList();
                 }
             }
 
@@ -171,60 +159,7 @@ public final class PsiFallbackCloneDetector {
 
     // ---------------------------- helpers ----------------------------
 
-    private static final int MIN_TOKENS_FOR_TYPE2 = 6;
     private static final int MIN_TOKENS_FOR_TYPE1_NO_COMMENTS = 6;
-
-    // Type-3-ish (high recall) shingle matcher settings
-    private static final int MIN_TOKENS_FOR_TYPE3 = 10;
-    private static final int TYPE3_K = 5;
-    // Lower threshold => fewer false negatives (more candidates). Tune if it gets too noisy.
-    private static final double TYPE3_MIN_SIM = 0.40;
-    private static final int TYPE3_MAX_CANDIDATES = 25;
-
-    private static Set<Occurrence> findType2Occurrences(Project project, PsiFile psiFile, String pastedSnippet, String fileText) {
-        if (psiFile == null) return Collections.emptySet();
-        if (pastedSnippet == null) return Collections.emptySet();
-
-        LanguageLevel level;
-        try {
-            level = PsiUtil.getLanguageLevel(psiFile);
-        } catch (Throwable t) {
-            level = LanguageLevel.HIGHEST;
-        }
-
-        List<NormTok> snippetToks = lexAndNormalize(pastedSnippet, level);
-        if (snippetToks.size() < MIN_TOKENS_FOR_TYPE2) return Collections.emptySet();
-
-        List<NormTok> fileToks = lexAndNormalize(fileText, level);
-        if (fileToks.size() < snippetToks.size()) return Collections.emptySet();
-
-        // Prepare the normalized kind sequence for snippet.
-        int m = snippetToks.size();
-        String[] needle = new String[m];
-        for (int i = 0; i < m; i++) needle[i] = snippetToks.get(i).kind;
-
-        Set<Occurrence> out = new LinkedHashSet<>();
-
-        // Naive sliding-window match (single-file scope; acceptable in practice).
-        for (int i = 0; i <= fileToks.size() - m; i++) {
-            boolean ok = true;
-            for (int j = 0; j < m; j++) {
-                if (!needle[j].equals(fileToks.get(i + j).kind)) {
-                    ok = false;
-                    break;
-                }
-            }
-            if (!ok) continue;
-
-            int start = fileToks.get(i).startOffset;
-            int end = fileToks.get(i + m - 1).endOffset;
-            if (start >= 0 && end > start) {
-                out.add(new Occurrence(start, end));
-            }
-        }
-
-        return out;
-    }
 
     private static final class NormTok {
         final String kind;
@@ -328,25 +263,56 @@ public final class PsiFallbackCloneDetector {
         Set<String> variants = new LinkedHashSet<>();
 
         String s0 = normalizeLineEndings(snippet);
-        variants.add(s0);
+        if (!s0.isEmpty()) variants.add(s0);
 
-        String s1 = s0.trim();
+        String s1 = rstripLines(s0);
         if (!s1.isEmpty()) variants.add(s1);
 
-        String s2 = rstripLines(s0);
+        // Remove only leading/trailing blank lines (common in copy/paste).
+        String s2 = trimBlankLines(s0);
         if (!s2.isEmpty()) variants.add(s2);
 
-        String s3 = dedent(s0);
-        if (!s3.isEmpty()) variants.add(s3);
-
-        String s4 = dedent(rstripLines(s0)).trim();
-        if (!s4.isEmpty()) variants.add(s4);
-
-        // Remove only leading/trailing blank lines (common in copy/paste).
-        String s5 = trimBlankLines(s0);
-        if (!s5.isEmpty()) variants.add(s5);
-
         return variants;
+    }
+
+    private static Set<Occurrence> collapseOverlappingOccurrences(Set<Occurrence> occurrences) {
+        if (occurrences == null || occurrences.isEmpty()) return Collections.emptySet();
+
+        List<Occurrence> sorted = new ArrayList<>(occurrences);
+        sorted.sort((left, right) -> {
+            if (left.startOffset != right.startOffset) {
+                return Integer.compare(left.startOffset, right.startOffset);
+            }
+            int leftLen = left.endOffset - left.startOffset;
+            int rightLen = right.endOffset - right.startOffset;
+            return Integer.compare(rightLen, leftLen);
+        });
+
+        LinkedHashSet<Occurrence> collapsed = new LinkedHashSet<>();
+        Occurrence current = null;
+        for (Occurrence occurrence : sorted) {
+            if (current == null) {
+                current = occurrence;
+                continue;
+            }
+
+            if (occurrence.startOffset < current.endOffset && current.startOffset < occurrence.endOffset) {
+                int currentLen = current.endOffset - current.startOffset;
+                int nextLen = occurrence.endOffset - occurrence.startOffset;
+                if (nextLen > currentLen) {
+                    current = occurrence;
+                }
+                continue;
+            }
+
+            collapsed.add(current);
+            current = occurrence;
+        }
+
+        if (current != null) {
+            collapsed.add(current);
+        }
+        return collapsed;
     }
 
     private static List<Occurrence> findAllOccurrences(String haystack, String needle) {
@@ -386,40 +352,6 @@ public final class PsiFallbackCloneDetector {
                 else break;
             }
             sb.append(line, 0, end);
-            if (i < lines.length - 1) sb.append('\n');
-        }
-        return sb.toString();
-    }
-
-    /**
-     * Remove common leading indentation across non-blank lines.
-     */
-    private static String dedent(String s) {
-        if (s == null || s.isEmpty()) return "";
-        String[] lines = normalizeLineEndings(s).split("\n", -1);
-        int minIndent = Integer.MAX_VALUE;
-        for (String line : lines) {
-            if (line.trim().isEmpty()) continue;
-            int indent = 0;
-            while (indent < line.length()) {
-                char c = line.charAt(indent);
-                if (c == ' ') indent++;
-                else if (c == '\t') indent++; // treat tab as 1 for simplicity
-                else break;
-            }
-            minIndent = Math.min(minIndent, indent);
-        }
-        if (minIndent == Integer.MAX_VALUE || minIndent == 0) return normalizeLineEndings(s);
-
-        StringBuilder sb = new StringBuilder(s.length());
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i];
-            if (line.trim().isEmpty()) {
-                sb.append(line);
-            } else {
-                int cut = Math.min(minIndent, line.length());
-                sb.append(line.substring(cut));
-            }
             if (i < lines.length - 1) sb.append('\n');
         }
         return sb.toString();
@@ -545,106 +477,5 @@ public final class PsiFallbackCloneDetector {
         }
 
         return out;
-    }
-
-
-    private static Set<Occurrence> findType3OccurrencesByShingles(PsiFile psiFile, String pastedSnippet, String fileText) {
-        if (psiFile == null) return Collections.emptySet();
-        if (pastedSnippet == null || pastedSnippet.trim().isEmpty()) return Collections.emptySet();
-        if (fileText == null || fileText.isEmpty()) return Collections.emptySet();
-
-        LanguageLevel level;
-        try {
-            level = PsiUtil.getLanguageLevel(psiFile);
-        } catch (Throwable t) {
-            level = LanguageLevel.HIGHEST;
-        }
-
-        List<NormTok> snippetToks = lexAndNormalize(pastedSnippet, level);
-        if (snippetToks.size() < MIN_TOKENS_FOR_TYPE3) return Collections.emptySet();
-
-        List<NormTok> fileToks = lexAndNormalize(fileText, level);
-        if (fileToks.size() < MIN_TOKENS_FOR_TYPE3) return Collections.emptySet();
-
-        int k = Math.min(TYPE3_K, Math.max(3, snippetToks.size() / 3));
-        int m = snippetToks.size();
-        int snippetShinglesCount = Math.max(0, m - k + 1);
-        if (snippetShinglesCount < 4) return Collections.emptySet();
-
-        // Build snippet shingle hash set
-        Set<Long> snippetShingles = new LinkedHashSet<>(snippetShinglesCount * 2);
-        for (int i = 0; i <= m - k; i++) {
-            snippetShingles.add(hashShingleKinds(snippetToks, i, k));
-        }
-
-        int n = fileToks.size();
-        int nf = n - k + 1;
-        if (nf <= 0) return Collections.emptySet();
-
-        // hit[p] = 1 if file shingle at token index p is also in snippet shingles
-        int[] hit = new int[nf];
-        for (int p = 0; p < nf; p++) {
-            long h = hashShingleKinds(fileToks, p, k);
-            hit[p] = snippetShingles.contains(h) ? 1 : 0;
-        }
-
-        // Prefix sums for O(1) window scoring
-        int[] pref = new int[nf + 1];
-        for (int i = 0; i < nf; i++) pref[i + 1] = pref[i] + hit[i];
-
-        // Allow small edits by letting window length vary a bit
-        int delta = Math.max(2, m / 5); // +/- 20%
-        int[] lens = new int[]{Math.max(MIN_TOKENS_FOR_TYPE3, m - delta), m, Math.min(n, m + delta)};
-
-        Set<Occurrence> out = new LinkedHashSet<>();
-
-        for (int L : lens) {
-            if (L < k) continue;
-            int windowShingles = Math.max(0, L - k + 1);
-            if (windowShingles <= 0) continue;
-
-            // Similarity: fraction of snippet shingles that appear in the window (recall-like => high recall)
-            int minHits = Math.max(3, (int) Math.floor(snippetShinglesCount * TYPE3_MIN_SIM));
-
-            // Shingle index range for a token window starting at t is [t .. t+L-k]
-            int maxStartToken = n - L;
-            for (int t = 0; t <= maxStartToken; t++) {
-                int l = t;
-                int r = t + L - k;
-                if (r < l) continue;
-                if (r >= nf) break;
-
-                int hits = pref[r + 1] - pref[l];
-                if (hits < minHits) continue;
-
-                double sim = (double) hits / (double) snippetShinglesCount;
-                if (sim < TYPE3_MIN_SIM) continue;
-
-                int startOff = fileToks.get(t).startOffset;
-                int endOff = fileToks.get(t + L - 1).endOffset;
-                if (startOff >= 0 && endOff > startOff) {
-                    out.add(new Occurrence(startOff, endOff));
-                    if (out.size() >= TYPE3_MAX_CANDIDATES) return out;
-                }
-            }
-        }
-
-        return out;
-    }
-
-    private static long hashShingleKinds(List<NormTok> toks, int start, int k) {
-        long h = 1469598103934665603L; // FNV-1a 64-bit offset basis
-        for (int i = 0; i < k; i++) {
-            String s = toks.get(start + i).kind;
-            // FNV-1a over characters
-            for (int c = 0; c < s.length(); c++) {
-                h ^= (byte) s.charAt(c);
-                h *= 1099511628211L;
-            }
-            // separator
-            h ^= 0xFF;
-            h *= 1099511628211L;
-        }
-        return h;
     }
 }
