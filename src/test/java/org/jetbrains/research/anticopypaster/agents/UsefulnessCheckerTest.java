@@ -158,4 +158,51 @@ public class UsefulnessCheckerTest extends LightPlatformTestCase {
         assertTrue(result.notes.contains("targetMethods=2"));
         assertTrue(result.notes.contains("targetPairs=1"));
     }
+
+    public void testAnalyzeReturnsNullWhenAfterSourceHasSyntaxErrors() {
+        String beforeSource = """
+                class Demo {
+                    void alpha() {
+                        int x = 1;
+                        System.out.println(x);
+                    }
+
+                    void beta() {
+                        int x = 1;
+                        System.out.println(x);
+                    }
+                }
+                """;
+
+        String afterSource = """
+                class Demo {
+                    void alpha() {
+                        extracted();
+                    void beta() {
+                        extracted();
+                    }
+
+                    private void extracted() {
+                        int x = 1;
+                        System.out.println(x);
+                    }
+                }
+                """;
+
+        List<usefulnessChecker.TargetMethodHint> targetHints = List.of(
+                new usefulnessChecker.TargetMethodHint("Demo", "alpha", 0, "Demo#alpha()"),
+                new usefulnessChecker.TargetMethodHint("Demo", "beta", 0, "Demo#beta()")
+        );
+
+        usefulnessChecker.UsefulnessResult result = usefulnessChecker.analyze(
+                getProject(),
+                "Demo.java",
+                beforeSource,
+                afterSource,
+                new usefulnessChecker.UsefulnessConfig(),
+                targetHints
+        );
+
+        assertNull(result);
+    }
 }

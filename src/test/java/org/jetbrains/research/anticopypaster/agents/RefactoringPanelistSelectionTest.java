@@ -86,6 +86,41 @@ class RefactoringPanelistSelectionTest {
         assertTrue(result.newSource.contains("private void extractedP1()"));
     }
 
+    @Test
+    void bodyOnlyReplacementPreservesWholeMethodOccurrenceHeaders() {
+        refactoring agent = new refactoring();
+        String source = demoSource();
+        refactoring.DetectedClone clone = demoClone();
+
+        Function<String, String> llmCaller = prompt -> {
+            if (prompt.contains("Refactoring Panelist 1 (P1)")
+                    || prompt.contains("Refactoring Panelist 2 (P2)")
+                    || prompt.contains("Refactoring Panelist 3 (P3)")) {
+                return candidatePlanJsonWithBodyOnlyReplacements("extractedBodyOnly");
+            }
+            if (prompt.contains("You are the refactoring curator.")) {
+                return curatorSelectionJson("P1", "P1 preserves the original wrappers.");
+            }
+            throw new IllegalArgumentException("Unexpected prompt: " + prompt);
+        };
+
+        refactoring.RefactorResult result = agent.refactorFile(
+                "Demo.java",
+                source,
+                clone,
+                "",
+                llmCaller
+        );
+
+        assertEquals("refactored", result.status);
+        assertTrue(result.newSource.contains("void alpha() {"));
+        assertTrue(result.newSource.contains("void beta() {"));
+        assertTrue(result.newSource.contains("extractedBodyOnly();"));
+        assertTrue(result.newSource.contains("private void extractedBodyOnly()"));
+        assertTrue(result.newSource.contains("void alpha() {\n        extractedBodyOnly();\n    }"));
+        assertTrue(result.newSource.contains("void beta() {\n        extractedBodyOnly();\n    }"));
+    }
+
     private static String demoSource() {
         return """
                 class Demo {
@@ -148,6 +183,25 @@ class RefactoringPanelistSelectionTest {
                     %s();
                 }
                 """.formatted(helperName).trim()));
+        obj.add("occurrence_replacements", replacements);
+        return obj.toString();
+    }
+
+    private static String candidatePlanJsonWithBodyOnlyReplacements(String helperName) {
+        JsonObject obj = new JsonObject();
+        obj.addProperty(
+                "helper_method",
+                """
+                private void %s() {
+                    int x = 1;
+                    System.out.println(x);
+                }
+                """.formatted(helperName).trim()
+        );
+
+        JsonArray replacements = new JsonArray();
+        replacements.add(replacement("OCCURRENCE_1", "%s();".formatted(helperName)));
+        replacements.add(replacement("OCCURRENCE_2", "%s();".formatted(helperName)));
         obj.add("occurrence_replacements", replacements);
         return obj.toString();
     }

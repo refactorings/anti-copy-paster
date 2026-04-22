@@ -170,6 +170,7 @@ public final class usefulnessChecker {
             PsiJavaFile beforePsi = parseInMemoryJavaFile(project, fileName, beforeSource);
             PsiJavaFile afterPsi = parseInMemoryJavaFile(project, fileName, afterSource);
             if (beforePsi == null || afterPsi == null) return fallback("PSI parse failed");
+            if (hasSyntaxErrors(afterPsi)) return null;
 
             Map<String, PsiMethod> beforeMethods = collectAllMethodsByKey(beforePsi);
             Map<String, PsiMethod> afterMethods = collectAllMethodsByKey(afterPsi);
@@ -1171,6 +1172,11 @@ public final class usefulnessChecker {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    private static boolean hasSyntaxErrors(PsiElement root) {
+        if (root == null) return true;
+        return !PsiTreeUtil.findChildrenOfType(root, PsiErrorElement.class).isEmpty();
     }
 
     private static Map<String, PsiMethod> collectAllMethodsByKey(PsiJavaFile jf) {

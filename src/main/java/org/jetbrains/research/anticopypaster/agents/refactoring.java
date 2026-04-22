@@ -841,6 +841,7 @@ public class refactoring {
         sb.append("}\n");
         sb.append("- `helper_method` must contain only the extracted helper method, not the class or file.\n");
         sb.append("- Each `replacement_code` must contain only the replacement for that occurrence, not the surrounding method or file.\n");
+        sb.append("- If an occurrence snippet includes a full method for location context, prefer returning only the updated cloned statements or helper call for that method body.\n");
         sb.append("- Include one replacement entry for every listed occurrence.\n");
         sb.append("- Do NOT omit `occurrence_replacements`, even if all replacements are similar.\n");
         sb.append("- Do NOT include explanation text before or after the JSON.\n");
@@ -924,6 +925,7 @@ public class refactoring {
         sb.append("}\n");
         sb.append("- `helper_method` must contain only the extracted helper method, not the class or file.\n");
         sb.append("- Each `replacement_code` must contain only the replacement for that occurrence.\n");
+        sb.append("- If an occurrence snippet includes a full method for location context, prefer returning only the updated cloned statements or helper call for that method body.\n");
         sb.append("- Include one replacement entry for every listed occurrence.\n");
         sb.append("- Do NOT include explanation text before or after the JSON.\n");
 
@@ -1022,6 +1024,7 @@ public class refactoring {
         if (specs.isEmpty()) {
             throw new IllegalStateException("No occurrence snippets available for partial refactoring");
         }
+        recalibrateOccurrenceSpecs(specs, fileSource);
 
         Map<String, OccurrenceRewrite> rewritesById = new LinkedHashMap<>();
         if (plan.occurrenceReplacements != null) {
@@ -1046,15 +1049,18 @@ public class refactoring {
                                 " snippet=" + previewSnippet(spec.snippet, 160)
                 );
             }
-            usedSpans.add(span);
-            resolved.add(new ResolvedReplacement(span, rewrite.replacementCode));
+            ReplacementTarget target = selectReplacementTarget(fileSource, span, rewrite.replacementCode);
+            usedSpans.add(target.span);
+            resolved.add(new ResolvedReplacement(target.span, target.newText, target.preformatted));
         }
 
         resolved.sort((a, b) -> Integer.compare(b.span.start, a.span.start));
         String updated = fileSource;
         for (ResolvedReplacement replacement : resolved) {
             String originalText = updated.substring(replacement.span.start, replacement.span.end);
-            String adjusted = reindentLikeOriginal(replacement.newText, originalText);
+            String adjusted = replacement.preformatted
+                    ? replacement.newText
+                    : reindentLikeOriginal(replacement.newText, originalText);
             updated = updated.substring(0, replacement.span.start) + adjusted + updated.substring(replacement.span.end);
         }
 
@@ -1238,6 +1244,42 @@ public class refactoring {
             }
         }
         return best;
+    }
+
+    private ReplacementTarget selectReplacementTarget(String source,
+                                                      TextSpan locatedSpan,
+                                                      String replacementCode) {
+        if (source == null || locatedSpan == null) {
+            return new ReplacementTarget(locatedSpan, replacementCode, false);
+        }
+        if (replacementCode == null || replacementCode.isBlank()) {
+            return new ReplacementTarget(locatedSpan, replacementCode, false);
+        }
+        if (looksLikeWholeMethodText(replacementCode)) {
+            return new ReplacementTarget(locatedSpan, replacementCode, false);
+        }
+
+        MethodTextSpan methodSpan = resolveWholeMethodSpan(source, locatedSpan);
+        if (methodSpan == null || methodSpan.bodyStart >= methodSpan.bodyEnd) {
+            return new ReplacementTarget(locatedSpan, replacementCode, false);
+        }
+
+        String originalBody = source.substring(methodSpan.bodyStart, methodSpan.bodyEnd);
+        String leadingWhitespace = leadingWhitespace(originalBody);
+        String trailingWhitespace = trailingWhitespace(originalBody);
+        String bodyCore = originalBody.substring(
+                Math.min(leadingWhitespace.length(), originalBody.length()),
+                Math.max(Math.min(leadingWhitespace.length(), originalBody.length()),
+                        originalBody.length() - trailingWhitespace.length())
+        );
+        String indentBasis = bodyCore.isBlank() ? originalBody : bodyCore;
+        String adjustedBody = reindentLikeOriginal(replacementCode, indentBasis);
+        String wrappedBody = leadingWhitespace + adjustedBody + trailingWhitespace;
+        return new ReplacementTarget(
+                new TextSpan(methodSpan.bodyStart, methodSpan.bodyEnd),
+                wrappedBody,
+                true
+        );
     }
 
     private boolean overlapsUsed(TextSpan candidate, List<TextSpan> usedSpans) {
@@ -1465,6 +1507,81 @@ public class refactoring {
         return -1;
     }
 
+    private MethodTextSpan resolveWholeMethodSpan(String source, TextSpan span) {
+        if (source == null || source.isBlank() || span == null) return null;
+        int start = Math.max(0, Math.min(span.start, source.length()));
+        int end = Math.max(start, Math.min(span.end, source.length()));
+        if (start >= end) return null;
+
+        while (start < end && Character.isWhitespace(source.charAt(start))) {
+            start++;
+        }
+        while (end > start && Character.isWhitespace(source.charAt(end - 1))) {
+            end--;
+        }
+        if (start >= end) return null;
+
+        int openBrace = source.indexOf('{', start);
+        if (openBrace < 0 || openBrace >= end) return null;
+
+        int closeBrace = findMatchingBrace(source, openBrace);
+        if (closeBrace < 0 || closeBrace + 1 != end) return null;
+
+        String header = source.substring(start, openBrace).trim();
+        if (!looksLikeMethodHeader(header)) return null;
+
+        return new MethodTextSpan(start, end, openBrace + 1, closeBrace);
+    }
+
+    private boolean looksLikeWholeMethodText(String text) {
+        if (text == null || text.isBlank()) return false;
+        return resolveWholeMethodSpan(text, new TextSpan(0, text.length())) != null;
+    }
+
+    private boolean looksLikeMethodHeader(String header) {
+        if (header == null) return false;
+        String normalized = normalizeLineForMatch(header);
+        if (normalized.isEmpty()) return false;
+
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        String[] rejectedPrefixes = {
+                "if ", "for ", "while ", "switch ", "try", "catch ", "do", "else",
+                "synchronized ", "class ", "interface ", "enum ", "record ", "new "
+        };
+        for (String prefix : rejectedPrefixes) {
+            if (lower.startsWith(prefix)) return false;
+        }
+        if (normalized.contains("->") || normalized.contains("=")) return false;
+
+        int openParen = normalized.indexOf('(');
+        int closeParen = normalized.lastIndexOf(')');
+        if (openParen <= 0 || closeParen < openParen) return false;
+
+        String beforeParen = normalized.substring(0, openParen).trim();
+        if (beforeParen.isEmpty()) return false;
+        int split = Math.max(beforeParen.lastIndexOf(' '), beforeParen.lastIndexOf('.'));
+        String candidateName = beforeParen.substring(split + 1).trim();
+        return candidateName.matches("[A-Za-z_$][A-Za-z0-9_$]*");
+    }
+
+    private String leadingWhitespace(String text) {
+        if (text == null || text.isEmpty()) return "";
+        int index = 0;
+        while (index < text.length() && Character.isWhitespace(text.charAt(index))) {
+            index++;
+        }
+        return text.substring(0, index);
+    }
+
+    private String trailingWhitespace(String text) {
+        if (text == null || text.isEmpty()) return "";
+        int index = text.length();
+        while (index > 0 && Character.isWhitespace(text.charAt(index - 1))) {
+            index--;
+        }
+        return text.substring(index);
+    }
+
     private String detectMemberIndent(String source, int insertPos) {
         int lineStart = Math.max(0, source.lastIndexOf('\n', Math.max(0, insertPos - 1)) + 1);
         int i = lineStart;
@@ -1609,10 +1726,38 @@ public class refactoring {
     private static class ResolvedReplacement {
         public TextSpan span;
         public String newText;
+        public boolean preformatted;
 
-        public ResolvedReplacement(TextSpan span, String newText) {
+        public ResolvedReplacement(TextSpan span, String newText, boolean preformatted) {
             this.span = span;
             this.newText = newText == null ? "" : newText;
+            this.preformatted = preformatted;
+        }
+    }
+
+    private static final class MethodTextSpan {
+        private final int start;
+        private final int end;
+        private final int bodyStart;
+        private final int bodyEnd;
+
+        private MethodTextSpan(int start, int end, int bodyStart, int bodyEnd) {
+            this.start = start;
+            this.end = end;
+            this.bodyStart = bodyStart;
+            this.bodyEnd = bodyEnd;
+        }
+    }
+
+    private static final class ReplacementTarget {
+        private final TextSpan span;
+        private final String newText;
+        private final boolean preformatted;
+
+        private ReplacementTarget(TextSpan span, String newText, boolean preformatted) {
+            this.span = span;
+            this.newText = newText == null ? "" : newText;
+            this.preformatted = preformatted;
         }
     }
 
