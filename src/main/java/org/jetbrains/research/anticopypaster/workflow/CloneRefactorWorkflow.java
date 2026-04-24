@@ -67,6 +67,7 @@ import org.jetbrains.research.anticopypaster.agents.compilation;
 import org.jetbrains.research.anticopypaster.agents.testing;
 import org.jetbrains.research.anticopypaster.agents.usefulnessChecker;
 import org.jetbrains.research.anticopypaster.agents.FragmentUsefulnessAnalyzer;
+import org.jetbrains.research.anticopypaster.agents.LlmUsefulnessEvaluator;
 import org.jetbrains.research.anticopypaster.agents.PsiFallbackCloneDetector;
 
 import java.io.*;
@@ -99,6 +100,7 @@ import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
 
 public final class CloneRefactorWorkflow {
     private static final String REFACTOR_RAG_DB_RESOURCE = "rag/refactor_database.csv";
+    private static final String WORKFLOW_STAGE_SEPARATOR = "————————————";
 
     // RAG retrieval tuning
     private static final int REFACTOR_RAG_TOP_K = 5;
@@ -190,6 +192,15 @@ public final class CloneRefactorWorkflow {
         if (feedback == null || feedback.isBlank()) return;
         String mode = feedbackOnlyPrompt ? "feedback-only" : "combined";
         logStage(viewer, "FEEDBACK", "sending feedback to refactor agent (mode=" + mode + "):\n" + feedback);
+    }
+
+    private static void logWorkflowStageStart(Consumer<String> viewer, String stageName) {
+        if (stageName == null || stageName.isBlank()) return;
+        logStage(viewer, "STAGE", stageName);
+    }
+
+    private static void logWorkflowStageEnd(Consumer<String> viewer) {
+        logStage(viewer, "STAGE", WORKFLOW_STAGE_SEPARATOR);
     }
 
     private static String buildLlmSetupGuidance(Project project) {
@@ -324,123 +335,131 @@ public final class CloneRefactorWorkflow {
 
                 Function<String, String> llmCaller = prompt -> callDetectionLlm(prompt, viewer, project);
                 Function<String, String> refactorLlmCaller = prompt -> callRefactorLlm(prompt, viewer, project);
+                LlmUsefulnessEvaluator.LabeledLlmCaller usefulnessLlmCaller =
+                        (label, prompt) -> callUsefulnessLlm(label, prompt, viewer, project);
 
                 /* ---------- Detection ---------- */
-                detection.DetectionResult det =
-                        detectionAgent.detect(
-                                project,
-                                fileName,
-                                originalSource,
-                                pastedSnippet,
-                                llmCaller
-                        );
+                detection.DetectedClone clone;
+                logWorkflowStageStart(viewer, "DETECTION STAGE");
+                try {
+                    detection.DetectionResult det =
+                            detectionAgent.detect(
+                                    project,
+                                    fileName,
+                                    originalSource,
+                                    pastedSnippet,
+                                    llmCaller
+                            );
 
-                if (det == null || det.clones == null || det.clones.isEmpty()) {
-                    logStage(viewer, "DETECTION", "no clones from LLM; trying PSI fallback (same-file)");
+                    if (det == null || det.clones == null || det.clones.isEmpty()) {
+                        logStage(viewer, "DETECTION", "no clones from LLM; trying PSI fallback (same-file)");
 
-                    // PSI fallback only makes sense when we have a snippet to anchor the search.
-                    if (pastedSnippet != null && !pastedSnippet.isBlank()) {
-                        try {
-                            java.util.List<?> cands = PsiFallbackCloneDetector.detectInSameFile(project, vf, pastedSnippet);
-                            logStage(viewer, "DETECTION", "PSI fallback candidates=" + (cands == null ? 0 : cands.size()));
+                        // PSI fallback only makes sense when we have a snippet to anchor the search.
+                        if (pastedSnippet != null && !pastedSnippet.isBlank()) {
+                            try {
+                                java.util.List<?> cands = PsiFallbackCloneDetector.detectInSameFile(project, vf, pastedSnippet);
+                                logStage(viewer, "DETECTION", "PSI fallback candidates=" + (cands == null ? 0 : cands.size()));
 
-                            if (cands != null && cands.size() >= 2) {
-                                // Convert PSI candidates into the same DTO shape as the LLM detector output.
-                                detection.DetectedClone psiClone = new detection.DetectedClone();
-                                psiClone.id = "psi_fallback_same_file";
-                                psiClone.ranges = new java.util.ArrayList<>();
-                                psiClone.cloneCodes = new java.util.ArrayList<>();
+                                if (cands != null && cands.size() >= 2) {
+                                    // Convert PSI candidates into the same DTO shape as the LLM detector output.
+                                    detection.DetectedClone psiClone = new detection.DetectedClone();
+                                    psiClone.id = "psi_fallback_same_file";
+                                    psiClone.ranges = new java.util.ArrayList<>();
+                                    psiClone.cloneCodes = new java.util.ArrayList<>();
 
-                                for (Object cc : cands) {
-                                    if (cc == null) continue;
+                                    for (Object cc : cands) {
+                                        if (cc == null) continue;
 
-                                    int sLine = getIntField(cc, "startLine", "start", "fromLine", "start_line", "startline");
-                                    int eLine = getIntField(cc, "endLine", "end", "toLine", "end_line", "endline");
-                                    if (sLine <= 0) sLine = 1;
-                                    if (eLine <= 0) eLine = sLine;
+                                        int sLine = getIntField(cc, "startLine", "start", "fromLine", "start_line", "startline");
+                                        int eLine = getIntField(cc, "endLine", "end", "toLine", "end_line", "endline");
+                                        if (sLine <= 0) sLine = 1;
+                                        if (eLine <= 0) eLine = sLine;
 
-                                    detection.CloneRange range = new detection.CloneRange();
-                                    setIntField(range, sLine, "startLine", "start", "fromLine", "start_line", "startline");
-                                    setIntField(range, eLine, "endLine", "end", "toLine", "end_line", "endline");
-                                    psiClone.ranges.add(range);
-                                    String cloneCode = getStringField(cc, "cloneCode", "code", "snippet", "text");
-                                    psiClone.cloneCodes.add(cloneCode == null ? "" : cloneCode);
+                                        detection.CloneRange range = new detection.CloneRange();
+                                        setIntField(range, sLine, "startLine", "start", "fromLine", "start_line", "startline");
+                                        setIntField(range, eLine, "endLine", "end", "toLine", "end_line", "endline");
+                                        psiClone.ranges.add(range);
+                                        String cloneCode = getStringField(cc, "cloneCode", "code", "snippet", "text");
+                                        psiClone.cloneCodes.add(cloneCode == null ? "" : cloneCode);
+                                    }
+                                    if (psiClone.cloneCodes.size() > 0) psiClone.cloneCodeA = psiClone.cloneCodes.get(0);
+                                    if (psiClone.cloneCodes.size() > 1) psiClone.cloneCodeB = psiClone.cloneCodes.get(1);
+
+                                    det = new detection.DetectionResult();
+                                    det.clones = new java.util.ArrayList<>();
+                                    det.clones.add(psiClone);
+
+                                    logStage(viewer, "DETECTION", "PSI fallback accepted: ranges=" + psiClone.ranges.size());
                                 }
-                                if (psiClone.cloneCodes.size() > 0) psiClone.cloneCodeA = psiClone.cloneCodes.get(0);
-                                if (psiClone.cloneCodes.size() > 1) psiClone.cloneCodeB = psiClone.cloneCodes.get(1);
-
-                                det = new detection.DetectionResult();
-                                det.clones = new java.util.ArrayList<>();
-                                det.clones.add(psiClone);
-
-                                logStage(viewer, "DETECTION", "PSI fallback accepted: ranges=" + psiClone.ranges.size());
+                            } catch (Throwable t) {
+                                logStage(viewer, "DETECTION", "PSI fallback failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
                             }
-                        } catch (Throwable t) {
-                            logStage(viewer, "DETECTION", "PSI fallback failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+                        } else {
+                            logStage(viewer, "DETECTION", "PSI fallback skipped: pastedSnippet is empty");
                         }
-                    } else {
-                        logStage(viewer, "DETECTION", "PSI fallback skipped: pastedSnippet is empty");
+
+                        // If still no clones after fallback, stop.
+                        if (det == null || det.clones == null || det.clones.isEmpty()) {
+                            logStage(viewer, "DETECTION", "no clones (after PSI fallback)");
+                            showNotification(project, "[Clone] No clones detected in: " + fileName, NotificationType.INFORMATION);
+                            return;
+                        }
                     }
 
-                    // If still no clones after fallback, stop.
-                    if (det == null || det.clones == null || det.clones.isEmpty()) {
-                        logStage(viewer, "DETECTION", "no clones (after PSI fallback)");
-                        showNotification(project, "[Clone] No clones detected in: " + fileName, NotificationType.INFORMATION);
+                    det.clones = resolveDetectedCloneRangesWithPsi(project, vf, originalSource, det.clones, viewer);
+                    det.clones = mergeOverlappingDetectedClones(originalSource, det.clones, viewer);
+
+                    try {
+                        if (det != null) {
+                            java.nio.file.Path nicadOut =
+                                    java.nio.file.Path.of(project.getBasePath(),
+                                            ".anticopypaster",
+                                            "nicad",
+                                            fileName + ".nicad.xml");
+
+                            java.nio.file.Files.createDirectories(nicadOut.getParent());
+                            detectionAgent.saveAsNiCadXml(det, vf.getPath(), nicadOut);
+                        }
+                    } catch (Exception e) {
+                        logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
+                    }
+
+                    int detectedCloneCount = 1;
+                    if (det.clones != null) {
+                        for (detection.DetectedClone c : det.clones) {
+                            if (c != null && c.ranges != null) {
+                                detectedCloneCount += c.ranges.size() - 1;
+                            }
+                        }
+                    }
+                    logStage(viewer, "DETECTION", "detected clone range count=" + detectedCloneCount);
+                    logStage(viewer, "DETECTION", "detected clone class count=" + det.clones.size());
+
+                    if (detectedCloneCount < minimumCloneCount) {
+                        logStage(viewer, "DETECTION", "stopped: detected clone range count " + detectedCloneCount +
+                                " is smaller than minimumCloneCount=" + minimumCloneCount + " for Clone_multiagent. This parameter is set by the user in the settings and can be adjusted based on your needs.");
+                        showNotification(project,
+                                "[Clone] Only " + detectedCloneCount + " clone range(s) detected in: " + fileName +
+                                        ". Need at least " + minimumCloneCount + " to continue.",
+                                NotificationType.INFORMATION);
                         return;
                     }
-                }
 
-                det.clones = resolveDetectedCloneRangesWithPsi(project, vf, originalSource, det.clones, viewer);
-                det.clones = mergeOverlappingDetectedClones(originalSource, det.clones, viewer);
-
-                try {
-                    if (det != null) {
-                        java.nio.file.Path nicadOut =
-                                java.nio.file.Path.of(project.getBasePath(),
-                                        ".anticopypaster",
-                                        "nicad",
-                                        fileName + ".nicad.xml");
-
-                        java.nio.file.Files.createDirectories(nicadOut.getParent());
-                        detectionAgent.saveAsNiCadXml(det, vf.getPath(), nicadOut);
+                    clone = chooseCloneToRefactor(project, vf, det.clones, viewer);
+                    if (clone == null) {
+                        showNotification(project, "[Clone] Clone selection cancelled for: " + fileName, NotificationType.WARNING);
+                        return;
                     }
-                } catch (Exception e) {
-                    logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
-                }
 
-                int detectedCloneCount = 1;
-                if (det.clones != null) {
-                    for (detection.DetectedClone c : det.clones) {
-                        if (c != null && c.ranges != null) {
-                            detectedCloneCount += c.ranges.size() - 1;
-                        }
+                    clone = chooseCloneRangesToRefactor(project, vf, originalSource, clone, viewer);
+                    if (clone == null) {
+                        showNotification(project, "[Clone] Clone range selection cancelled for: " + fileName, NotificationType.WARNING);
+                        return;
                     }
+                    showNotification(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
+                } finally {
+                    logWorkflowStageEnd(viewer);
                 }
-                logStage(viewer, "DETECTION", "detected clone range count=" + detectedCloneCount);
-                logStage(viewer, "DETECTION", "detected clone class count=" + det.clones.size());
-
-                if (detectedCloneCount < minimumCloneCount) {
-                    logStage(viewer, "DETECTION", "stopped: detected clone range count " + detectedCloneCount +
-                            " is smaller than minimumCloneCount=" + minimumCloneCount + " for Clone_multiagent. This parameter is set by the user in the settings and can be adjusted based on your needs.");
-                    showNotification(project,
-                            "[Clone] Only " + detectedCloneCount + " clone range(s) detected in: " + fileName +
-                                    ". Need at least " + minimumCloneCount + " to continue.",
-                            NotificationType.INFORMATION);
-                    return;
-                }
-
-                detection.DetectedClone clone = chooseCloneToRefactor(project, vf, det.clones, viewer);
-                if (clone == null) {
-                    showNotification(project, "[Clone] Clone selection cancelled for: " + fileName, NotificationType.WARNING);
-                    return;
-                }
-
-                clone = chooseCloneRangesToRefactor(project, vf, originalSource, clone, viewer);
-                if (clone == null) {
-                    showNotification(project, "[Clone] Clone range selection cancelled for: " + fileName, NotificationType.WARNING);
-                    return;
-                }
-                showNotification(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
 
                 final java.util.List<CloneMethodSnapshot> watchedCloneMethods = captureCloneMethodSnapshots(project, vf, clone, viewer);
                 trackedDocument = FileDocumentManager.getInstance().getDocument(vf);
@@ -513,153 +532,198 @@ public final class CloneRefactorWorkflow {
                         logStage(viewer, "ATTEMPT", attempt + "/" + maxAttempts);
 
                         /* ===== Refactor ===== */
-                        // Prepend refactor few-shot examples (RAG) to the feedback for the refactor agent.
-                        // This keeps the agent signature unchanged while still injecting few-shot context.
-                        refactoring.RefactorResult rr;
-                        refactoring.DetectedClone refactorClone = convertClone(clone);
-                        if (useFeedbackOnlyPrompt && feedback != null && !feedback.isBlank()) {
-                            logStage(viewer, "REFACTOR", "retry mode: feedback-only prompt");
-                            logFeedbackToRefactorAgent(viewer, feedback, true);
-                            rr = refactorAgent.refactorWithPrompt(
-                                    fileName,
-                                    currentSource,
-                                    refactorClone,
-                                    feedback,
-                                    refactorLlmCaller
-                            );
-                        } else {
-                            String combinedFeedback = "";
-                            if (refactorRagGuidance != null && !refactorRagGuidance.isBlank()) {
-                                combinedFeedback += refactorRagGuidance.strip() + "\n\n";
-                            }
-                            if (feedback != null && !feedback.isBlank()) {
-                                combinedFeedback += "[PREVIOUS_FEEDBACK]\n" + feedback.strip() + "\n";
-                            }
-                            String feedbackForRefactor = combinedFeedback.isBlank() ? null : combinedFeedback;
-                            logFeedbackToRefactorAgent(viewer, feedback, false);
-
-                            rr = refactorAgent.refactorFile(
-                                    fileName,
-                                    currentSource,
-                                    refactorClone,
-                                    feedbackForRefactor,
-                                    refactorLlmCaller
-                            );
-                        }
-
-
-	                        if (rr == null || rr.newSource == null || rr.newSource.isBlank()) {
-	                            String failReason;
-	                            if (rr == null) {
-	                                failReason = "Refactor agent returned null result.";
-	                            } else if (rr.message != null && !rr.message.isBlank()) {
-	                                failReason = rr.message;
-	                            } else if (rr.newSource == null) {
-	                                failReason = "Refactor agent returned null newSource.";
-	                            } else {
-	                                failReason = "Refactor agent returned empty newSource.";
-	                            }
-
-                            feedback = "Refactor produced empty or invalid output. " + failReason;
-                            useFeedbackOnlyPrompt = false;
-                            logStage(viewer, "REFACTOR", "failed: " + failReason);
-
-                            // Try to give a helpful hint for the most common cause: LLM returned empty due to misconfiguration.
-                            String llmHint = "";
-                            try {
-                                if (LLM instanceof NoopLlmClient) {
-                                    llmHint = "\nGuide: " + buildLlmSetupGuidance(project);
-                                }
-                            } catch (Throwable ignored) {}
-
-                            showNotification(project,
-                                    "[Clone] Refactor failed (attempt " + attempt + "/" + maxAttempts + ") for: " + fileName +
-                                            "\nReason: " + failReason +
-                                            llmHint +
-                                            "\nCheck the workflow console/log for details.",
-                                    NotificationType.WARNING);
-                            continue;
-                        }
-
-                        // Do NOT apply immediately. We will compile/test the proposed source in an isolated temp output first.
-                        String proposedSource = rr.newSource;
-                        logStage(viewer, "REFACTOR", "proposal generated (not applied yet)");
-                        if (rr.selectedPanelistId != null && !rr.selectedPanelistId.isBlank()) {
-                            String summary = rr.curatorSummary == null ? "" : rr.curatorSummary;
-                            logStage(
-                                    viewer,
-                                    "REFACTOR",
-                                    "curator selected " + rr.selectedPanelistId +
-                                            (summary.isBlank() ? "" : (", summary=" + summary))
-                            );
-                        }
-
-                        // ===== Show proposed refactored code (for debugging / transparency) =====
-                        if (viewer != null) {
-                            String src = proposedSource == null ? "" : proposedSource;
-//                            int maxChars = REFACTOR_PROPOSAL_PREVIEW_CHARS; // keep console usable
-//                            String shown = src.length() > maxChars ? (src.substring(0, maxChars) + "\n...<truncated>...") : src;
-                            viewer.accept("[REFACTOR_CODE] proposedSource:" + src);
-                        }
-
-                        // Also persist the full proposed source to a file under the project, so the user can open it.
+                        String proposedSource;
+                        logWorkflowStageStart(viewer, "REFACTORING STAGE (attempt " + attempt + "/" + maxAttempts + ")");
                         try {
-                            String basePath = project == null ? null : project.getBasePath();
-                            if (basePath != null && !basePath.isBlank()) {
-                                File outDir = new File(basePath, ".anticopypaster" + File.separator + "proposals");
-                                if (!outDir.exists()) outDir.mkdirs();
-                                File outFile = new File(outDir, fileName + ".attempt" + attempt + ".proposed.java");
-                                Files.writeString(outFile.toPath(), proposedSource, StandardCharsets.UTF_8);
-                                logStage(viewer, "REFACTOR_CODE", "full proposed source saved to: " + outFile.getAbsolutePath());
+                            // Prepend refactor few-shot examples (RAG) to the feedback for the refactor agent.
+                            // This keeps the agent signature unchanged while still injecting few-shot context.
+                            refactoring.RefactorResult rr;
+                            refactoring.DetectedClone refactorClone = convertClone(clone);
+                            if (useFeedbackOnlyPrompt && feedback != null && !feedback.isBlank()) {
+                                logStage(viewer, "REFACTOR", "retry mode: feedback-only prompt");
+                                logFeedbackToRefactorAgent(viewer, feedback, true);
+                                rr = refactorAgent.refactorWithPrompt(
+                                        fileName,
+                                        currentSource,
+                                        refactorClone,
+                                        feedback,
+                                        refactorLlmCaller
+                                );
+                            } else {
+                                String combinedFeedback = "";
+                                if (refactorRagGuidance != null && !refactorRagGuidance.isBlank()) {
+                                    combinedFeedback += refactorRagGuidance.strip() + "\n\n";
+                                }
+                                if (feedback != null && !feedback.isBlank()) {
+                                    combinedFeedback += "[PREVIOUS_FEEDBACK]\n" + feedback.strip() + "\n";
+                                }
+                                String feedbackForRefactor = combinedFeedback.isBlank() ? null : combinedFeedback;
+                                logFeedbackToRefactorAgent(viewer, feedback, false);
+
+                                rr = refactorAgent.refactorFile(
+                                        fileName,
+                                        currentSource,
+                                        refactorClone,
+                                        feedbackForRefactor,
+                                        refactorLlmCaller
+                                );
                             }
-                        } catch (Throwable t) {
-                            logStage(viewer, "REFACTOR_CODE", "failed to save proposed source: " + t.getMessage());
+
+
+	                            if (rr == null || rr.newSource == null || rr.newSource.isBlank()) {
+	                                String failReason;
+	                                if (rr == null) {
+	                                    failReason = "Refactor agent returned null result.";
+	                                } else if (rr.message != null && !rr.message.isBlank()) {
+	                                    failReason = rr.message;
+	                                } else if (rr.newSource == null) {
+	                                    failReason = "Refactor agent returned null newSource.";
+	                                } else {
+	                                    failReason = "Refactor agent returned empty newSource.";
+	                                }
+
+                                feedback = "Refactor produced empty or invalid output. " + failReason;
+                                useFeedbackOnlyPrompt = false;
+                                logStage(viewer, "REFACTOR", "failed: " + failReason);
+
+                                // Try to give a helpful hint for the most common cause: LLM returned empty due to misconfiguration.
+                                String llmHint = "";
+                                try {
+                                    if (LLM instanceof NoopLlmClient) {
+                                        llmHint = "\nGuide: " + buildLlmSetupGuidance(project);
+                                    }
+                                } catch (Throwable ignored) {}
+
+                                showNotification(project,
+                                        "[Clone] Refactor failed (attempt " + attempt + "/" + maxAttempts + ") for: " + fileName +
+                                                "\nReason: " + failReason +
+                                                llmHint +
+                                                "\nCheck the workflow console/log for details.",
+                                        NotificationType.WARNING);
+                                continue;
+                            }
+
+                            // Do NOT apply immediately. We will compile/test the proposed source in an isolated temp output first.
+                            proposedSource = rr.newSource;
+                            logStage(viewer, "REFACTOR", "proposal generated (not applied yet)");
+                            if (rr.selectedPanelistId != null && !rr.selectedPanelistId.isBlank()) {
+                                String summary = rr.curatorSummary == null ? "" : rr.curatorSummary;
+                                logStage(
+                                        viewer,
+                                        "REFACTOR",
+                                        "curator selected " + rr.selectedPanelistId +
+                                                (summary.isBlank() ? "" : (", summary=" + summary))
+                                );
+                            }
+
+                            // ===== Show proposed refactored code (for debugging / transparency) =====
+                            if (viewer != null) {
+                                String src = proposedSource == null ? "" : proposedSource;
+//                                int maxChars = REFACTOR_PROPOSAL_PREVIEW_CHARS; // keep console usable
+//                                String shown = src.length() > maxChars ? (src.substring(0, maxChars) + "\n...<truncated>...") : src;
+                                viewer.accept("[REFACTOR_CODE] proposedSource:" + src);
+                            }
+
+                            // Also persist the full proposed source to a file under the project, so the user can open it.
+                            try {
+                                String basePath = project == null ? null : project.getBasePath();
+                                if (basePath != null && !basePath.isBlank()) {
+                                    File outDir = new File(basePath, ".anticopypaster" + File.separator + "proposals");
+                                    if (!outDir.exists()) outDir.mkdirs();
+                                    File outFile = new File(outDir, fileName + ".attempt" + attempt + ".proposed.java");
+                                    Files.writeString(outFile.toPath(), proposedSource, StandardCharsets.UTF_8);
+                                    logStage(viewer, "REFACTOR_CODE", "full proposed source saved to: " + outFile.getAbsolutePath());
+                                }
+                            } catch (Throwable t) {
+                                logStage(viewer, "REFACTOR_CODE", "failed to save proposed source: " + t.getMessage());
+                            }
+                        } finally {
+                            logWorkflowStageEnd(viewer);
                         }
 
                         // ===== Usefulness Check (run BEFORE compilation/testing) =====
-                        // PSI usefulness is the only gate.
                         boolean isUseful = true;
-                        if (wholeMethod != null) {
-                            java.util.List<usefulnessChecker.TargetMethodHint> targetMethodHints =
-                                    buildUsefulnessTargetHints(watchedCloneMethods);
-                            usefulnessChecker.UsefulnessResult urBeforeCompile =
-                                    usefulnessChecker.analyze(
-                                            project,
-                                            fileName,
-                                            currentSource,
-                                            proposedSource,
-                                            new usefulnessChecker.UsefulnessConfig(),
-                                            targetMethodHints
-                                    );
+                        logWorkflowStageStart(viewer, "USEFULNESS CHECKER STAGE (attempt " + attempt + "/" + maxAttempts + ")");
+                        try {
+                            boolean runPsiUsefulness = true;
+                            boolean llmCuratorRejected = false;
+                            LlmUsefulnessEvaluator.EvaluationResult llmUsefulnessResult = null;
+                            String llmUsefulnessFeedbackSection = "";
 
-                            if (urBeforeCompile != null && !urBeforeCompile.isUseful) {
-                                boolean overridden = false;
-                                try {
-                                    if (containsReasonName(urBeforeCompile.reasons, "EXTRACT_METHOD_NOT_FOUND")) {
-                                        String[] wrappers = parseWrapperNamesFromUsefulnessDebug(extractUsefulnessDebugText(urBeforeCompile));
-                                        if (wrappers != null && wrappers.length == 2
-                                                && looksLikeValidExtractMethodDelegation(currentSource, proposedSource, wrappers[0], wrappers[1])) {
-                                            overridden = true;
-                                            isUseful = true;
-                                            logStage(viewer, "USEFUL", "override: both wrappers delegate to the same extracted helper");
-                                        }
+                            try {
+                                LlmUsefulnessEvaluator.UsefulnessInput llmUsefulnessInput =
+                                        buildLlmUsefulnessInput(
+                                                project,
+                                                fileName,
+                                                clone,
+                                                currentSource,
+                                                proposedSource,
+                                                watchedCloneMethods,
+                                                wholeMethod != null
+                                        );
+                                llmUsefulnessResult = LlmUsefulnessEvaluator.evaluate(
+                                        llmUsefulnessInput,
+                                        usefulnessLlmCaller
+                                );
+                                llmUsefulnessFeedbackSection = buildLlmUsefulnessFeedbackSection(llmUsefulnessResult);
+
+                                if (llmUsefulnessResult != null
+                                        && llmUsefulnessResult.available
+                                        && llmUsefulnessResult.curatorResult != null) {
+                                    if (llmUsefulnessResult.useful) {
+                                        runPsiUsefulness = false;
+                                        String summary = llmUsefulnessResult.curatorResult.summary;
+                                        logStage(
+                                                viewer,
+                                                "USEFUL",
+                                                "LLM curator accepted proposal" +
+                                                        (summary == null || summary.isBlank() ? "" : (": " + summary))
+                                        );
+                                    } else {
+                                        llmCuratorRejected = true;
+                                        logStage(
+                                                viewer,
+                                                "USEFUL",
+                                                "LLM curator rejected proposal: reasons=" +
+                                                        llmUsefulnessResult.curatorResult.reasons +
+                                                        (llmUsefulnessResult.curatorResult.summary == null
+                                                                || llmUsefulnessResult.curatorResult.summary.isBlank()
+                                                                ? ""
+                                                                : (", summary=" + llmUsefulnessResult.curatorResult.summary))
+                                        );
                                     }
-                                } catch (Throwable ignored) {
-                                    // fall through
+                                } else {
+                                    String notes = llmUsefulnessResult == null ? "" : llmUsefulnessResult.notes;
+                                    logStage(
+                                            viewer,
+                                            "USEFUL",
+                                            "LLM usefulness unavailable; falling back to PSI check" +
+                                                    (notes == null || notes.isBlank() ? "" : (" (" + notes + ")"))
+                                    );
                                 }
+                            } catch (Throwable t) {
+                                logStage(viewer, "USEFUL", "LLM usefulness evaluation failed: " + t.getMessage() + " (falling back to PSI check)");
+                            }
 
-                                if (!overridden) {
+                            if (runPsiUsefulness && wholeMethod != null) {
+                                java.util.List<usefulnessChecker.TargetMethodHint> targetMethodHints =
+                                        buildUsefulnessTargetHints(watchedCloneMethods);
+                                usefulnessChecker.UsefulnessResult urBeforeCompile =
+                                        usefulnessChecker.analyze(
+                                                project,
+                                                fileName,
+                                                currentSource,
+                                                proposedSource,
+                                                new usefulnessChecker.UsefulnessConfig(),
+                                                targetMethodHints
+                                        );
+
+                                if (urBeforeCompile == null) {
                                     isUseful = false;
-                                    String msg = "Not useful refactoring proposal: reasons=" + urBeforeCompile.reasons;
-                                    logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
-                                    showNotification(project,
-                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
-                                                    "for: " + fileName + "\n \n" +
-                                                    "Reason:\n" +
-                                                    urBeforeCompile.reasons + "\n" +
-                                                    definitionForReason(urBeforeCompile.reasons),
-                                            NotificationType.WARNING);
-
+                                    String reasonsText = "[PSI_USEFULNESS_UNAVAILABLE]";
+                                    String reasonDefinition = "The PSI usefulness checker could not validate the proposed source. "
+                                            + "This usually means the proposal is still syntactically invalid or structurally inconsistent, "
+                                            + "so it cannot proceed to compilation.";
                                     String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
                                             project,
                                             fileName,
@@ -667,26 +731,127 @@ public final class CloneRefactorWorkflow {
                                             proposedSource,
                                             watchedCloneMethods
                                     );
-                                    String feedbackPrompt = buildUsefulnessFeedbackPrompt(
-                                            project,
-                                            fileName,
-                                            proposedSource,
-                                            urBeforeCompile.reasons,
-                                            watchedCloneMethods
-                                    );
-                                    String reasonsText = String.valueOf(urBeforeCompile.reasons);
-                                    String reasonDefinition = definitionForReason(urBeforeCompile.reasons);
-                                    String notesText = (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank())
+                                    String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
                                             ? ""
-                                            : ("\n\n[USEFULNESS_NOTES]\n" + urBeforeCompile.notes);
+                                            : ("\n\n" + llmUsefulnessFeedbackSection);
+                                    String revisionInstruction = mergeRevisionInstructions(
+                                            llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
+                                                    ? llmUsefulnessResult.curatorResult.feedback
+                                                    : "",
+                                            "Revise the refactoring so the proposed source is syntactically valid, preserves every target clone method, "
+                                                    + "and replaces each target clone occurrence with a call to one extracted helper."
+                                    );
+                                    if (revisionInstruction == null || revisionInstruction.isBlank()) {
+                                        revisionInstruction = "Revise the refactoring so the proposed source is syntactically valid, "
+                                                + "preserves every target clone method, and uses Extract Method instead of deleting or merging clone sites.";
+                                    }
+
+                                    logStage(
+                                            viewer,
+                                            "USEFUL",
+                                            llmCuratorRejected
+                                                    ? "LLM curator rejected proposal and PSI usefulness could not overturn it"
+                                                    : "PSI usefulness check could not validate the proposal"
+                                    );
+                                    showNotification(project,
+                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+                                                    "for: " + fileName + "\n \n" +
+                                                    "Reason:\n" +
+                                                    reasonsText + "\n" +
+                                                    reasonDefinition,
+                                            NotificationType.WARNING);
 
                                     feedback = """
-Your previous refactoring attempt was rejected by the usefulness checker.
+Your previous refactoring attempt was rejected by the usefulness checks.
 
 	[NOT_USEFUL_REFACTORED_CODE]
 	```java
 	%s
-	```
+	```%s
+
+[REASONS]
+%s
+
+[REASON_DEFINITION]
+%s
+
+	[REVISION_INSTRUCTION]
+	%s
+	""".formatted(
+                                            focusedProposedCode,
+                                            llmFeedbackText,
+                                            reasonsText,
+                                            reasonDefinition,
+                                            revisionInstruction
+                                    );
+                                    useFeedbackOnlyPrompt = true;
+                                } else if (!urBeforeCompile.isUseful) {
+                                    boolean overridden = false;
+                                    try {
+                                        if (containsReasonName(urBeforeCompile.reasons, "EXTRACT_METHOD_NOT_FOUND")) {
+                                            String[] wrappers = parseWrapperNamesFromUsefulnessDebug(extractUsefulnessDebugText(urBeforeCompile));
+                                            if (wrappers != null && wrappers.length == 2
+                                                    && looksLikeValidExtractMethodDelegation(currentSource, proposedSource, wrappers[0], wrappers[1])) {
+                                                overridden = true;
+                                                isUseful = true;
+                                                logStage(viewer, "USEFUL", "override: both wrappers delegate to the same extracted helper");
+                                            }
+                                        }
+                                    } catch (Throwable ignored) {
+                                        // fall through
+                                    }
+
+                                    if (!overridden) {
+                                        isUseful = false;
+                                        String msg = "Not useful refactoring proposal: reasons=" + urBeforeCompile.reasons;
+                                        logStage(viewer, "USEFUL", "PSI rejected proposal: " + msg);
+                                        showNotification(project,
+                                                "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+                                                        "for: " + fileName + "\n \n" +
+                                                        "Reason:\n" +
+                                                        urBeforeCompile.reasons + "\n" +
+                                                        definitionForReason(urBeforeCompile.reasons),
+                                                NotificationType.WARNING);
+
+                                        String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+                                                project,
+                                                fileName,
+                                                currentSource,
+                                                proposedSource,
+                                                watchedCloneMethods
+                                        );
+                                        String feedbackPrompt = buildUsefulnessFeedbackPrompt(
+                                                project,
+                                                fileName,
+                                                proposedSource,
+                                                urBeforeCompile.reasons,
+                                                watchedCloneMethods
+                                        );
+                                        String reasonsText = String.valueOf(urBeforeCompile.reasons);
+                                        String reasonDefinition = definitionForReason(urBeforeCompile.reasons);
+                                        String notesText = (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank())
+                                                ? ""
+                                                : ("\n\n[USEFULNESS_NOTES]\n" + urBeforeCompile.notes);
+                                        String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
+                                                ? ""
+                                                : ("\n\n" + llmUsefulnessFeedbackSection);
+                                        String revisionInstruction = mergeRevisionInstructions(
+                                                llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
+                                                        ? llmUsefulnessResult.curatorResult.feedback
+                                                        : "",
+                                                feedbackPrompt == null ? "" : feedbackPrompt
+                                        );
+                                        if (revisionInstruction == null || revisionInstruction.isBlank()) {
+                                            revisionInstruction = "Restore all target clone methods, keep the extracted helper, and make every original target clone call it.";
+                                        }
+
+                                        feedback = """
+Your previous refactoring attempt was rejected by the usefulness checks.
+
+	[NOT_USEFUL_REFACTORED_CODE]
+	```java
+	%s
+	```%s
 
 [REASONS]
 %s
@@ -697,22 +862,24 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 	[REVISION_INSTRUCTION]
 	%s
 	""".formatted(
-                                                focusedProposedCode,
-                                                reasonsText,
-                                                reasonDefinition == null ? "" : reasonDefinition,
-                                                notesText,
-                                                feedbackPrompt == null ? "" : feedbackPrompt
-                                        );
-                                    useFeedbackOnlyPrompt = true;
+                                                    focusedProposedCode,
+                                                    llmFeedbackText,
+                                                    reasonsText,
+                                                    reasonDefinition == null ? "" : reasonDefinition,
+                                                    notesText,
+                                                    revisionInstruction
+                                            );
+                                        useFeedbackOnlyPrompt = true;
+                                    }
+                                } else {
+                                    if (llmCuratorRejected) {
+                                        logStage(viewer, "USEFUL", "override: PSI usefulness accepted proposal after LLM curator rejection");
+                                    } else {
+                                        logStage(viewer, "USEFUL", "ok (before compile): score=" + urBeforeCompile.score +
+                                                (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes)));
+                                    }
                                 }
-                            } else if (urBeforeCompile != null) {
-                                logStage(viewer, "USEFUL", "ok (before compile): score=" + urBeforeCompile.score +
-                                        (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes)));
-                            }
-
-                        } else {
-                            // Fragment path: use the fragment-aware analyzer directly.
-                            try {
+                            } else if (runPsiUsefulness) {
                                 detection.CloneRange rA = (clone.ranges != null && clone.ranges.size() > 0) ? clone.ranges.get(0) : null;
                                 detection.CloneRange rB = (clone.ranges != null && clone.ranges.size() > 1) ? clone.ranges.get(1) : null;
 
@@ -732,59 +899,73 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                                 if (codeA == null || codeA.isBlank()) codeA = pastedSnippet == null ? "" : pastedSnippet;
                                 if ((codeB == null || codeB.isBlank()) && cloneCodes.size() > 1) codeB = cloneCodes.get(1);
 
-                                FragmentUsefulnessAnalyzer.UsefulnessResult frBeforeCompile =
-                                        FragmentUsefulnessAnalyzer.analyze(
+                                try {
+                                    FragmentUsefulnessAnalyzer.UsefulnessResult frBeforeCompile =
+                                            FragmentUsefulnessAnalyzer.analyze(
+                                                    project,
+                                                    fileName,
+                                                    currentSource,
+                                                    proposedSource,
+                                                    lrA,
+                                                    lrB,
+                                                    codeA,
+                                                    codeB,
+                                                    new FragmentUsefulnessAnalyzer.UsefulnessConfig()
+                                            );
+
+                                    if (frBeforeCompile == null || !frBeforeCompile.isUseful) {
+                                        isUseful = false;
+                                        String strategyText = frBeforeCompile == null
+                                                ? "UNKNOWN"
+                                                : String.valueOf(frBeforeCompile.strategy);
+                                        String reasonsText = frBeforeCompile == null
+                                                ? "[ANALYZER_FALLBACK]"
+                                                : String.valueOf(frBeforeCompile.reasons);
+                                        String notesText = (frBeforeCompile == null || frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank())
+                                                ? ""
+                                                : ("\n\n[USEFULNESS_NOTES]\n" + frBeforeCompile.notes);
+                                        String reasonDefinition = frBeforeCompile == null
+                                                ? "The fragment usefulness analyzer could not confidently validate this refactoring, "
+                                                + "so the proposal was rejected conservatively."
+                                                : definitionForReason(frBeforeCompile.strategy);
+                                        String msg = "Not useful refactoring proposal: strategy=" + strategyText +
+                                                ", reasons=" + reasonsText;
+                                        logStage(viewer, "USEFUL", "PSI rejected fragment proposal: " + msg);
+                                        showNotification(project,
+                                                "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+                                                        "for: " + fileName + "\n \n" +
+                                                        "Reason:\n" +
+                                                        strategyText + "\n" +
+                                                        reasonDefinition,
+                                                NotificationType.WARNING);
+
+                                        String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
                                                 project,
                                                 fileName,
                                                 currentSource,
                                                 proposedSource,
-                                                lrA,
-                                                lrB,
-                                                codeA,
-                                                codeB,
-                                                new FragmentUsefulnessAnalyzer.UsefulnessConfig()
+                                                watchedCloneMethods
                                         );
-
-                                if (frBeforeCompile == null || !frBeforeCompile.isUseful) {
-                                    isUseful = false;
-                                    String strategyText = frBeforeCompile == null
-                                            ? "UNKNOWN"
-                                            : String.valueOf(frBeforeCompile.strategy);
-                                    String reasonsText = frBeforeCompile == null
-                                            ? "[ANALYZER_FALLBACK]"
-                                            : String.valueOf(frBeforeCompile.reasons);
-                                    String notesText = (frBeforeCompile == null || frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank())
-                                            ? ""
-                                            : ("\n\n[USEFULNESS_NOTES]\n" + frBeforeCompile.notes);
-                                    String reasonDefinition = frBeforeCompile == null
-                                            ? "The fragment usefulness analyzer could not confidently validate this refactoring, so the proposal was rejected conservatively."
-                                            : definitionForReason(frBeforeCompile.strategy);
-                                    String msg = "Not useful refactoring proposal: strategy=" + strategyText +
-                                            ", reasons=" + reasonsText;
-                                    logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
-                                    showNotification(project,
-                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
-                                                    "for: " + fileName + "\n \n" +
-                                                    "Reason:\n" +
-                                                    strategyText + "\n" +
-                                                    reasonDefinition,
-                                            NotificationType.WARNING);
-
-                                    String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
-                                            project,
-                                            fileName,
-                                            currentSource,
-                                            proposedSource,
-                                            watchedCloneMethods
-                                    );
-                                    String fragmentRevisionInstruction = "Your refactoring is not useful. You must actually remove or significantly reduce the duplicated fragment in BOTH places. Avoid incomplete refactoring, deleting one side, or delegating only one side.";
-                                    feedback = """
-		Your previous refactoring attempt was rejected by the usefulness checker.
+                                        String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
+                                                ? ""
+                                                : ("\n\n" + llmUsefulnessFeedbackSection);
+                                        String fragmentRevisionInstruction = mergeRevisionInstructions(
+                                                llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
+                                                        ? llmUsefulnessResult.curatorResult.feedback
+                                                        : "",
+                                                "Your refactoring is not useful. You must actually remove or significantly reduce the duplicated fragment in BOTH places. "
+                                                        + "Avoid incomplete refactoring, deleting one side, or delegating only one side."
+                                        );
+                                        if (fragmentRevisionInstruction == null || fragmentRevisionInstruction.isBlank()) {
+                                            fragmentRevisionInstruction = "Your refactoring is not useful. You must actually remove or significantly reduce the duplicated fragment in BOTH places.";
+                                        }
+                                        feedback = """
+		Your previous refactoring attempt was rejected by the usefulness checks.
 
 		[NOT_USEFUL_REFACTORED_CODE]
 		```java
 %s
-```
+```%s
 
 [REASONS]
 %s
@@ -798,27 +979,89 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 		[REVISION_INSTRUCTION]
 		%s
 			""".formatted(
-                                                focusedProposedCode,
-                                                reasonsText,
-                                                strategyText,
-                                                reasonDefinition == null ? "" : reasonDefinition,
-                                                notesText,
-                                                fragmentRevisionInstruction
-                                        );
-                                    useFeedbackOnlyPrompt = true;
-                                } else if (frBeforeCompile != null) {
-                                    logStage(viewer, "USEFUL", "ok(FRAGMENT, before compile): strategy=" + frBeforeCompile.strategy + ", score=" + frBeforeCompile.score +
-                                            (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes)));
-                                }
+                                                    focusedProposedCode,
+                                                    llmFeedbackText,
+                                                    reasonsText,
+                                                    strategyText,
+                                                    reasonDefinition == null ? "" : reasonDefinition,
+                                                    notesText,
+                                                    fragmentRevisionInstruction
+                                            );
+                                        useFeedbackOnlyPrompt = true;
+                                    } else {
+                                        if (llmCuratorRejected) {
+                                            logStage(viewer, "USEFUL", "override: PSI fragment usefulness accepted proposal after LLM curator rejection");
+                                        } else {
+                                            logStage(viewer, "USEFUL", "ok(FRAGMENT, before compile): strategy=" + frBeforeCompile.strategy + ", score=" + frBeforeCompile.score +
+                                                    (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes)));
+                                        }
+                                    }
 
-                                if (viewer != null) {
-                                    logStage(viewer, "USEFUL", "fragment ranges(before compile): A=" + lrA + ", B=" + lrB +
-                                            ", codeA.preview=" + previewOneLine(codeA, 120) +
-                                            ", codeB.preview=" + previewOneLine(codeB, 120));
+                                    if (viewer != null) {
+                                        logStage(viewer, "USEFUL", "fragment ranges(before compile): A=" + lrA + ", B=" + lrB +
+                                                ", codeA.preview=" + previewOneLine(codeA, 120) +
+                                                ", codeB.preview=" + previewOneLine(codeB, 120));
+                                    }
+                                } catch (Throwable t) {
+                                    isUseful = false;
+                                    String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+                                            project,
+                                            fileName,
+                                            currentSource,
+                                            proposedSource,
+                                            watchedCloneMethods
+                                    );
+                                    String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
+                                            ? ""
+                                            : ("\n\n" + llmUsefulnessFeedbackSection);
+                                    String notesText = "\n\n[USEFULNESS_NOTES]\n" + t.getMessage();
+                                    String revisionInstruction = mergeRevisionInstructions(
+                                            llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
+                                                    ? llmUsefulnessResult.curatorResult.feedback
+                                                    : "",
+                                            "Revise the refactoring so the fragment usefulness analyzer can validate it. "
+                                                    + "Keep both clone sites, preserve valid Java syntax, and extract the shared fragment cleanly."
+                                    );
+                                    if (revisionInstruction == null || revisionInstruction.isBlank()) {
+                                        revisionInstruction = "Revise the refactoring so the fragment usefulness analyzer can validate it.";
+                                    }
+
+                                    logStage(viewer, "USEFUL", "fragment usefulness check failed (before compile): " + t.getMessage());
+                                    showNotification(project,
+                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+                                                    "for: " + fileName + "\n \n" +
+                                                    "Reason:\n" +
+                                                    "FRAGMENT_ANALYZER_ERROR\n" +
+                                                    "The fragment usefulness analyzer failed before compilation.",
+                                            NotificationType.WARNING);
+
+                                    feedback = """
+Your previous refactoring attempt was rejected by the usefulness checks.
+
+	[NOT_USEFUL_REFACTORED_CODE]
+	```java
+	%s
+	```%s
+
+[REASONS]
+[FRAGMENT_USEFULNESS_ANALYZER_ERROR]
+
+[REASON_DEFINITION]
+The fragment usefulness analyzer failed before compilation.%s
+
+	[REVISION_INSTRUCTION]
+	%s
+	""".formatted(
+                                            focusedProposedCode,
+                                            llmFeedbackText,
+                                            notesText,
+                                            revisionInstruction
+                                    );
+                                    useFeedbackOnlyPrompt = true;
                                 }
-                            } catch (Throwable t) {
-                                logStage(viewer, "USEFUL", "fragment usefulness check failed (before compile): " + t.getMessage() + " (proceeding)");
                             }
+                        } finally {
+                            logWorkflowStageEnd(viewer);
                         }
 
                         if (!isUseful) {
@@ -837,173 +1080,195 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                             cancelWorkflow(viewer);
                             return;
                         }
-                        // Compile the proposed source to a temp classes dir, without touching the original file.
-                        String ideCp = javaBuildSupport.buildProjectClasspathFromIde();
-                        String ideSourcePath = javaBuildSupport.buildProjectSourcepathFromIde();
-                        ideCp = javaBuildSupport.buildCompileClasspathWithSourceRoots(ideCp);
-                        if (viewer != null) {
-                            String cpPreview = ideCp == null ? "" : ideCp;
-                            if (cpPreview.length() > 4000) {
-                                cpPreview = cpPreview.substring(0, 4000) + "\n...<truncated>...";
-                            }
-                            viewer.accept("[COMPILE] ide classpath:\n" + cpPreview);
-
-                            String spPreview = ideSourcePath == null ? "" : ideSourcePath;
-                            if (spPreview.length() > 4000) {
-                                spPreview = spPreview.substring(0, 4000) + "\n...<truncated>...";
-                            }
-                            viewer.accept("[COMPILE] ide sourcepath:\n" + spPreview);
-                        }
-                        WorkflowJavaBuildSupport.CompileAttempt proposalCompileAttempt = null;
-                        String compileLog;
+                        String ideCp;
+                        logWorkflowStageStart(viewer, "COMPILATION STAGE (attempt " + attempt + "/" + maxAttempts + ")");
                         try {
-                            throwIfCancelled(CloneRefactorWorkflow::isCancelled);
-                            proposalCompileAttempt = javaBuildSupport.compileProposedSourceToTempAttempt(ioFile, fileName, proposedSource, ideCp);
-                            compileLog = proposalCompileAttempt.toCompileLog();
-                            if (proposalCompileAttempt.success) {
-                                javaBuildSupport.setPatchedClassesDir(proposalCompileAttempt.outputDir);
-                            } else {
-                                javaBuildSupport.clearPatchedClassesDir();
-                            }
-                        } catch (Exception ce) {
-                            javaBuildSupport.clearPatchedClassesDir();
-                            compileLog = "BUILD FAILED\n" + (ce.getMessage() == null ? "" : ce.getMessage());
-                        }
-
-                        if (viewer != null) {
-                            String cl = compileLog == null ? "null" : compileLog;
-                            if (cl.length() > 4000) cl = cl.substring(0, 4000) + "\n...<truncated>...";
-                            viewer.accept("[COMPILE] raw output:\n" + cl);
-                        }
-
-                        compilation.CompileResult cr = compileAgent.analyze(fileName, compileLog);
-
-                        if (cr == null || !"compile_ok".equals(cr.status)) {
-                            if (!baselineCompileChecked) {
-                                baselineCompileChecked = true;
-                                try {
-                                    throwIfCancelled(CloneRefactorWorkflow::isCancelled);
-                                    WorkflowJavaBuildSupport.CompileAttempt baselineAttempt =
-                                            javaBuildSupport.compileProposedSourceToTempAttempt(ioFile, fileName, currentSource, ideCp);
-                                    baselineCompileLog = baselineAttempt.toCompileLog();
-                                } catch (Exception bce) {
-                                    baselineCompileLog = "BUILD FAILED\n" + (bce.getMessage() == null ? "" : bce.getMessage());
+                            // Compile the proposed source to a temp classes dir, without touching the original file.
+                            ideCp = javaBuildSupport.buildProjectClasspathFromIde();
+                            String ideSourcePath = javaBuildSupport.buildProjectSourcepathFromIde();
+                            ideCp = javaBuildSupport.buildCompileClasspathWithSourceRoots(ideCp);
+                            if (viewer != null) {
+                                String cpPreview = ideCp == null ? "" : ideCp;
+                                if (cpPreview.length() > 4000) {
+                                    cpPreview = cpPreview.substring(0, 4000) + "\n...<truncated>...";
                                 }
-                                baselineCompileResult = compileAgent.analyze(fileName, baselineCompileLog);
-                                logStage(viewer, "COMPILE", "baseline check: " +
-                                        (baselineCompileResult == null ? "unknown" : baselineCompileResult.summary));
+                                viewer.accept("[COMPILE] ide classpath:\n" + cpPreview);
+
+                                String spPreview = ideSourcePath == null ? "" : ideSourcePath;
+                                if (spPreview.length() > 4000) {
+                                    spPreview = spPreview.substring(0, 4000) + "\n...<truncated>...";
+                                }
+                                viewer.accept("[COMPILE] ide sourcepath:\n" + spPreview);
+                            }
+                            WorkflowJavaBuildSupport.CompileAttempt proposalCompileAttempt = null;
+                            String compileLog;
+                            try {
+                                throwIfCancelled(CloneRefactorWorkflow::isCancelled);
+                                proposalCompileAttempt = javaBuildSupport.compileProposedSourceToTempAttempt(ioFile, fileName, proposedSource, ideCp);
+                                compileLog = proposalCompileAttempt.toCompileLog();
+                                if (proposalCompileAttempt.success) {
+                                    javaBuildSupport.setPatchedClassesDir(proposalCompileAttempt.outputDir);
+                                } else {
+                                    javaBuildSupport.clearPatchedClassesDir();
+                                }
+                            } catch (Exception ce) {
+                                javaBuildSupport.clearPatchedClassesDir();
+                                compileLog = "BUILD FAILED\n" + (ce.getMessage() == null ? "" : ce.getMessage());
                             }
 
-                            compilation.CompileResult adjustedCompileResult =
-                                    ignoreBaselineCompileErrors(fileName, cr, baselineCompileResult);
-                            if (adjustedCompileResult != null
-                                    && "compile_ok".equals(adjustedCompileResult.status)
-                                    && proposalCompileAttempt != null
-                                    && proposalCompileAttempt.outputDir != null) {
-                                javaBuildSupport.setPatchedClassesDir(proposalCompileAttempt.outputDir);
-                                cr = adjustedCompileResult;
-                                logStage(viewer, "COMPILE", adjustedCompileResult.summary);
-                            } else {
-                                cr = adjustedCompileResult == null ? cr : adjustedCompileResult;
+                            if (viewer != null) {
+                                String cl = compileLog == null ? "null" : compileLog;
+                                if (cl.length() > 4000) cl = cl.substring(0, 4000) + "\n...<truncated>...";
+                                viewer.accept("[COMPILE] raw output:\n" + cl);
                             }
-                        }
 
-                        if (cr == null || !"compile_ok".equals(cr.status)) {
-                            feedback = cr == null ? "Compilation failed." : cr.summary;
-                            useFeedbackOnlyPrompt = false;
-                            logStage(viewer, "COMPILE", "failed: " + feedback);
-                            showNotification(project, "[Clone] Compilation failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
-                            continue;
-                        }
+                            compilation.CompileResult cr = compileAgent.analyze(fileName, compileLog);
 
-                        logStage(viewer, "COMPILE", "ok (isolated)");
-                        showNotification(project, "Compilation successful: Ready to run (attempt " + attempt + ") for: " + fileName, NotificationType.INFORMATION);
+                            if (cr == null || !"compile_ok".equals(cr.status)) {
+                                if (!baselineCompileChecked) {
+                                    baselineCompileChecked = true;
+                                    try {
+                                        throwIfCancelled(CloneRefactorWorkflow::isCancelled);
+                                        WorkflowJavaBuildSupport.CompileAttempt baselineAttempt =
+                                                javaBuildSupport.compileProposedSourceToTempAttempt(ioFile, fileName, currentSource, ideCp);
+                                        baselineCompileLog = baselineAttempt.toCompileLog();
+                                    } catch (Exception bce) {
+                                        baselineCompileLog = "BUILD FAILED\n" + (bce.getMessage() == null ? "" : bce.getMessage());
+                                    }
+                                    baselineCompileResult = compileAgent.analyze(fileName, baselineCompileLog);
+                                    logStage(viewer, "COMPILE", "baseline check: " +
+                                            (baselineCompileResult == null ? "unknown" : baselineCompileResult.summary));
+                                }
+
+                                compilation.CompileResult adjustedCompileResult =
+                                        ignoreBaselineCompileErrors(fileName, cr, baselineCompileResult);
+                                if (adjustedCompileResult != null
+                                        && "compile_ok".equals(adjustedCompileResult.status)
+                                        && proposalCompileAttempt != null
+                                        && proposalCompileAttempt.outputDir != null) {
+                                    javaBuildSupport.setPatchedClassesDir(proposalCompileAttempt.outputDir);
+                                    cr = adjustedCompileResult;
+                                    logStage(viewer, "COMPILE", adjustedCompileResult.summary);
+                                } else {
+                                    cr = adjustedCompileResult == null ? cr : adjustedCompileResult;
+                                }
+                            }
+
+                            if (cr == null || !"compile_ok".equals(cr.status)) {
+                                feedback = cr == null ? "Compilation failed." : cr.summary;
+                                useFeedbackOnlyPrompt = false;
+                                logStage(viewer, "COMPILE", "failed: " + feedback);
+                                showNotification(project, "[Clone] Compilation failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
+                                continue;
+                            }
+
+                            logStage(viewer, "COMPILE", "ok (isolated)");
+                            showNotification(project, "Compilation successful: Ready to run (attempt " + attempt + ") for: " + fileName, NotificationType.INFORMATION);
+                        } finally {
+                            logWorkflowStageEnd(viewer);
+                        }
 
                         /* ===== Test ===== */
-                        // Resolve target FQN from the proposed source (PSI still reflects the original file until we apply).
-                        String targetFqn = javaBuildSupport.resolvePrimaryClassFqn(proposedSource, fileName);
-                        if (targetFqn == null) targetFqn = "";
+                        boolean testsPassed = false;
+                        logWorkflowStageStart(viewer, "TESTING STAGE (attempt " + attempt + "/" + maxAttempts + ")");
+                        try {
+                            // Resolve target FQN from the proposed source (PSI still reflects the original file until we apply).
+                            String targetFqn = javaBuildSupport.resolvePrimaryClassFqn(proposedSource, fileName);
+                            if (targetFqn == null) targetFqn = "";
 
-                        if (targetFqn.isBlank()) {
-                            // Fallback #1: regex-based parsing from the in-memory source we just produced
-                            String f1 = javaBuildSupport.resolvePrimaryClassFqn(currentSource, fileName);
-                            if (f1 != null && !f1.isBlank()) {
-                                targetFqn = f1;
-                                logStage(viewer, "TEST", "PSI FQN empty; fallback to regex(in-memory): " + targetFqn);
-                            } else {
-                                logStage(viewer, "TEST", "PSI FQN empty; regex(in-memory) also empty");
-                            }
-                        }
-
-                        if (targetFqn.isBlank()) {
-                            // Fallback #2: re-read the on-disk file after write (sometimes source roots/PSI lag)
-                            try {
-                                String onDisk = Files.readString(ioFile.toPath(), StandardCharsets.UTF_8);
-                                String f2 = javaBuildSupport.resolvePrimaryClassFqn(onDisk, fileName);
-                                if (f2 != null && !f2.isBlank()) {
-                                    targetFqn = f2;
-                                    logStage(viewer, "TEST", "Still empty; fallback to regex(on-disk): " + targetFqn);
+                            if (targetFqn.isBlank()) {
+                                // Fallback #1: regex-based parsing from the in-memory source we just produced
+                                String f1 = javaBuildSupport.resolvePrimaryClassFqn(currentSource, fileName);
+                                if (f1 != null && !f1.isBlank()) {
+                                    targetFqn = f1;
+                                    logStage(viewer, "TEST", "PSI FQN empty; fallback to regex(in-memory): " + targetFqn);
                                 } else {
-                                    logStage(viewer, "TEST", "regex(on-disk) also empty");
+                                    logStage(viewer, "TEST", "PSI FQN empty; regex(in-memory) also empty");
                                 }
-                            } catch (Throwable t) {
-                                logStage(viewer, "TEST", "Failed to read on-disk source for FQN fallback: " + t.getMessage());
                             }
+
+                            if (targetFqn.isBlank()) {
+                                // Fallback #2: re-read the on-disk file after write (sometimes source roots/PSI lag)
+                                try {
+                                    String onDisk = Files.readString(ioFile.toPath(), StandardCharsets.UTF_8);
+                                    String f2 = javaBuildSupport.resolvePrimaryClassFqn(onDisk, fileName);
+                                    if (f2 != null && !f2.isBlank()) {
+                                        targetFqn = f2;
+                                        logStage(viewer, "TEST", "Still empty; fallback to regex(on-disk): " + targetFqn);
+                                    } else {
+                                        logStage(viewer, "TEST", "regex(on-disk) also empty");
+                                    }
+                                } catch (Throwable t) {
+                                    logStage(viewer, "TEST", "Failed to read on-disk source for FQN fallback: " + t.getMessage());
+                                }
+                            }
+
+                            if (targetFqn.isBlank()) {
+                                // Last resort: use file basename (may still fail if package exists, but avoids empty targetClass)
+                                String base = fileName != null && fileName.endsWith(".java") ? fileName.substring(0, fileName.length() - 5) : fileName;
+                                targetFqn = (base == null ? "" : base.trim());
+                                logStage(viewer, "TEST", "All FQN resolution failed; last resort basename: " + targetFqn);
+                            }
+
+                            logStage(viewer, "TEST", "targetFqn=" + (targetFqn == null ? "null" : targetFqn));
+                            javaBuildSupport.setTargetFqn(targetFqn);
+
+                            if (targetFqn == null || targetFqn.isBlank()) {
+                                feedback = "Test skipped: target class FQN could not be resolved.";
+                                useFeedbackOnlyPrompt = false;
+                                showNotification(project, "[Clone] Test skipped (attempt " + attempt + ") for: " + fileName + " (cannot resolve class FQN)", NotificationType.WARNING);
+                                continue;
+                            }
+
+                            testing.TestRunRequest treq =
+                                    new testing.TestRunRequest(
+                                            project.getBasePath(),
+                                            targetFqn,
+                                            null,
+                                            false
+                                    );
+
+                            String changedMethodBeforeTest = findModifiedCloneMethod(project, vf, watchedCloneMethods);
+                            if (changedMethodBeforeTest != null) {
+                                logStage(viewer, "WATCH", "stopped before test because cloned method changed: " + changedMethodBeforeTest);
+                                showNotification(project,
+                                        "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeTest,
+                                        NotificationType.WARNING);
+                                cancelWorkflow(viewer);
+                                return;
+                            }
+
+                            throwIfCancelled(CloneRefactorWorkflow::isCancelled);
+                            testing.TestResult tr =
+                                    testAgent.runAndSummarize(
+                                            treq,
+                                            javaBuildSupport::runTests,
+                                            llmCaller,
+                                            originalSource,
+                                            currentSource
+                                    );
+                            if (viewer != null && tr != null) {
+                                String raw = tr.raw == null ? "" : tr.raw;
+                                if (raw.length() > 4000) raw = raw.substring(0, 4000) + "\n...<truncated>...";
+                                viewer.accept("[TEST] raw output:\n" + raw);
+                            }
+
+                            if (tr != null && "tests_passed".equals(tr.status)) {
+                                logStage(viewer, "TEST", "passed");
+                                testsPassed = true;
+                            } else {
+                                feedback = tr == null ? "Tests failed." :
+                                        (tr.summary != null ? tr.summary : tr.raw);
+                                useFeedbackOnlyPrompt = false;
+
+                                logStage(viewer, "TEST", "failed");
+                                showNotification(project, "[Clone] Tests failed (attempt " + attempt + ") for: " + fileName, NotificationType.WARNING);
+                            }
+                        } finally {
+                            logWorkflowStageEnd(viewer);
                         }
 
-                        if (targetFqn.isBlank()) {
-                            // Last resort: use file basename (may still fail if package exists, but avoids empty targetClass)
-                            String base = fileName != null && fileName.endsWith(".java") ? fileName.substring(0, fileName.length() - 5) : fileName;
-                            targetFqn = (base == null ? "" : base.trim());
-                            logStage(viewer, "TEST", "All FQN resolution failed; last resort basename: " + targetFqn);
-                        }
-
-                        logStage(viewer, "TEST", "targetFqn=" + (targetFqn == null ? "null" : targetFqn));
-                        javaBuildSupport.setTargetFqn(targetFqn);
-
-                        if (targetFqn == null || targetFqn.isBlank()) {
-                            feedback = "Test skipped: target class FQN could not be resolved.";
-                            useFeedbackOnlyPrompt = false;
-                            showNotification(project, "[Clone] Test skipped (attempt " + attempt + ") for: " + fileName + " (cannot resolve class FQN)", NotificationType.WARNING);
-                            continue;
-                        }
-
-                        testing.TestRunRequest treq =
-                                new testing.TestRunRequest(
-                                        project.getBasePath(),
-                                        targetFqn,
-                                        null,
-                                        false
-                                );
-
-                        String changedMethodBeforeTest = findModifiedCloneMethod(project, vf, watchedCloneMethods);
-                        if (changedMethodBeforeTest != null) {
-                            logStage(viewer, "WATCH", "stopped before test because cloned method changed: " + changedMethodBeforeTest);
-                            showNotification(project,
-                                    "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeTest,
-                                    NotificationType.WARNING);
-                            cancelWorkflow(viewer);
-                            return;
-                        }
-
-                        throwIfCancelled(CloneRefactorWorkflow::isCancelled);
-                        testing.TestResult tr =
-                                testAgent.runAndSummarize(
-                                        treq,
-                                        javaBuildSupport::runTests,
-                                        llmCaller,
-                                        originalSource,
-                                        currentSource
-                                );
-                        if (viewer != null && tr != null) {
-                            String raw = tr.raw == null ? "" : tr.raw;
-                            if (raw.length() > 4000) raw = raw.substring(0, 4000) + "\n...<truncated>...";
-                            viewer.accept("[TEST] raw output:\n" + raw);
-                        }
-
-                        if (tr != null && "tests_passed".equals(tr.status)) {
-                            logStage(viewer, "TEST", "passed");
-
+                        if (testsPassed) {
                             String changedMethodBeforeApply = findModifiedCloneMethod(project, vf, watchedCloneMethods);
                             if (changedMethodBeforeApply != null) {
                                 logStage(viewer, "WATCH", "stopped before apply because cloned method changed: " + changedMethodBeforeApply);
@@ -1032,13 +1297,6 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                             javaBuildSupport.clearPatchedClassesDir();
                             return;
                         }
-
-                        feedback = tr == null ? "Tests failed." :
-                                (tr.summary != null ? tr.summary : tr.raw);
-                        useFeedbackOnlyPrompt = false;
-
-                        logStage(viewer, "TEST", "failed");
-                        showNotification(project, "[Clone] Tests failed (attempt " + attempt + ") for: " + fileName, NotificationType.WARNING);
                 }
 
                 logStage(viewer, "WORKFLOW", "FAILED after " + maxAttempts + " retries");
@@ -2247,6 +2505,123 @@ Follow the required output format for the refactoring task.
 	""".formatted(missingText);
     }
 
+    private static LlmUsefulnessEvaluator.UsefulnessInput buildLlmUsefulnessInput(Project project,
+                                                                                  String fileName,
+                                                                                  detection.DetectedClone clone,
+                                                                                  String beforeSource,
+                                                                                  String afterSource,
+                                                                                  java.util.List<CloneMethodSnapshot> snapshots,
+                                                                                  boolean wholeMethodClone) {
+        String cloneContext = buildLlmUsefulnessCloneContext(clone, snapshots);
+        String focusedBeforeCode = buildFocusedFeedbackRefactoredCode(
+                project,
+                fileName,
+                beforeSource,
+                beforeSource,
+                snapshots
+        );
+        String focusedAfterCode = buildFocusedFeedbackRefactoredCode(
+                project,
+                fileName,
+                beforeSource,
+                afterSource,
+                snapshots
+        );
+        return new LlmUsefulnessEvaluator.UsefulnessInput(
+                fileName,
+                wholeMethodClone
+                        ? LlmUsefulnessEvaluator.CloneKind.WHOLE_METHOD
+                        : LlmUsefulnessEvaluator.CloneKind.FRAGMENT,
+                cloneContext,
+                focusedBeforeCode,
+                focusedAfterCode
+        );
+    }
+
+    private static String buildLlmUsefulnessCloneContext(detection.DetectedClone clone,
+                                                         java.util.List<CloneMethodSnapshot> snapshots) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Clone ID: ").append(clone == null || clone.id == null || clone.id.isBlank()
+                ? "<unknown>"
+                : clone.id).append("\n");
+
+        String methodSummary = summarizeCloneMethods(snapshots);
+        if (!methodSummary.isBlank()) {
+            sb.append("Target methods: ").append(methodSummary).append("\n");
+        }
+
+        String rangeSummary = summarizeCloneRanges(clone == null ? null : clone.ranges);
+        if (!rangeSummary.isBlank()) {
+            sb.append("Selected ranges: ").append(rangeSummary).append("\n");
+        }
+
+        if (clone != null && clone.refactorType != null && !clone.refactorType.isBlank()) {
+            sb.append("Requested refactor type: ").append(clone.refactorType).append("\n");
+        }
+
+        String reasonPreview = previewOneLine(clone == null ? "" : clone.reason, 400);
+        if (reasonPreview != null && !reasonPreview.isBlank()) {
+            sb.append("Detection reason preview: ").append(reasonPreview).append("\n");
+        }
+
+        java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, null);
+        String[] ab = extractCloneCodeABFromReason(clone == null ? null : clone.reason);
+        String cloneCodeA = !cloneCodes.isEmpty()
+                ? firstNonBlank(cloneCodes.get(0), ab[0])
+                : firstNonBlank(clone == null ? null : clone.cloneCodeA, ab[0]);
+        String cloneCodeB = cloneCodes.size() > 1
+                ? firstNonBlank(cloneCodes.get(1), ab[1])
+                : firstNonBlank(clone == null ? null : clone.cloneCodeB, ab[1]);
+
+        String cloneAPreview = previewOneLine(cloneCodeA, 200);
+        if (cloneAPreview != null && !cloneAPreview.isBlank()) {
+            sb.append("Clone A preview: ").append(cloneAPreview).append("\n");
+        }
+
+        String cloneBPreview = previewOneLine(cloneCodeB, 200);
+        if (cloneBPreview != null && !cloneBPreview.isBlank()) {
+            sb.append("Clone B preview: ").append(cloneBPreview).append("\n");
+        }
+
+        return sb.toString().trim();
+    }
+
+    private static String buildLlmUsefulnessFeedbackSection(LlmUsefulnessEvaluator.EvaluationResult evaluation) {
+        if (evaluation == null || evaluation.curatorResult == null || !evaluation.curatorResult.parsed) {
+            return "";
+        }
+
+        LlmUsefulnessEvaluator.CuratorResult curator = evaluation.curatorResult;
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\n[LLM_USEFULNESS]\n");
+        sb.append("Curator decision: ").append(curator.useful ? "USEFUL" : "NOT_USEFUL").append("\n");
+        if (!curator.reasons.isEmpty()) {
+            sb.append("Reasons: ").append(curator.reasons).append("\n");
+        }
+        if (!curator.summary.isBlank()) {
+            sb.append("Summary: ").append(curator.summary).append("\n");
+        }
+        if (!curator.feedback.isBlank()) {
+            sb.append("Feedback: ").append(curator.feedback).append("\n");
+        }
+        if (curator.confidence > 0.0d) {
+            sb.append("Confidence: ").append(String.format(Locale.ROOT, "%.2f", curator.confidence)).append("\n");
+        }
+        if (evaluation.notes != null && !evaluation.notes.isBlank()) {
+            sb.append("Notes: ").append(evaluation.notes).append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private static String mergeRevisionInstructions(String primary, String secondary) {
+        String first = primary == null ? "" : primary.strip();
+        String second = secondary == null ? "" : secondary.strip();
+        if (first.isBlank()) return second;
+        if (second.isBlank()) return first;
+        if (first.equals(second)) return first;
+        return first + "\n\nAdditional PSI guidance:\n" + second;
+    }
+
     private static String callRefactorLlm(String prompt,
                                           Consumer<String> viewer,
                                           Project project) {
@@ -2273,6 +2648,43 @@ Follow the required output format for the refactoring task.
         } catch (Exception e) {
             logStage(viewer, "LLM_REFACTOR", "[" + stageLabel + "] exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             showNotification(project, "[Clone] LLM refactor call failed: " + e.getMessage(), NotificationType.ERROR);
+            return "";
+        }
+    }
+
+    private static String callUsefulnessLlm(String label,
+                                            String prompt,
+                                            Consumer<String> viewer,
+                                            Project project) {
+        String stageLabel = switch (label == null ? "" : label) {
+            case "P1" -> "Usefulness Panelist 1";
+            case "P2" -> "Usefulness Panelist 2";
+            case "P3" -> "Usefulness Panelist 3";
+            case "CURATOR" -> "Usefulness Curator";
+            default -> "Usefulness";
+        };
+        try {
+            logStage(viewer, "LLM_USEFULNESS", "[" + stageLabel + "] request sent");
+            String resp = LLM.complete(prompt);
+            String full = resp == null ? "" : resp;
+            String preview = full.strip();
+            if (preview.length() > 300) preview = preview.substring(0, 300) + "...";
+            logStage(viewer, "LLM_USEFULNESS", "[" + stageLabel + "] response preview: " + preview.replace("\n", "\\n"));
+            logStage(viewer, "LLM_USEFULNESS", "[" + stageLabel + "] full response begin");
+            if (viewer != null) {
+                StringBuilder block = new StringBuilder();
+                block.append("[LLM_USEFULNESS] [").append(stageLabel).append("] output").append("\n");
+                block.append(full);
+                if (!full.endsWith("\n")) {
+                    block.append("\n");
+                }
+                viewer.accept(block.toString());
+            }
+            logStage(viewer, "LLM_USEFULNESS", "[" + stageLabel + "] full response end");
+            return full;
+        } catch (Exception e) {
+            logStage(viewer, "LLM_USEFULNESS", "[" + stageLabel + "] exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            showNotification(project, "[Clone] LLM usefulness call failed: " + e.getMessage(), NotificationType.ERROR);
             return "";
         }
     }

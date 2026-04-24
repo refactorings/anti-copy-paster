@@ -8,17 +8,20 @@ import java.util.List;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RefactoringPanelistSelectionTest {
 
     @Test
-    void curatorSelectsRequestedPanelistCandidate() {
+    void refactorFileUsesPanelistsAndCuratorSelection() {
         refactoring agent = new refactoring();
         String source = demoSource();
         refactoring.DetectedClone clone = demoClone();
+        int[] callCount = {0};
 
         Function<String, String> llmCaller = prompt -> {
+            callCount[0]++;
             if (prompt.contains("Refactoring Panelist 1 (P1)")) {
                 return candidatePlanJson("extractedP1");
             }
@@ -28,12 +31,8 @@ class RefactoringPanelistSelectionTest {
             if (prompt.contains("Refactoring Panelist 3 (P3)")) {
                 return candidatePlanJson("extractedP3");
             }
-            if (prompt.contains("You are the refactoring curator.")) {
-                assertTrue(prompt.contains("EXTRACT_METHOD_NOT_FOUND"));
-                assertTrue(prompt.contains("candidate_source_preview"));
-                return curatorSelectionJson("P2", "P2 is the cleanest Extract Method candidate.");
-            }
-            throw new IllegalArgumentException("Unexpected prompt: " + prompt);
+            assertTrue(prompt.contains("You are the refactoring curator."));
+            return curatorSelectionJson("P2", "Best candidate");
         };
 
         refactoring.RefactorResult result = agent.refactorFile(
@@ -45,32 +44,36 @@ class RefactoringPanelistSelectionTest {
         );
 
         assertEquals("refactored", result.status);
-        assertEquals("P2", result.selectedPanelistId);
+        assertEquals(4, callCount[0]);
         assertTrue(result.newSource.contains("private void extractedP2()"));
         assertTrue(result.newSource.contains("extractedP2();"));
-        assertTrue(result.curatorSummary.contains("cleanest Extract Method"));
+        assertEquals("P2", result.selectedPanelistId);
+        assertEquals("Best candidate", result.curatorSummary);
     }
 
     @Test
-    void fallsBackToFirstSuccessfulCandidateWhenCuratorSelectionIsInvalid() {
+    void refactorWithPromptUsesPanelistsAndCuratorSelection() {
         refactoring agent = new refactoring();
         String source = demoSource();
         refactoring.DetectedClone clone = demoClone();
+        int[] callCount = {0};
 
         Function<String, String> llmCaller = prompt -> {
+            callCount[0]++;
             if (prompt.contains("Refactoring Panelist 1 (P1)")) {
-                return candidatePlanJson("extractedP1");
+                assertTrue(prompt.contains("The previous attempt was rejected by the usefulness checker."));
+                return candidatePlanJson("extractedRetryP1");
             }
             if (prompt.contains("Refactoring Panelist 2 (P2)")) {
-                return candidatePlanJson("extractedP2");
+                assertTrue(prompt.contains("The previous attempt was rejected by the usefulness checker."));
+                return candidatePlanJson("extractedRetryP2");
             }
             if (prompt.contains("Refactoring Panelist 3 (P3)")) {
-                return candidatePlanJson("extractedP3");
+                assertTrue(prompt.contains("The previous attempt was rejected by the usefulness checker."));
+                return candidatePlanJson("extractedRetryP3");
             }
-            if (prompt.contains("You are the refactoring curator.")) {
-                return "{\"selected_panelist_id\":\"P9\",\"matched_categories\":[],\"summary\":\"bad selection\",\"feedback\":\"\",\"confidence\":0.1}";
-            }
-            throw new IllegalArgumentException("Unexpected prompt: " + prompt);
+            assertTrue(prompt.contains("You are the refactoring curator."));
+            return curatorSelectionJson("P3", "Retry candidate selected");
         };
 
         refactoring.RefactorResult result = agent.refactorWithPrompt(
@@ -82,8 +85,10 @@ class RefactoringPanelistSelectionTest {
         );
 
         assertEquals("refactored", result.status);
-        assertEquals("P1", result.selectedPanelistId);
-        assertTrue(result.newSource.contains("private void extractedP1()"));
+        assertEquals(4, callCount[0]);
+        assertTrue(result.newSource.contains("private void extractedRetryP3()"));
+        assertEquals("P3", result.selectedPanelistId);
+        assertEquals("Retry candidate selected", result.curatorSummary);
     }
 
     @Test
@@ -93,15 +98,17 @@ class RefactoringPanelistSelectionTest {
         refactoring.DetectedClone clone = demoClone();
 
         Function<String, String> llmCaller = prompt -> {
-            if (prompt.contains("Refactoring Panelist 1 (P1)")
-                    || prompt.contains("Refactoring Panelist 2 (P2)")
-                    || prompt.contains("Refactoring Panelist 3 (P3)")) {
-                return candidatePlanJsonWithBodyOnlyReplacements("extractedBodyOnly");
+            if (prompt.contains("Refactoring Panelist 1 (P1)")) {
+                return candidatePlanJsonWithBodyOnlyReplacements("extractedBodyOnlyP1");
             }
-            if (prompt.contains("You are the refactoring curator.")) {
-                return curatorSelectionJson("P1", "P1 preserves the original wrappers.");
+            if (prompt.contains("Refactoring Panelist 2 (P2)")) {
+                return candidatePlanJsonWithBodyOnlyReplacements("extractedBodyOnlyP2");
             }
-            throw new IllegalArgumentException("Unexpected prompt: " + prompt);
+            if (prompt.contains("Refactoring Panelist 3 (P3)")) {
+                return candidatePlanJsonWithBodyOnlyReplacements("extractedBodyOnlyP3");
+            }
+            assertTrue(prompt.contains("You are the refactoring curator."));
+            return curatorSelectionJson("P1", "Body-only replacement preserved");
         };
 
         refactoring.RefactorResult result = agent.refactorFile(
@@ -115,10 +122,10 @@ class RefactoringPanelistSelectionTest {
         assertEquals("refactored", result.status);
         assertTrue(result.newSource.contains("void alpha() {"));
         assertTrue(result.newSource.contains("void beta() {"));
-        assertTrue(result.newSource.contains("extractedBodyOnly();"));
-        assertTrue(result.newSource.contains("private void extractedBodyOnly()"));
-        assertTrue(result.newSource.contains("void alpha() {\n        extractedBodyOnly();\n    }"));
-        assertTrue(result.newSource.contains("void beta() {\n        extractedBodyOnly();\n    }"));
+        assertTrue(result.newSource.contains("extractedBodyOnlyP1();"));
+        assertTrue(result.newSource.contains("private void extractedBodyOnlyP1()"));
+        assertTrue(result.newSource.contains("void alpha() {\n        extractedBodyOnlyP1();\n    }"));
+        assertTrue(result.newSource.contains("void beta() {\n        extractedBodyOnlyP1();\n    }"));
     }
 
     private static String demoSource() {
@@ -213,15 +220,16 @@ class RefactoringPanelistSelectionTest {
         return obj;
     }
 
-    private static String curatorSelectionJson(String selectedPanelistId, String summary) {
+    private static String curatorSelectionJson(String panelistId, String summary) {
         JsonObject obj = new JsonObject();
-        obj.addProperty("selected_panelist_id", selectedPanelistId);
+        obj.addProperty("selected_panelist_id", panelistId);
         JsonArray categories = new JsonArray();
         categories.add("EXTRACT_METHOD_CONFIRMED");
         obj.add("matched_categories", categories);
         obj.addProperty("summary", summary);
-        obj.addProperty("feedback", "Residual risk is low.");
-        obj.addProperty("confidence", 0.91d);
+        obj.addProperty("feedback", "");
+        obj.addProperty("confidence", 0.91);
         return obj.toString();
     }
+
 }

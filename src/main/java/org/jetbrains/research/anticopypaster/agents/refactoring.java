@@ -269,6 +269,29 @@ public class refactoring {
         return executePanelistsAndCurator(fileName, fileSource, clone, prompt, llmCaller);
     }
 
+    private RefactorResult executeSingleRefactor(String fileName,
+                                                 String fileSource,
+                                                 DetectedClone clone,
+                                                 String prompt,
+                                                 Function<String, String> llmCaller) {
+        if (llmCaller == null) {
+            return fail(fileName, "LLM caller is null");
+        }
+
+        PanelistOutcome outcome = executePanelistPrompt(
+                new PanelistSpec("REF", "Refactoring"),
+                fileName,
+                fileSource,
+                clone,
+                prompt,
+                llmCaller
+        );
+        if (outcome == null || outcome.result == null) {
+            return fail(fileName, "Refactoring agent did not return a result");
+        }
+        return outcome.result;
+    }
+
     private RefactorResult executePanelistsAndCurator(String fileName,
                                                       String fileSource,
                                                       DetectedClone clone,
