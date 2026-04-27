@@ -1,7 +1,7 @@
 package org.jetbrains.research.anticopypaster.llm;
 
 public final class LlmConfig {
-    public final String provider;   // OpenAI / Azure / Gemini / Anthropic / DeepSeek / xAI / Ollama
+    public final String provider;   // OpenAI / Azure / Google / Anthropic / DeepSeek / xAI / Ollama
     public final String model;      // model name OR azure deployment name
     public final String apiKey;
     public final String apiBase;    // for Azure endpoint or OpenAI-compatible base

@@ -9,6 +9,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LlmClientFactoryTest {
 
     @Test
+    void normalizeProviderNameMapsLegacyGeminiToGoogle() {
+        assertEquals("Google", LlmClientFactory.normalizeProviderName("Gemini"));
+        assertEquals("Google", LlmClientFactory.normalizeProviderName(" google "));
+    }
+
+    @Test
     void resolveProviderBaseUrlIgnoresStoredBaseForDeepSeek() {
         assertEquals(
                 "https://api.deepseek.com",

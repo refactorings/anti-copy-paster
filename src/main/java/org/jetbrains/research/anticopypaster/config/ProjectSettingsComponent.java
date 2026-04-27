@@ -5,6 +5,7 @@ import javax.swing.*;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.components.JBScrollPane;
 
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialogWrapper;
@@ -149,12 +150,57 @@ public class ProjectSettingsComponent {
     private JPanel nameNumberPanel;
     private JPanel parameterNamePanel;
     private JScrollPane scrollpanel;
+    private JScrollPane rootSettingsScrollPane;
     private ArrayList<JCheckBox> allFilesCheckboxes;
     private final Project projectRef;
     private Integer pendingMainModelIndex = null;
     private Integer pendingNameModelIndex = null;
 
     private static final Logger LOG = Logger.getInstance(ProjectSettingsComponent.class);
+    static final String GOOGLE_PROVIDER = "Google";
+    private static final String LEGACY_GEMINI_PROVIDER = "Gemini";
+
+    static String normalizeLlmProviderName(String provider) {
+        if (provider == null) {
+            return null;
+        }
+        String trimmed = provider.trim();
+        if (GOOGLE_PROVIDER.equalsIgnoreCase(trimmed) || LEGACY_GEMINI_PROVIDER.equalsIgnoreCase(trimmed)) {
+            return GOOGLE_PROVIDER;
+        }
+        return trimmed;
+    }
+
+    private static final class ViewportWidthPanel extends JPanel implements Scrollable {
+        private ViewportWidthPanel() {
+            super(new BorderLayout());
+        }
+
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 16;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 96;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
+    }
 
     // Suppress auto-close of Aider windows during initial render
     private boolean suppressAutoCloseOnInit = true;
@@ -174,6 +220,7 @@ public class ProjectSettingsComponent {
     // Simple warning icons like API key for Ollama-required field
     public ProjectSettingsComponent(Project project) {
         this.projectRef = project;
+        configureSettingsScrollPane();
         advancedSettingsButton.addActionListener(e -> {
             AdvancedProjectSettingsDialogWrapper advancedDialog = new AdvancedProjectSettingsDialogWrapper(project);
             boolean displayAndResolveAdvanced = advancedDialog.showAndGet();
@@ -186,7 +233,7 @@ public class ProjectSettingsComponent {
         });
 
         // Add tooltips for Aider-related fields
-        llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Gemini, Anthropic, DeepSeek or Azure.");
+        llmProviderComboBox.setToolTipText("Select the LLM provider, such as OpenAI, Google, Anthropic, DeepSeek or Azure.");
         aidermodelComboBox.setToolTipText("Select the specific model you want to use from the provider.");
         agentApiKey.setToolTipText("Enter your API key for the selected LLM provider.");
 
@@ -645,6 +692,24 @@ public class ProjectSettingsComponent {
         pendingNameModelIndex = null;
     }
 
+    private void configureSettingsScrollPane() {
+        if (scrollpanel == null) {
+            return;
+        }
+
+        scrollpanel.setEnabled(true);
+        scrollpanel.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scrollpanel.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollpanel.setWheelScrollingEnabled(true);
+        scrollpanel.setPreferredSize(new Dimension(1100, 900));
+        scrollpanel.setMinimumSize(new Dimension(760, 640));
+
+        if (mainPanel != null) {
+            mainPanel.setAutoscrolls(true);
+            mainPanel.setPreferredSize(null);
+        }
+    }
+
 
     /**
      * Toggles visibility of manual/AI/Aider settings panels based on current model selections
@@ -818,7 +883,27 @@ public class ProjectSettingsComponent {
      * Returns the root settings panel for embedding into dialogs.
      */
     public JComponent getPanel() {
-        return scrollpanel;
+        if (mainPanel == null) {
+            return scrollpanel;
+        }
+        if (rootSettingsScrollPane == null) {
+            ViewportWidthPanel viewportWidthPanel = new ViewportWidthPanel();
+            viewportWidthPanel.add(mainPanel, BorderLayout.NORTH);
+
+            rootSettingsScrollPane = new JBScrollPane(
+                    viewportWidthPanel,
+                    ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                    ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+            );
+            rootSettingsScrollPane.setWheelScrollingEnabled(true);
+            rootSettingsScrollPane.getVerticalScrollBar().setUnitIncrement(16);
+            rootSettingsScrollPane.getVerticalScrollBar().setBlockIncrement(96);
+            rootSettingsScrollPane.setBorder(BorderFactory.createEmptyBorder());
+            rootSettingsScrollPane.setViewportBorder(BorderFactory.createEmptyBorder());
+            rootSettingsScrollPane.setPreferredSize(new Dimension(1100, 900));
+            rootSettingsScrollPane.setMinimumSize(new Dimension(760, 640));
+        }
+        return rootSettingsScrollPane;
     }
 
     /**
@@ -1182,20 +1267,21 @@ public class ProjectSettingsComponent {
      */
     public String getLlmProvider() {
         if (isCloneMultiAgentSelected() && multiAgentLlmProviderComboBox != null) {
-            return (String) multiAgentLlmProviderComboBox.getSelectedItem();
+            return normalizeLlmProviderName((String) multiAgentLlmProviderComboBox.getSelectedItem());
         }
-        return (String) llmProviderComboBox.getSelectedItem();
+        return normalizeLlmProviderName((String) llmProviderComboBox.getSelectedItem());
     }
 
     /**
      * Selects the LLM provider in the combo box.
      */
     public void setLlmProvider(String provider) {
+        String normalizedProvider = normalizeLlmProviderName(provider);
         if (isCloneMultiAgentSelected() && multiAgentLlmProviderComboBox != null) {
-            multiAgentLlmProviderComboBox.setSelectedItem(provider);
+            multiAgentLlmProviderComboBox.setSelectedItem(normalizedProvider);
             return;
         }
-        llmProviderComboBox.setSelectedItem(provider);
+        llmProviderComboBox.setSelectedItem(normalizedProvider);
     }
 
     /**
@@ -1506,13 +1592,14 @@ public class ProjectSettingsComponent {
     }
 
     private static String getExpectedApiKeyPrefix(String provider) {
-        if (provider == null) {
+        String normalizedProvider = normalizeLlmProviderName(provider);
+        if (normalizedProvider == null) {
             return null;
         }
 
-        return switch (provider) {
+        return switch (normalizedProvider) {
             case "OpenAI" -> "sk-proj-";
-            case "Gemini" -> "AIzaSy";
+            case GOOGLE_PROVIDER -> "AIzaSy";
             case "DeepSeek" -> "sk-";
             case "Anthropic" -> "sk-ant-";
             default -> null;
@@ -1529,17 +1616,18 @@ public class ProjectSettingsComponent {
 
     private void setModelOptionsForProvider(String provider, JComboBox modelComboBoxToUpdate) {
         if (modelComboBoxToUpdate == null) return;
-        if (provider == null) {
+        String normalizedProvider = normalizeLlmProviderName(provider);
+        if (normalizedProvider == null) {
             modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {"gpt-5"}));
             return;
         }
 
-        switch (provider) {
+        switch (normalizedProvider) {
             case "OpenAI" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
                     "gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4.1",
                     "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-5.1", "gpt-5.2", "gpt-5.2-pro"
             }));
-            case "Gemini" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
+            case GOOGLE_PROVIDER -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {
                     "gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-pro-preview", "gemini-3-flash-preview"
             }));
             case "Anthropic" -> modelComboBoxToUpdate.setModel(new DefaultComboBoxModel<>(new String[] {

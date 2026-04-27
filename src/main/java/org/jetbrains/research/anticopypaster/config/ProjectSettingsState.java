@@ -97,12 +97,14 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     @Nullable
     @Override
     public ProjectSettingsState getState() {
+        llmProvider = normalizeLlmProviderName(llmProvider);
         return this;
     }
 
     @Override
     public void loadState(@NotNull ProjectSettingsState state) {
         XmlSerializerUtil.copyBean(state, this);
+        llmProvider = normalizeLlmProviderName(llmProvider);
     }
 
     public String getAiderApiKey() {
@@ -134,7 +136,18 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     }
 
     public void setLlmprovider(String provider) {
-        this.llmProvider = provider;
+        this.llmProvider = normalizeLlmProviderName(provider);
+    }
+
+    private static String normalizeLlmProviderName(String provider) {
+        if (provider == null) {
+            return null;
+        }
+        String trimmed = provider.trim();
+        if ("Google".equalsIgnoreCase(trimmed) || "Gemini".equalsIgnoreCase(trimmed)) {
+            return "Google";
+        }
+        return trimmed;
     }
 
     public String getFilesPath() {

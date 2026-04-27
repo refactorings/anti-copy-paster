@@ -14,7 +14,7 @@
         <constraints/>
         <properties>
           <enabled value="true"/>
-          <preferredSize width="-1" height="800"/>
+          <preferredSize width="-1" height="900"/>
         </properties>
         <border type="none"/>
         <children>
@@ -1035,7 +1035,7 @@
                     </constraints>
                     <properties>
                       <model>
-                        <item value="Gemini"/>
+                        <item value="Google"/>
                         <item value="OpenAI"/>
                         <item value="Anthropic"/>
                         <item value="DeepSeek"/>
@@ -1220,7 +1220,7 @@
                     </constraints>
                     <properties>
                       <model>
-                        <item value="Gemini"/>
+                        <item value="Google"/>
                         <item value="OpenAI"/>
                         <item value="Anthropic"/>
                         <item value="DeepSeek"/>

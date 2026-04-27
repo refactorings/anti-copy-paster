@@ -47,6 +47,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.jar.JarFile;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -60,6 +61,10 @@ final class WorkflowJavaBuildSupport {
     private volatile String lastConvertedTestFqn;
     private volatile String lastPatchedClassesDir;
     private volatile String lastTargetFqn;
+    private volatile String lastTestBootstrapClass;
+    private volatile String lastTestBootstrapMethod;
+    private volatile boolean lastDisableEvoSuiteStaticReset;
+    private volatile String lastEvoSuiteFallbackClassesDir;
 
     static final class CompileAttempt {
         final boolean success;
@@ -437,6 +442,10 @@ final class WorkflowJavaBuildSupport {
     String runTests(testing.TestRunRequest req) {
         try {
             lastConvertedTestFqn = null;
+            lastTestBootstrapClass = null;
+            lastTestBootstrapMethod = null;
+            lastDisableEvoSuiteStaticReset = false;
+            lastEvoSuiteFallbackClassesDir = null;
 
             if (req == null) return "Test error: request is null.";
             String projectDir = getReqString(req, "projectDir", "projectPath", "baseDir");
@@ -456,6 +465,14 @@ final class WorkflowJavaBuildSupport {
             if (targetClass == null || targetClass.isBlank() || "all".equalsIgnoreCase(targetClass)) {
                 return "Test error: targetClass (FQN) is empty. Cannot run EvoSuite without a class name.";
             }
+
+            lastTestBootstrapClass = getReqString(req, "testBootstrapClass", "junitBootstrapClass", "bootstrapClass");
+            lastTestBootstrapMethod = getReqString(req, "testBootstrapMethod", "junitBootstrapMethod", "bootstrapMethod");
+            lastDisableEvoSuiteStaticReset = getReqBoolean(req, false,
+                    "disableEvoSuiteStaticReset",
+                    "evosuiteDisableStaticReset",
+                    "disableStaticReset",
+                    "resetStaticFieldsFalse");
 
             File evosuiteJar = materializeResourceToProjectLib(new File(projectDir), "tools/evosuite-1.2.0.jar", "evosuite-1.2.0.jar");
             if (evosuiteJar == null || !evosuiteJar.exists()) {
@@ -479,6 +496,12 @@ final class WorkflowJavaBuildSupport {
             File reportDir = new File(outRoot, "reports");
             testDir.mkdirs();
             reportDir.mkdirs();
+
+            String fallbackClassesDir = ensureTargetClassOnClasspath(targetClass, projectCp, outRoot);
+            if (fallbackClassesDir != null && !fallbackClassesDir.isBlank()) {
+                lastEvoSuiteFallbackClassesDir = fallbackClassesDir;
+                projectCp = fallbackClassesDir + File.pathSeparator + projectCp;
+            }
 
             ensureTestDependencies(base, evosuiteJar);
 
@@ -547,6 +570,12 @@ final class WorkflowJavaBuildSupport {
             cmd.add("-Djunit_check=FALSE");
             cmd.add("-Dtestability_transformation=false");
             cmd.add("-DTT=false");
+            if (lastDisableEvoSuiteStaticReset) {
+                cmd.add("-Dreset_static_fields=false");
+                if (viewer != null) {
+                    viewer.accept("[EvoSuite] Static reset disabled by request.");
+                }
+            }
 
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.directory(base);
@@ -656,7 +685,13 @@ final class WorkflowJavaBuildSupport {
                     Path scaffRel = testDir.toPath().relativize(scaffPath);
                     Path targetScaff = srcTestJava.toPath().resolve(scaffRel);
                     Files.createDirectories(targetScaff.getParent());
-                    Files.copy(scaffPath, targetScaff, StandardCopyOption.REPLACE_EXISTING);
+                    if (lastDisableEvoSuiteStaticReset) {
+                        String scaffolding = Files.readString(scaffPath, StandardCharsets.UTF_8);
+                        scaffolding = disableEvoSuiteResetClasses(scaffolding);
+                        Files.writeString(targetScaff, scaffolding, StandardCharsets.UTF_8);
+                    } else {
+                        Files.copy(scaffPath, targetScaff, StandardCopyOption.REPLACE_EXISTING);
+                    }
                 }
 
                 if (viewer != null) {
@@ -890,6 +925,9 @@ final class WorkflowJavaBuildSupport {
             if (lastPatchedClassesDir != null && !lastPatchedClassesDir.isBlank()) {
                 cp = lastPatchedClassesDir + File.pathSeparator + (cp == null ? "" : cp);
             }
+            if (lastEvoSuiteFallbackClassesDir != null && !lastEvoSuiteFallbackClassesDir.isBlank()) {
+                cp = lastEvoSuiteFallbackClassesDir + File.pathSeparator + (cp == null ? "" : cp);
+            }
 
             File junit = materializeResourceToProjectLib(baseDir, "tools/junit-4.12.jar", "junit-4.12.jar");
             File hamcrest = materializeResourceToProjectLib(baseDir, "tools/hamcrest-core-1.3.jar", "hamcrest-core-1.3.jar");
@@ -928,6 +966,10 @@ final class WorkflowJavaBuildSupport {
             try {
                 List<File> sources = new ArrayList<>();
                 sources.add(testFile);
+                File bootstrapRunner = writeEvoSuiteBootstrapRunner(baseDir);
+                if (bootstrapRunner != null && bootstrapRunner.exists()) {
+                    sources.add(bootstrapRunner);
+                }
 
                 try {
                     String tf = testFile.getName();
@@ -951,7 +993,21 @@ final class WorkflowJavaBuildSupport {
             cmd.add(javaExe);
             cmd.add("-cp");
             cmd.add(runCp);
-            cmd.add("org.junit.runner.JUnitCore");
+            if (lastTestBootstrapClass != null && !lastTestBootstrapClass.isBlank()) {
+                cmd.add("-Dacp.test.bootstrap.class=" + lastTestBootstrapClass);
+                if (lastTestBootstrapMethod != null && !lastTestBootstrapMethod.isBlank()) {
+                    cmd.add("-Dacp.test.bootstrap.method=" + lastTestBootstrapMethod);
+                }
+                if (viewer != null) {
+                    viewer.accept("[TEST] Using requested test bootstrap: "
+                            + lastTestBootstrapClass
+                            + "."
+                            + ((lastTestBootstrapMethod == null || lastTestBootstrapMethod.isBlank())
+                            ? "bootstrap"
+                            : lastTestBootstrapMethod));
+                }
+            }
+            cmd.add("org.jetbrains.research.anticopypaster.generated.AcpEvoSuiteJUnit4Runner");
             cmd.add(testFqn);
 
             if (viewer != null) viewer.accept("[TEST] Executing: " + String.join(" ", cmd));
@@ -972,10 +1028,328 @@ final class WorkflowJavaBuildSupport {
             if (out.contains("OK (") && !containsAnyIgnoreCase(out, "FAILURES!!!")) {
                 return out + "\nBUILD SUCCESS\n";
             }
+            if (!lastDisableEvoSuiteStaticReset && shouldRetryWithoutEvoSuiteReset(out)) {
+                if (viewer != null) {
+                    viewer.accept("[TEST] EvoSuite reset/sandbox failure detected; retrying once with static reset disabled.");
+                }
+                lastDisableEvoSuiteStaticReset = true;
+                patchEvoSuiteScaffoldingForTest(testFile);
+                return runProjectTests(baseDir, evosuiteJar);
+            }
             return out + "\nBUILD FAILED\n";
         } catch (Exception e) {
             return "Execution Error: " + e.getMessage();
         }
+    }
+
+    private File writeEvoSuiteBootstrapRunner(File baseDir) throws IOException {
+        File bootstrapDir = new File(
+                baseDir,
+                ".anticopypaster" + File.separator + "evosuite-tests" + File.separator
+                        + "bootstrap" + File.separator + "org" + File.separator + "jetbrains"
+                        + File.separator + "research" + File.separator + "anticopypaster"
+                        + File.separator + "generated"
+        );
+        if (!bootstrapDir.exists() && !bootstrapDir.mkdirs()) {
+            throw new IOException("Failed to create EvoSuite bootstrap dir: " + bootstrapDir.getAbsolutePath());
+        }
+
+        File runner = new File(bootstrapDir, "AcpEvoSuiteJUnit4Runner.java");
+        String source = """
+                package org.jetbrains.research.anticopypaster.generated;
+
+                import java.lang.reflect.Method;
+                import java.util.List;
+                import org.junit.runner.Description;
+                import org.junit.runner.JUnitCore;
+                import org.junit.runner.Result;
+                import org.junit.runner.notification.Failure;
+                import org.junit.runner.notification.RunListener;
+
+                public final class AcpEvoSuiteJUnit4Runner {
+                    private AcpEvoSuiteJUnit4Runner() {
+                    }
+
+                    public static void main(String[] args) throws Exception {
+                        if (args == null || args.length == 0 || args[0] == null || args[0].trim().isEmpty()) {
+                            System.out.println("Error: missing test class FQN");
+                            System.exit(2);
+                        }
+
+                        runBootstrap();
+
+                        Class<?> testClass = Class.forName(args[0]);
+                        long start = System.currentTimeMillis();
+                        JUnitCore core = new JUnitCore();
+                        core.addListener(new RunListener() {
+                            @Override
+                            public void testStarted(Description description) {
+                                runBootstrap();
+                            }
+                        });
+                        Result result = core.run(testClass);
+                        double seconds = (System.currentTimeMillis() - start) / 1000.0d;
+
+                        System.out.println("JUnit version 4");
+                        System.out.printf("Time: %.3f%n", seconds);
+                        List<Failure> failures = result.getFailures();
+                        if (failures.isEmpty()) {
+                            System.out.println();
+                            System.out.println("OK (" + result.getRunCount() + " tests)");
+                            return;
+                        }
+
+                        System.out.println("There were " + failures.size() + " failures:");
+                        for (int i = 0; i < failures.size(); i++) {
+                            Failure failure = failures.get(i);
+                            System.out.println((i + 1) + ") " + failure.getTestHeader());
+                            Throwable exception = failure.getException();
+                            if (exception != null) {
+                                exception.printStackTrace(System.out);
+                            } else {
+                                System.out.println(failure.toString());
+                            }
+                        }
+                        System.out.println();
+                        System.out.println("FAILURES!!!");
+                        System.out.println("Tests run: " + result.getRunCount() + ",  Failures: " + failures.size());
+                        System.exit(1);
+                    }
+
+                    private static void runBootstrap() {
+                        String className = System.getProperty("acp.test.bootstrap.class", "").trim();
+                        if (className.isEmpty()) {
+                            return;
+                        }
+                        String methodName = System.getProperty("acp.test.bootstrap.method", "bootstrap").trim();
+                        if (methodName.isEmpty()) {
+                            methodName = "bootstrap";
+                        }
+                        try {
+                            Class<?> bootstrapClass = Class.forName(className);
+                            Method method = bootstrapClass.getDeclaredMethod(methodName);
+                            method.setAccessible(true);
+                            method.invoke(null);
+                        } catch (Throwable t) {
+                            System.out.println("[TEST] WARN: bootstrap failed: " + t);
+                        }
+                    }
+                }
+                """;
+        Files.writeString(runner.toPath(), source, StandardCharsets.UTF_8);
+        return runner;
+    }
+
+    private String disableEvoSuiteResetClasses(String scaffolding) {
+        if (scaffolding == null || scaffolding.isBlank()) {
+            return scaffolding == null ? "" : scaffolding;
+        }
+        return scaffolding.replaceAll(
+                "(?m)^(\\s*)resetClasses\\(\\);\\s*$",
+                "$1// resetClasses() disabled by AntiCopyPaster request"
+        );
+    }
+
+    private boolean shouldRetryWithoutEvoSuiteReset(String output) {
+        return containsAnyIgnoreCase(
+                output,
+                "org.evosuite.runtime.classhandling.classresetter.reset",
+                "_estest_scaffolding.resetclasses",
+                "trying to set up the sandbox while executing a test case"
+        );
+    }
+
+    private void patchEvoSuiteScaffoldingForTest(File testFile) {
+        try {
+            if (testFile == null || !testFile.exists()) {
+                return;
+            }
+            String name = testFile.getName();
+            if (!name.endsWith("_ESTest.java")) {
+                return;
+            }
+            String base = name.substring(0, name.length() - "_ESTest.java".length());
+            File scaffoldingFile = new File(testFile.getParentFile(), base + "_ESTest_scaffolding.java");
+            if (!scaffoldingFile.exists()) {
+                return;
+            }
+            String scaffolding = Files.readString(scaffoldingFile.toPath(), StandardCharsets.UTF_8);
+            String patched = disableEvoSuiteResetClasses(scaffolding);
+            if (!patched.equals(scaffolding)) {
+                Files.writeString(scaffoldingFile.toPath(), patched, StandardCharsets.UTF_8);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private String ensureTargetClassOnClasspath(String targetClass, String classpath, File outRoot) {
+        try {
+            if (targetClass == null || targetClass.isBlank()) {
+                return null;
+            }
+            if (classExistsOnClasspath(targetClass, classpath)) {
+                return null;
+            }
+
+            File sourceFile = findSourceFileForClass(targetClass);
+            if (sourceFile == null || !sourceFile.exists()) {
+                if (viewer != null) {
+                    viewer.accept("[TEST] WARN: target class not found on classpath and source file could not be located: " + targetClass);
+                }
+                return null;
+            }
+
+            if (viewer != null) {
+                viewer.accept("[TEST] target class missing from classpath; compiling source before EvoSuite: " + sourceFile.getAbsolutePath());
+            }
+
+            File outputDir = new File(outRoot, "target-classes");
+            if (!outputDir.exists() && !outputDir.mkdirs()) {
+                if (viewer != null) {
+                    viewer.accept("[TEST] WARN: failed to create fallback classes dir: " + outputDir.getAbsolutePath());
+                }
+                return null;
+            }
+
+            String compileOut = compileSourceFileToDir(sourceFile, classpath, outputDir);
+            if (classExistsOnClasspath(targetClass, outputDir.getAbsolutePath())) {
+                return outputDir.getAbsolutePath();
+            }
+
+            if (viewer != null) {
+                String excerpt = compileOut == null ? "" : compileOut;
+                if (excerpt.length() > 1600) excerpt = excerpt.substring(0, 1600) + "\n...<truncated>...";
+                viewer.accept("[TEST] WARN: fallback compile finished but target class is still missing: " + targetClass
+                        + (excerpt.isBlank() ? "" : "\n" + excerpt));
+            }
+        } catch (Throwable t) {
+            if (viewer != null) {
+                viewer.accept("[TEST] WARN: failed to compile missing target class for EvoSuite: " + t.getMessage());
+            }
+        }
+        return null;
+    }
+
+    private boolean classExistsOnClasspath(String classFqn, String classpath) {
+        if (classFqn == null || classFqn.isBlank() || classpath == null || classpath.isBlank()) {
+            return false;
+        }
+        String rel = classFqn.replace('.', '/') + ".class";
+        String[] entries = classpath.split(Pattern.quote(File.pathSeparator));
+        for (String entry : entries) {
+            if (entry == null || entry.isBlank()) {
+                continue;
+            }
+            File file = new File(entry);
+            if (!file.exists()) {
+                continue;
+            }
+            try {
+                if (file.isDirectory()) {
+                    if (new File(file, rel.replace('/', File.separatorChar)).exists()) {
+                        return true;
+                    }
+                } else if (file.isFile() && entry.toLowerCase(Locale.ROOT).endsWith(".jar")) {
+                    try (JarFile jar = new JarFile(file)) {
+                        if (jar.getEntry(rel) != null) {
+                            return true;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return false;
+    }
+
+    private File findSourceFileForClass(String classFqn) {
+        if (classFqn == null || classFqn.isBlank()) {
+            return null;
+        }
+        String rel = classFqn.replace('.', File.separatorChar) + ".java";
+        String sourcepath = buildProjectSourcepathFromIde();
+        if (sourcepath == null || sourcepath.isBlank()) {
+            return null;
+        }
+        String[] roots = sourcepath.split(Pattern.quote(File.pathSeparator));
+        for (String root : roots) {
+            if (root == null || root.isBlank()) {
+                continue;
+            }
+            File candidate = new File(root, rel);
+            if (candidate.exists() && candidate.isFile()) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private String compileSourceFileToDir(File sourceFile, String classpath, File outputDir) throws Exception {
+        if (project == null || project.isDisposed()) {
+            throw new RuntimeException("Cannot compile target class: project is null or disposed");
+        }
+
+        Sdk sdk = ProjectRootManager.getInstance(project).getProjectSdk();
+        if (sdk == null || sdk.getHomePath() == null || sdk.getHomePath().isBlank()) {
+            throw new RuntimeException("Cannot resolve Project SDK for target class compilation");
+        }
+
+        File javacFile = new File(
+                sdk.getHomePath(),
+                "bin" + File.separator + (System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win") ? "javac.exe" : "javac")
+        );
+        if (!javacFile.exists()) {
+            throw new RuntimeException("javac not found under Project SDK: " + javacFile.getAbsolutePath());
+        }
+
+        String sourcepath = buildProjectSourcepathFromIde();
+        List<String> cmd = new ArrayList<>();
+        cmd.add(javacFile.getAbsolutePath());
+        cmd.add("-encoding");
+        cmd.add("UTF-8");
+        addJavacTargetFlags(cmd, sdk.getHomePath(), resolveProjectTargetMajor());
+        cmd.add("-cp");
+        cmd.add(classpath == null ? "" : classpath);
+        if (sourcepath != null && !sourcepath.isBlank()) {
+            cmd.add("-sourcepath");
+            cmd.add(sourcepath);
+        }
+        cmd.add("-d");
+        cmd.add(outputDir.getAbsolutePath());
+        cmd.add(sourceFile.getAbsolutePath());
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        String out = readProcessOutput(process);
+        int code;
+        try {
+            code = process.exitValue();
+        } catch (Throwable t) {
+            code = -1;
+        }
+        if (code != 0 && out != null && out.contains("unmappable character")) {
+            List<String> retryCmd = new ArrayList<>(cmd);
+            for (int i = 0; i < retryCmd.size() - 1; i++) {
+                if ("-encoding".equals(retryCmd.get(i))) {
+                    retryCmd.set(i + 1, "ISO-8859-1");
+                    break;
+                }
+            }
+            ProcessBuilder retryBuilder = new ProcessBuilder(retryCmd);
+            retryBuilder.redirectErrorStream(true);
+            Process retryProcess = retryBuilder.start();
+            out = readProcessOutput(retryProcess);
+            try {
+                code = retryProcess.exitValue();
+            } catch (Throwable t) {
+                code = -1;
+            }
+        }
+        if (code != 0) {
+            throw new RuntimeException("Compilation failed:\n" + out);
+        }
+        return out == null ? "" : out;
     }
 
     private File compileFiles(List<File> sourceFiles, String classpath) throws Exception {
@@ -1307,6 +1681,21 @@ final class WorkflowJavaBuildSupport {
             }
         }
         return null;
+    }
+
+    private static boolean getReqBoolean(Object req, boolean defaultValue, String... names) {
+        String value = getReqString(req, names);
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        if ("true".equals(normalized) || "yes".equals(normalized) || "1".equals(normalized)) {
+            return true;
+        }
+        if ("false".equals(normalized) || "no".equals(normalized) || "0".equals(normalized)) {
+            return false;
+        }
+        return defaultValue;
     }
 
     private static String deriveJavaHome(String javaExe) {
