@@ -148,19 +148,19 @@ public final class usefulnessChecker {
      * ============================= */
 
     public static UsefulnessResult analyze(Project project,
-                                          String fileName,
-                                          String beforeSource,
-                                          String afterSource,
-                                          UsefulnessConfig cfg) {
+                                           String fileName,
+                                           String beforeSource,
+                                           String afterSource,
+                                           UsefulnessConfig cfg) {
         return analyze(project, fileName, beforeSource, afterSource, cfg, null);
     }
 
     public static UsefulnessResult analyze(Project project,
-                                          String fileName,
-                                          String beforeSource,
-                                          String afterSource,
-                                          UsefulnessConfig cfg,
-                                          List<TargetMethodHint> targetHints) {
+                                           String fileName,
+                                           String beforeSource,
+                                           String afterSource,
+                                           UsefulnessConfig cfg,
+                                           List<TargetMethodHint> targetHints) {
         try {
             if (project == null || project.isDisposed()) return null;
             if (cfg == null) cfg = new UsefulnessConfig();
@@ -224,7 +224,7 @@ public final class usefulnessChecker {
             List<String> debugLines = new ArrayList<>();
 
             // Focused clonePairs: only consider pairs among the methods that delegate to the same newly added helper.
-            // This approximates “analyze only the detection pair”.
+            // This approximates "analyze only the detection pair".
             List<PairScore> clonePairs;
             if (!targetKeys.isEmpty()) {
                 clonePairs = targetPairs;
@@ -417,10 +417,10 @@ public final class usefulnessChecker {
      * (3) they all delegate to the same newly added helper.
      */
     private static ConfirmResult confirmExtractMethodShape(Map<String, PsiMethod> beforeMethods,
-                                                          Map<String, PsiMethod> afterMethods,
-                                                          Set<String> addedKeys,
-                                                          PsiJavaFile afterPsi,
-                                                          UsefulnessConfig cfg) {
+                                                           Map<String, PsiMethod> afterMethods,
+                                                           Set<String> addedKeys,
+                                                           PsiJavaFile afterPsi,
+                                                           UsefulnessConfig cfg) {
         try {
             if (afterPsi == null) return new ConfirmResult(false, "PSI parse failed");
             if (addedKeys == null || addedKeys.isEmpty()) {
@@ -510,13 +510,13 @@ public final class usefulnessChecker {
     }
 
     private static PairOutcome evaluatePair(PairScore pair,
-                                           Map<String, PsiMethod> beforeMethods,
-                                           Map<String, PsiMethod> afterMethods,
-                                           Map<String, Sig> beforeSig,
-                                           Map<String, Sig> afterSig,
-                                           Set<String> addedKeys,
-                                           PsiJavaFile afterPsi,
-                                           UsefulnessConfig cfg) {
+                                            Map<String, PsiMethod> beforeMethods,
+                                            Map<String, PsiMethod> afterMethods,
+                                            Map<String, Sig> beforeSig,
+                                            Map<String, Sig> afterSig,
+                                            Set<String> addedKeys,
+                                            PsiJavaFile afterPsi,
+                                            UsefulnessConfig cfg) {
 
         String aKey = pair.aKey;
         String bKey = pair.bKey;
@@ -881,8 +881,8 @@ public final class usefulnessChecker {
      * Try to resolve a callee key by syntactic lookup (name + arity) within the same PsiJavaFile.
      */
     private static String fallbackResolveMethodKeyByNameAndArity(PsiJavaFile file,
-                                                                String methodName,
-                                                                int argCount) {
+                                                                 String methodName,
+                                                                 int argCount) {
         try {
             if (file == null || methodName == null || methodName.isBlank()) return null;
 
@@ -1091,9 +1091,9 @@ public final class usefulnessChecker {
     }
 
     private static List<PairScore> computePairsRestricted(Map<String, Sig> beforeSig,
-                                                         List<String> keys,
-                                                         double simThreshold,
-                                                         int maxPairs) {
+                                                          List<String> keys,
+                                                          double simThreshold,
+                                                          int maxPairs) {
         if (beforeSig == null || keys == null) return List.of();
         List<String> present = keys.stream().filter(k -> beforeSig.containsKey(k)).collect(Collectors.toList());
         List<PairScore> pairs = new ArrayList<>();
@@ -1114,8 +1114,8 @@ public final class usefulnessChecker {
     }
 
     private static List<PairScore> mergePairLists(List<PairScore> preferred,
-                                                 List<PairScore> fallback,
-                                                 int maxPairs) {
+                                                  List<PairScore> fallback,
+                                                  int maxPairs) {
         LinkedHashMap<String, PairScore> merged = new LinkedHashMap<>();
         addUniquePairs(merged, preferred);
         addUniquePairs(merged, fallback);

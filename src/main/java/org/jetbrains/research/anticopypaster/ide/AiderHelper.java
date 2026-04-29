@@ -21,6 +21,15 @@ import com.intellij.diff.DiffContentFactory;
 import com.intellij.diff.DiffManager;
 import com.intellij.diff.requests.SimpleDiffRequest;
 
+import com.intellij.execution.ProgramRunnerUtil;
+import com.intellij.execution.RunManager;
+import com.intellij.execution.RunnerAndConfigurationSettings;
+import com.intellij.execution.executors.DefaultRunExecutor;
+import com.intellij.execution.junit.JUnitConfiguration;
+import com.intellij.execution.configurations.ConfigurationType;
+import com.intellij.execution.runners.ExecutionEnvironment;
+import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
+
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.execution.impl.ConsoleViewImpl;
@@ -44,6 +53,7 @@ import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.roots.ProjectRootManager;
+import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 public class AiderHelper {
 
@@ -235,7 +245,7 @@ public class AiderHelper {
             );
 
             if (choice == Messages.YES) {
-                CloneUsageStatistics.getInstance(project).refactoringAccepted();
+                AntiCopyPasterUsageStatistics.getInstance(project).refactoringApplied();
                 ApplicationManager.getApplication().executeOnPooledThread(() -> {
                     try {
                         Files.write(originalPath, refactoredContent.getBytes(StandardCharsets.UTF_8));
@@ -255,7 +265,7 @@ public class AiderHelper {
                     }
                 });
             } else {
-                CloneUsageStatistics.getInstance(project).refactoringCancelled();
+                AntiCopyPasterUsageStatistics.getInstance(project).refactoringCancelled();
                 notify(project, "Refactoring for file " + fileName + " was canceled.");
             }
         }, ModalityState.any());
@@ -752,6 +762,7 @@ public class AiderHelper {
                 if (apiBase == null || apiBase.isBlank()) {
                     apiBase = "http://127.0.0.1:11434";
                 }
+                apiBase = normalizeOllamaApiBase(apiBase);
                 pb.environment().put("OLLAMA_API_BASE", apiBase);
 
                 pb.environment().remove("AZURE_API_KEY");
@@ -764,7 +775,7 @@ public class AiderHelper {
                     throw new IllegalArgumentException("Azure provider selected but API base is empty");
                 }
                 if (apiBase.contains("11434")) {
-                    System.err.println("[AIDER] Warning: Azure API base points to 11434 (Ollama). This will 404.");
+                    System.err.println("[Clone] Warning: Azure API base points to 11434 (Ollama). This will 404.");
                 }
                 pb.environment().put("AZURE_API_KEY", apikey);
                 pb.environment().put("AZURE_API_VERSION", apiVersion);
@@ -826,7 +837,6 @@ public class AiderHelper {
             if (viewer != null) {
                 viewer.accept(cleaned);
             }
-            System.out.println("[AIDER] " + cleaned);
             output.append(cleaned).append("\n");
         }
 
@@ -919,6 +929,23 @@ public class AiderHelper {
             }
         }
         return sb.toString();
+    }
+
+    private static String normalizeOllamaApiBase(String rawApiBase) {
+        String normalized = rawApiBase == null ? "" : rawApiBase.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.endsWith("/chat/completions")) {
+            normalized = normalized.substring(0, normalized.length() - "/chat/completions".length());
+        }
+        if (normalized.endsWith("/v1")) {
+            normalized = normalized.substring(0, normalized.length() - "/v1".length());
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
     /**
      * Best-effort fallback: extracts the first fenced code block from {@code text} whose language is either empty

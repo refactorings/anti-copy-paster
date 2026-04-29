@@ -31,7 +31,8 @@ public final class LlmClientFactory {
             }
 
             if (provider.equalsIgnoreCase("Ollama")) {
-                String base = resolveProviderBaseUrl(provider, apiBase);
+                String base = apiBase.isBlank() ? "http://localhost:11434" : apiBase;
+                base = OpenAICompatibleChatClient.normalizeBaseUrl(base);
                 String m = !ollamaModel.isBlank() ? ollamaModel : model;
                 if (m.isBlank()) m = "llama3";
                 log(viewer, "Ollama", m, base, "", "");
@@ -48,7 +49,7 @@ public final class LlmClientFactory {
                 return new NoopLlmClient();
             }
 
-            if (provider.equalsIgnoreCase("Google")) {
+            if (provider.equalsIgnoreCase("Google") || provider.equalsIgnoreCase("Gemini")) {
                 String m = model.isBlank() ? "gemini-2.5-pro" : model;
                 log(viewer, "Google", m, "", "", apiKey);
                 return apiKey.isBlank() ? new NoopLlmClient() : new GeminiGenerateContentClient(apiKey, m);
@@ -68,16 +69,16 @@ public final class LlmClientFactory {
 
             if (provider.equalsIgnoreCase("DeepSeek")) {
                 String m = model.isBlank() ? "deepseek-chat" : model;
-                String base = resolveProviderBaseUrl(provider, apiBase);
-                logIgnoredStoredBase(viewer, "DeepSeek", apiBase, base);
+                String base = apiBase.isBlank() ? "https://api.deepseek.com" : apiBase;
+                base = OpenAICompatibleChatClient.normalizeBaseUrl(base);
                 log(viewer, "DeepSeek", m, base, "", apiKey);
                 return apiKey.isBlank() ? new NoopLlmClient() : new OpenAICompatibleChatClient(base, apiKey, m);
             }
 
             if (provider.equalsIgnoreCase("xAI")) {
                 String m = model.isBlank() ? "grok-3" : model;
-                String base = resolveProviderBaseUrl(provider, apiBase);
-                logIgnoredStoredBase(viewer, "xAI", apiBase, base);
+                String base = apiBase.isBlank() ? "https://api.x.ai" : apiBase;
+                base = OpenAICompatibleChatClient.normalizeBaseUrl(base);
                 log(viewer, "xAI", m, base, "", apiKey);
                 return apiKey.isBlank() ? new NoopLlmClient() : new OpenAICompatibleChatClient(base, apiKey, m);
             }
@@ -147,25 +148,5 @@ public final class LlmClientFactory {
         msg.append(", apiKey=").append(keyPreview);
 
         viewer.accept(msg.toString());
-    }
-
-    private static void logIgnoredStoredBase(Consumer<String> viewer, String provider, String configuredBase, String resolvedBase) {
-        if (viewer == null) return;
-        if (configuredBase == null || configuredBase.isBlank()) return;
-        if (sameBase(configuredBase, resolvedBase)) return;
-
-        viewer.accept("[LLM_SETTINGS] ignoring stored apiBase for " + provider + "; using " + resolvedBase);
-    }
-
-    private static boolean sameBase(String left, String right) {
-        return normalizeBase(left).equals(normalizeBase(right));
-    }
-
-    private static String normalizeBase(String value) {
-        String normalized = value == null ? "" : value.trim();
-        while (normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        return normalized;
     }
 }
