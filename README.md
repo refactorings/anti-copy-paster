@@ -1,5 +1,7 @@
 # AntiCopyPaster
 
+![GitHub Downloads](https://img.shields.io/github/downloads/refactorings/anti-copy-paster/total)
+
 AntiCopyPaster is a plugin for IntelliJ IDEA that tracks the copying and pasting carried out by the developer and
 suggests extracting duplicates into a new method as soon as they are introduced in the code.
 
