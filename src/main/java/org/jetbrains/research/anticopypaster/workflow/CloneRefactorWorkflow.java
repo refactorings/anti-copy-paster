@@ -1583,7 +1583,7 @@ The fragment usefulness analyzer failed before compilation.%s
 
 
     // ===== Ablation toggle: set to false to disable RAG retrieval entirely =====
-    private static final boolean ENABLE_REFACTOR_RAG = false;
+    private static final boolean ENABLE_REFACTOR_RAG = true;
 
     /**
      * Build a query string for refactor RAG retrieval.
