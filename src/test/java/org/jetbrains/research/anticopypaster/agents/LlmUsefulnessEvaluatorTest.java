@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class LlmUsefulnessEvaluatorTest {
 
     @Test
-    void evaluateAssignsFullCategoryCatalogToEveryJudge() {
+    void evaluateAssignsFullCategoryCatalogToEveryPanelist() {
         List<String> expectedCategories = List.of(
                 "EXTRACT_METHOD_NOT_FOUND",
                 "INCOMPLETE_REFACTORING_DETECTED",
@@ -51,7 +51,7 @@ class LlmUsefulnessEvaluatorTest {
                     }
                     return """
                             {
-                              "judge_id": "P",
+                              "panelist_id": "P",
                               "is_useful": true,
                               "matched_categories": [],
                               "summary": "No issue",
@@ -61,23 +61,24 @@ class LlmUsefulnessEvaluatorTest {
                 }
         );
 
-        assertEquals(3, result.judgeResults.size());
-        for (LlmUsefulnessEvaluator.JudgeResult judgeResult : result.judgeResults) {
-            assertEquals(expectedCategories, judgeResult.checkedCategories);
+        assertEquals(3, result.panelistResults.size());
+        for (LlmUsefulnessEvaluator.PanelistResult panelistResult : result.panelistResults) {
+            assertEquals(expectedCategories, panelistResult.checkedCategories);
         }
 
-        for (String judgeId : List.of("P1", "P2", "P3")) {
-            String prompt = promptsByLabel.get(judgeId);
+        for (String panelistId : List.of("P1", "P2", "P3")) {
+            String prompt = promptsByLabel.get(panelistId);
             assertNotNull(prompt);
             assertTrue(prompt.contains("All panelists review the same categories independently."));
+            assertTrue(prompt.contains("\"panelist_id\": \"" + panelistId + "\""));
             for (String category : expectedCategories) {
-                assertTrue(prompt.contains(category), "Missing category " + category + " in " + judgeId + " prompt");
+                assertTrue(prompt.contains(category), "Missing category " + category + " in " + panelistId + " prompt");
             }
         }
     }
 
     @Test
-    void evaluateReturnsCuratorDecisionWhenJudgesAndCuratorParse() {
+    void evaluateReturnsCuratorDecisionWhenPanelistsAndCuratorParse() {
         LlmUsefulnessEvaluator.UsefulnessInput input = new LlmUsefulnessEvaluator.UsefulnessInput(
                 "Helper.java",
                 LlmUsefulnessEvaluator.CloneKind.WHOLE_METHOD,
@@ -91,7 +92,7 @@ class LlmUsefulnessEvaluatorTest {
                 (label, prompt) -> switch (label) {
                     case "P1" -> """
                             {
-                              "judge_id": "P1",
+                              "panelist_id": "P1",
                               "is_useful": true,
                               "matched_categories": [],
                               "summary": "No completeness issue",
@@ -100,7 +101,7 @@ class LlmUsefulnessEvaluatorTest {
                             """;
                     case "P2" -> """
                             {
-                              "judge_id": "P2",
+                              "panelist_id": "P2",
                               "is_useful": false,
                               "matched_categories": ["DIRECT_CLONE_REMOVAL_DETECTED"],
                               "summary": "A clone was removed directly",
@@ -109,7 +110,7 @@ class LlmUsefulnessEvaluatorTest {
                             """;
                     case "P3" -> """
                             {
-                              "judge_id": "P3",
+                              "panelist_id": "P3",
                               "is_useful": true,
                               "matched_categories": [],
                               "summary": "No scope issue",
@@ -133,7 +134,7 @@ class LlmUsefulnessEvaluatorTest {
         assertFalse(result.useful);
         assertNotNull(result.curatorResult);
         assertEquals(List.of("DIRECT_CLONE_REMOVAL_DETECTED"), result.curatorResult.reasons);
-        assertEquals(3, result.judgeResults.size());
+        assertEquals(3, result.panelistResults.size());
         assertTrue(result.notes.contains("P2=not_useful"));
     }
 
@@ -155,7 +156,7 @@ class LlmUsefulnessEvaluatorTest {
                     }
                     return """
                             {
-                              "judge_id": "P",
+                              "panelist_id": "P",
                               "is_useful": true,
                               "matched_categories": [],
                               "summary": "ok",

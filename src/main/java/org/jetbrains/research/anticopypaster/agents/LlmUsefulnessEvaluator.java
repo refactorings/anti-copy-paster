@@ -45,8 +45,8 @@ public final class LlmUsefulnessEvaluator {
         }
     }
 
-    public static final class JudgeResult {
-        public final String judgeId;
+    public static final class PanelistResult {
+        public final String panelistId;
         public final List<String> checkedCategories;
         public final boolean parsed;
         public final boolean useful;
@@ -56,16 +56,16 @@ public final class LlmUsefulnessEvaluator {
         public final String rawResponse;
         public final String error;
 
-        public JudgeResult(String judgeId,
-                           List<String> checkedCategories,
-                           boolean parsed,
-                           boolean useful,
-                           List<String> matchedCategories,
-                           String summary,
-                           String feedback,
-                           String rawResponse,
-                           String error) {
-            this.judgeId = safe(judgeId);
+        public PanelistResult(String panelistId,
+                              List<String> checkedCategories,
+                              boolean parsed,
+                              boolean useful,
+                              List<String> matchedCategories,
+                              String summary,
+                              String feedback,
+                              String rawResponse,
+                              String error) {
+            this.panelistId = safe(panelistId);
             this.checkedCategories = checkedCategories == null ? List.of() : List.copyOf(checkedCategories);
             this.parsed = parsed;
             this.useful = useful;
@@ -109,29 +109,29 @@ public final class LlmUsefulnessEvaluator {
     public static final class EvaluationResult {
         public final boolean available;
         public final boolean useful;
-        public final List<JudgeResult> judgeResults;
+        public final List<PanelistResult> panelistResults;
         public final CuratorResult curatorResult;
         public final String notes;
 
         public EvaluationResult(boolean available,
                                 boolean useful,
-                                List<JudgeResult> judgeResults,
+                                List<PanelistResult> panelistResults,
                                 CuratorResult curatorResult,
                                 String notes) {
             this.available = available;
             this.useful = useful;
-            this.judgeResults = judgeResults == null ? List.of() : List.copyOf(judgeResults);
+            this.panelistResults = panelistResults == null ? List.of() : List.copyOf(panelistResults);
             this.curatorResult = curatorResult;
             this.notes = safe(notes);
         }
     }
 
-    private static final class JudgeSpec {
+    private static final class PanelistSpec {
         final String id;
         final String title;
         final List<String> categories;
 
-        JudgeSpec(String id, String title, List<String> categories) {
+        PanelistSpec(String id, String title, List<String> categories) {
             this.id = id;
             this.title = title;
             this.categories = categories;
@@ -151,18 +151,18 @@ public final class LlmUsefulnessEvaluator {
             "EXCESSIVE_REFACTORING_DETECTED"
     );
 
-    private static final List<JudgeSpec> JUDGE_SPECS = List.of(
-            new JudgeSpec(
+    private static final List<PanelistSpec> PANELIST_SPECS = List.of(
+            new PanelistSpec(
                     "P1",
                     "Usefulness Panelist 1",
                     ALL_CATEGORY_NAMES
             ),
-            new JudgeSpec(
+            new PanelistSpec(
                     "P2",
                     "Usefulness Panelist 2",
                     ALL_CATEGORY_NAMES
             ),
-            new JudgeSpec(
+            new PanelistSpec(
                     "P3",
                     "Usefulness Panelist 3",
                     ALL_CATEGORY_NAMES
@@ -187,24 +187,24 @@ public final class LlmUsefulnessEvaluator {
             return new EvaluationResult(false, false, List.of(), null, "LLM usefulness input or caller missing");
         }
 
-        List<JudgeResult> judgeResults = new ArrayList<>();
-        for (JudgeSpec spec : JUDGE_SPECS) {
-            judgeResults.add(runJudge(spec, input, llmCaller));
+        List<PanelistResult> panelistResults = new ArrayList<>();
+        for (PanelistSpec spec : PANELIST_SPECS) {
+            panelistResults.add(runPanelist(spec, input, llmCaller));
         }
 
-        CuratorResult curatorResult = runCurator(input, judgeResults, llmCaller);
+        CuratorResult curatorResult = runCurator(input, panelistResults, llmCaller);
         boolean available = curatorResult != null && curatorResult.parsed;
         boolean useful = available && curatorResult.useful;
 
         StringBuilder notes = new StringBuilder();
-        notes.append("judges=").append(judgeResults.size());
-        for (JudgeResult judgeResult : judgeResults) {
+        notes.append("panelists=").append(panelistResults.size());
+        for (PanelistResult panelistResult : panelistResults) {
             notes.append(", ")
-                    .append(judgeResult.judgeId)
+                    .append(panelistResult.panelistId)
                     .append("=")
-                    .append(judgeResult.parsed ? (judgeResult.useful ? "useful" : "not_useful") : "unparsed");
-            if (!judgeResult.matchedCategories.isEmpty()) {
-                notes.append(judgeResult.matchedCategories);
+                    .append(panelistResult.parsed ? (panelistResult.useful ? "useful" : "not_useful") : "unparsed");
+            if (!panelistResult.matchedCategories.isEmpty()) {
+                notes.append(panelistResult.matchedCategories);
             }
         }
         if (curatorResult != null) {
@@ -220,16 +220,16 @@ public final class LlmUsefulnessEvaluator {
             }
         }
 
-        return new EvaluationResult(available, useful, judgeResults, curatorResult, notes.toString());
+        return new EvaluationResult(available, useful, panelistResults, curatorResult, notes.toString());
     }
 
-    private static JudgeResult runJudge(JudgeSpec spec, UsefulnessInput input, LabeledLlmCaller llmCaller) {
-        String prompt = buildJudgePrompt(spec, input);
+    private static PanelistResult runPanelist(PanelistSpec spec, UsefulnessInput input, LabeledLlmCaller llmCaller) {
+        String prompt = buildPanelistPrompt(spec, input);
         String raw = "";
         try {
             raw = safe(llmCaller.call(spec.id, prompt));
         } catch (Throwable t) {
-            return new JudgeResult(
+            return new PanelistResult(
                     spec.id,
                     spec.categories,
                     false,
@@ -241,26 +241,26 @@ public final class LlmUsefulnessEvaluator {
                     "LLM call failed: " + t.getMessage()
             );
         }
-        return parseJudgeResult(spec, raw);
+        return parsePanelistResult(spec, raw);
     }
 
     private static CuratorResult runCurator(UsefulnessInput input,
-                                            List<JudgeResult> judgeResults,
+                                            List<PanelistResult> panelistResults,
                                             LabeledLlmCaller llmCaller) {
-        String prompt = buildCuratorPrompt(input, judgeResults);
+        String prompt = buildCuratorPrompt(input, panelistResults);
         String raw = "";
         try {
             raw = safe(llmCaller.call("CURATOR", prompt));
         } catch (Throwable t) {
             return new CuratorResult(false, false, List.of(), "", "", 0.0d, raw, "LLM call failed: " + t.getMessage());
         }
-        return parseCuratorResult(raw, judgeResults);
+        return parseCuratorResult(raw, panelistResults);
     }
 
-    private static String buildJudgePrompt(JudgeSpec spec, UsefulnessInput input) {
+    private static String buildPanelistPrompt(PanelistSpec spec, UsefulnessInput input) {
         StringBuilder sb = new StringBuilder();
         sb.append("You are ").append(spec.title).append(" (").append(spec.id).append(").\n");
-        sb.append("Your task is to judge whether a proposed Java refactoring is useful.\n");
+        sb.append("Your task is to evaluate whether a proposed Java refactoring is useful.\n");
         sb.append("You are responsible for the full category catalog listed below.\n");
         sb.append("All panelists review the same categories independently.\n");
         sb.append("If none of your assigned categories clearly apply, you must return is_useful=true.\n");
@@ -286,7 +286,7 @@ public final class LlmUsefulnessEvaluator {
 
         sb.append("=== OUTPUT JSON ===\n");
         sb.append("{\n");
-        sb.append("  \"judge_id\": \"").append(spec.id).append("\",\n");
+        sb.append("  \"panelist_id\": \"").append(spec.id).append("\",\n");
         sb.append("  \"is_useful\": true,\n");
         sb.append("  \"matched_categories\": [],\n");
         sb.append("  \"summary\": \"short decision summary\",\n");
@@ -299,12 +299,12 @@ public final class LlmUsefulnessEvaluator {
         return sb.toString();
     }
 
-    private static String buildCuratorPrompt(UsefulnessInput input, List<JudgeResult> judgeResults) {
+    private static String buildCuratorPrompt(UsefulnessInput input, List<PanelistResult> panelistResults) {
         StringBuilder sb = new StringBuilder();
         sb.append("You are the usefulness curator.\n");
-        sb.append("You must review three judge outputs and make the final useful/not-useful decision.\n");
-        sb.append("If one or more judges found strong evidence of a real not-useful category, you should usually set is_useful=false.\n");
-        sb.append("If all parsed judges say useful or only provide weak/empty evidence, set is_useful=true.\n");
+        sb.append("You must review three panelist outputs and make the final useful/not-useful decision.\n");
+        sb.append("If one or more panelists found strong evidence of a real not-useful category, you should usually set is_useful=false.\n");
+        sb.append("If all parsed panelists say useful or only provide weak/empty evidence, set is_useful=true.\n");
         sb.append("Return ONLY one JSON object and no extra text.\n\n");
 
         sb.append("=== TARGET CONTEXT ===\n");
@@ -318,16 +318,16 @@ public final class LlmUsefulnessEvaluator {
         sb.append("=== AFTER (FOCUSED CONTEXT) ===\n");
         sb.append("```java\n").append(input.focusedAfterCode).append("\n```\n\n");
 
-        sb.append("=== JUDGE OUTPUTS ===\n");
-        for (JudgeResult judgeResult : judgeResults) {
-            sb.append("[").append(judgeResult.judgeId).append("]\n");
+        sb.append("=== PANELIST OUTPUTS ===\n");
+        for (PanelistResult panelistResult : panelistResults) {
+            sb.append("[").append(panelistResult.panelistId).append("]\n");
             sb.append("{\n");
-            sb.append("  \"parsed\": ").append(judgeResult.parsed).append(",\n");
-            sb.append("  \"is_useful\": ").append(judgeResult.useful).append(",\n");
-            sb.append("  \"matched_categories\": ").append(toJsonArrayLiteral(judgeResult.matchedCategories)).append(",\n");
-            sb.append("  \"summary\": ").append(toJsonStringLiteral(judgeResult.summary)).append(",\n");
-            sb.append("  \"feedback\": ").append(toJsonStringLiteral(judgeResult.feedback)).append(",\n");
-            sb.append("  \"error\": ").append(toJsonStringLiteral(judgeResult.error)).append("\n");
+            sb.append("  \"parsed\": ").append(panelistResult.parsed).append(",\n");
+            sb.append("  \"is_useful\": ").append(panelistResult.useful).append(",\n");
+            sb.append("  \"matched_categories\": ").append(toJsonArrayLiteral(panelistResult.matchedCategories)).append(",\n");
+            sb.append("  \"summary\": ").append(toJsonStringLiteral(panelistResult.summary)).append(",\n");
+            sb.append("  \"feedback\": ").append(toJsonStringLiteral(panelistResult.feedback)).append(",\n");
+            sb.append("  \"error\": ").append(toJsonStringLiteral(panelistResult.error)).append("\n");
             sb.append("}\n\n");
         }
 
@@ -340,16 +340,16 @@ public final class LlmUsefulnessEvaluator {
         sb.append("  \"confidence\": 0.84\n");
         sb.append("}\n");
         sb.append("Rules:\n");
-        sb.append("- reasons must use only category names found by judges.\n");
+        sb.append("- reasons must use only category names found by panelists.\n");
         sb.append("- Keep summary short and concrete.\n");
         sb.append("- feedback should directly tell the refactoring agent how to revise the code.\n");
         return sb.toString();
     }
 
-    private static JudgeResult parseJudgeResult(JudgeSpec spec, String raw) {
+    private static PanelistResult parsePanelistResult(PanelistSpec spec, String raw) {
         JsonObject obj = parseJsonObject(raw);
         if (obj == null) {
-            return new JudgeResult(spec.id, spec.categories, false, false, List.of(), "", "", raw, "Could not parse judge JSON");
+            return new PanelistResult(spec.id, spec.categories, false, false, List.of(), "", "", raw, "Could not parse panelist JSON");
         }
 
         boolean useful = getBoolean(obj, true, "is_useful", "isUseful", "useful");
@@ -357,10 +357,10 @@ public final class LlmUsefulnessEvaluator {
         String summary = getString(obj, "summary", "decision_summary", "decisionSummary");
         String feedback = getString(obj, "feedback", "feedback_for_refactor_agent", "feedbackForRefactorAgent", "revision_instruction");
 
-        return new JudgeResult(spec.id, spec.categories, true, useful, matchedCategories, summary, feedback, raw, "");
+        return new PanelistResult(spec.id, spec.categories, true, useful, matchedCategories, summary, feedback, raw, "");
     }
 
-    private static CuratorResult parseCuratorResult(String raw, List<JudgeResult> judgeResults) {
+    private static CuratorResult parseCuratorResult(String raw, List<PanelistResult> panelistResults) {
         JsonObject obj = parseJsonObject(raw);
         if (obj == null) {
             return new CuratorResult(false, false, List.of(), "", "", 0.0d, raw, "Could not parse curator JSON");
@@ -370,9 +370,9 @@ public final class LlmUsefulnessEvaluator {
         List<String> reasons = normalizeCategoryNames(getStringList(obj, "reasons", "matched_categories", "matchedCategories"));
         if (reasons.isEmpty() && !useful) {
             LinkedHashSet<String> fallbackReasons = new LinkedHashSet<>();
-            if (judgeResults != null) {
-                for (JudgeResult judgeResult : judgeResults) {
-                    fallbackReasons.addAll(judgeResult.matchedCategories);
+            if (panelistResults != null) {
+                for (PanelistResult panelistResult : panelistResults) {
+                    fallbackReasons.addAll(panelistResult.matchedCategories);
                 }
             }
             reasons = new ArrayList<>(fallbackReasons);
