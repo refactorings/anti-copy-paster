@@ -122,7 +122,8 @@ final class WorkflowJavaBuildSupport {
                     PathsList orderEntries = OrderEnumerator.orderEntries(module)
                             .recursively().withoutSdk().classes().getPathsList();
                     paths.addAll(orderEntries.getPathList());
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("collect module classpath entries", e);
                 }
 
                 try {
@@ -135,7 +136,8 @@ final class WorkflowJavaBuildSupport {
                             paths.add(ext.getCompilerOutputPathForTests().getPath());
                         }
                     }
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("collect compiler output paths", e);
                 }
 
                 try {
@@ -152,7 +154,8 @@ final class WorkflowJavaBuildSupport {
                             }
                         }
                     }
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("collect module source roots for classpath", e);
                 }
             }
 
@@ -174,7 +177,8 @@ final class WorkflowJavaBuildSupport {
                                 }
                             });
                 }
-            } catch (Throwable ignored) {
+            } catch (Exception e) {
+                logBestEffortFailure("scan project output directories", e);
             }
 
             Set<String> validPaths = new LinkedHashSet<>();
@@ -185,7 +189,8 @@ final class WorkflowJavaBuildSupport {
             }
 
             return String.join(File.pathSeparator, validPaths);
-        } catch (Throwable t) {
+        } catch (Exception e) {
+            logBestEffortFailure("build project classpath from IDE", e);
             return "";
         }
     }
@@ -219,7 +224,8 @@ final class WorkflowJavaBuildSupport {
                                 }
                             }
                         }
-                    } catch (Throwable ignored) {
+                    } catch (Exception e) {
+                        logBestEffortFailure("collect module source roots", e);
                     }
                 }
             }
@@ -252,15 +258,18 @@ final class WorkflowJavaBuildSupport {
                                     if (new File(candidate).exists()) {
                                         roots.add(candidate);
                                     }
-                                } catch (Throwable ignored2) {
+                                } catch (Exception e) {
+                                    logBestEffortFailure("inspect candidate source root", e);
                                 }
                             });
                 }
-            } catch (Throwable ignored) {
+            } catch (Exception e) {
+                logBestEffortFailure("scan project source roots", e);
             }
 
             return String.join(File.pathSeparator, roots);
-        } catch (Throwable t) {
+        } catch (Exception e) {
+            logBestEffortFailure("build project sourcepath from IDE", e);
             return "";
         }
     }
@@ -286,7 +295,8 @@ final class WorkflowJavaBuildSupport {
                     }
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Exception e) {
+            logBestEffortFailure("build compile classpath with source roots", e);
         }
         return String.join(File.pathSeparator, paths);
     }
@@ -396,7 +406,8 @@ final class WorkflowJavaBuildSupport {
         try {
             WorkflowUiSupport.logStage("COMPILE", "javac classpath:\n" + (classpath == null ? "" : classpath));
             WorkflowUiSupport.logStage("COMPILE", "javac sourcepath:\n" + (sourcepath == null ? "" : sourcepath));
-        } catch (Throwable ignored) {
+        } catch (Exception e) {
+            logBestEffortFailure("log javac inputs", e);
         }
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -406,7 +417,8 @@ final class WorkflowJavaBuildSupport {
         int exitCode;
         try {
             exitCode = process.exitValue();
-        } catch (Throwable t) {
+        } catch (IllegalThreadStateException e) {
+            logBestEffortFailure("read javac process exit code", e);
             exitCode = -1;
         }
 
@@ -427,7 +439,8 @@ final class WorkflowJavaBuildSupport {
             out = readProcessOutput(retryProcess);
             try {
                 exitCode = retryProcess.exitValue();
-            } catch (Throwable t) {
+            } catch (IllegalThreadStateException e) {
+                logBestEffortFailure("read javac retry process exit code", e);
                 exitCode = -1;
             }
         }
@@ -539,7 +552,8 @@ final class WorkflowJavaBuildSupport {
                         File tj = new File(forcedJavaHome, "lib" + File.separator + "tools.jar");
                         if (tj.exists()) toolsJar = tj.getAbsolutePath();
                     }
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("resolve Java 8 tools.jar", e);
                 }
 
                 String cpLaunch;
@@ -611,7 +625,8 @@ final class WorkflowJavaBuildSupport {
                     hasGeneratedTests = Files.walk(testDir.toPath())
                             .anyMatch(p -> p != null && p.toString().endsWith(".java"));
                 }
-            } catch (Throwable ignored) {
+            } catch (Exception e) {
+                logBestEffortFailure("detect EvoSuite generated tests", e);
             }
 
             String nativeTestFqn = "";
@@ -620,7 +635,8 @@ final class WorkflowJavaBuildSupport {
                 try {
                     int idx = targetClass.lastIndexOf('.');
                     simpleName = idx >= 0 ? targetClass.substring(idx + 1) : targetClass;
-                } catch (Throwable t) {
+                } catch (RuntimeException e) {
+                    logBestEffortFailure("resolve EvoSuite target simple name", e);
                     simpleName = targetClass;
                 }
                 if (simpleName == null) simpleName = "";
@@ -642,7 +658,8 @@ final class WorkflowJavaBuildSupport {
                     String scaffName = simpleName + "_ESTest_scaffolding.java";
                     Path candidate = estestPath.getParent().resolve(scaffName);
                     if (Files.exists(candidate)) scaffPath = candidate;
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("resolve EvoSuite scaffolding path", e);
                 }
                 if (scaffPath == null) {
                     scaffPath = findFirstFileBySuffix(testDir.toPath(), "_ESTest_scaffolding.java");
@@ -676,7 +693,8 @@ final class WorkflowJavaBuildSupport {
                     if (Files.exists(oldConverted)) {
                         Files.delete(oldConverted);
                     }
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("delete stale converted EvoSuite test", e);
                 }
 
                 Files.copy(estestPath, targetEst, StandardCopyOption.REPLACE_EXISTING);
@@ -788,13 +806,15 @@ final class WorkflowJavaBuildSupport {
                                                             break;
                                                         }
                                                     }
-                                                } catch (Throwable ignored) {
+                                                } catch (Exception e) {
+                                                    logBestEffortFailure("mark generated test source root", e);
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            } catch (Throwable ignored) {
+                            } catch (Exception e) {
+                                logBestEffortFailure("configure generated test source root", e);
                             }
 
                             final String libName = "AntiCopyPaster-TestLib";
@@ -815,7 +835,8 @@ final class WorkflowJavaBuildSupport {
                                     if (finalEvo != null && finalEvo.exists()) {
                                         lm.addRoot(VfsUtil.getUrlForLibraryRoot(finalEvo), OrderRootType.CLASSES);
                                     }
-                                } catch (Throwable ignored) {
+                                } catch (Exception e) {
+                                    logBestEffortFailure("add test library roots", e);
                                 }
 
                                 lm.commit();
@@ -832,7 +853,8 @@ final class WorkflowJavaBuildSupport {
                                             }
                                         }
                                     }
-                                } catch (Throwable ignored) {
+                                } catch (Exception e) {
+                                    logBestEffortFailure("set test library scope", e);
                                 }
 
                                 try {
@@ -843,7 +865,8 @@ final class WorkflowJavaBuildSupport {
                                             if (vf == null || !vf.exists()) {
                                                 lm.removeRoot(url, OrderRootType.CLASSES);
                                             }
-                                        } catch (Throwable ignored) {
+                                        } catch (Exception e) {
+                                            logBestEffortFailure("remove stale test library root", e);
                                         }
                                     }
                                     if (finalJunit != null && finalJunit.exists()) {
@@ -856,18 +879,22 @@ final class WorkflowJavaBuildSupport {
                                         lm.addRoot(VfsUtil.getUrlForLibraryRoot(finalEvo), OrderRootType.CLASSES);
                                     }
                                     lm.commit();
-                                } catch (Throwable ignored) {
+                                } catch (Exception e) {
+                                    logBestEffortFailure("refresh test library roots", e);
                                 }
                             }
 
                             model.commit();
-                        } catch (Throwable t) {
+                        } catch (Exception e) {
+                            logBestEffortFailure("commit test library configuration", e);
                         }
                     });
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("schedule test library configuration", e);
                 }
             }, ModalityState.any());
-        } catch (Throwable ignored) {
+        } catch (Exception e) {
+            logBestEffortFailure("configure test library", e);
         }
     }
 
@@ -978,7 +1005,8 @@ final class WorkflowJavaBuildSupport {
                         File scaff = new File(testFile.getParentFile(), base + "_ESTest_scaffolding.java");
                         if (scaff.exists()) sources.add(scaff);
                     }
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("add EvoSuite scaffolding source for compilation", e);
                 }
 
                 compiledClassesDir = compileFiles(sources, runCp);
@@ -1130,7 +1158,7 @@ final class WorkflowJavaBuildSupport {
                             Method method = bootstrapClass.getDeclaredMethod(methodName);
                             method.setAccessible(true);
                             method.invoke(null);
-                        } catch (Throwable t) {
+                        } catch (Exception t) {
                             System.out.println("[TEST] WARN: bootstrap failed: " + t);
                         }
                     }
@@ -1161,25 +1189,57 @@ final class WorkflowJavaBuildSupport {
 
     private void patchEvoSuiteScaffoldingForTest(File testFile) {
         try {
-            if (testFile == null || !testFile.exists()) {
+            if (testFile == null) {
+                logEvoSuiteScaffoldingPatchWarning(null, "test file is null");
+                return;
+            }
+            if (!testFile.exists()) {
+                logEvoSuiteScaffoldingPatchWarning(testFile, "test file does not exist");
                 return;
             }
             String name = testFile.getName();
             if (!name.endsWith("_ESTest.java")) {
+                logEvoSuiteScaffoldingPatchWarning(testFile, "unexpected test file name: " + name);
                 return;
             }
             String base = name.substring(0, name.length() - "_ESTest.java".length());
-            File scaffoldingFile = new File(testFile.getParentFile(), base + "_ESTest_scaffolding.java");
+            File parent = testFile.getParentFile();
+            if (parent == null) {
+                logEvoSuiteScaffoldingPatchWarning(testFile, "test file has no parent directory");
+                return;
+            }
+            File scaffoldingFile = new File(parent, base + "_ESTest_scaffolding.java");
             if (!scaffoldingFile.exists()) {
+                logEvoSuiteScaffoldingPatchWarning(testFile, "scaffolding file not found: " + scaffoldingFile.getAbsolutePath());
                 return;
             }
             String scaffolding = Files.readString(scaffoldingFile.toPath(), StandardCharsets.UTF_8);
             String patched = disableEvoSuiteResetClasses(scaffolding);
             if (!patched.equals(scaffolding)) {
                 Files.writeString(scaffoldingFile.toPath(), patched, StandardCharsets.UTF_8);
+            } else if (!scaffolding.contains("resetClasses() disabled by AntiCopyPaster request")) {
+                logEvoSuiteScaffoldingPatchWarning(testFile, "resetClasses() call not found in " + scaffoldingFile.getAbsolutePath());
             }
-        } catch (Throwable ignored) {
+        } catch (IOException | SecurityException e) {
+            logEvoSuiteScaffoldingPatchWarning(testFile, e.getMessage());
         }
+    }
+
+    private void logEvoSuiteScaffoldingPatchWarning(File testFile, String reason) {
+        String testPath = testFile == null ? "<unknown>" : testFile.getAbsolutePath();
+        String message = "[TEST] WARN: failed to patch EvoSuite scaffolding for "
+                + testPath + ": " + (reason == null || reason.isBlank() ? "unknown error" : reason);
+        if (viewer != null) {
+            viewer.accept(message);
+        }
+        WorkflowUiSupport.logStage("TEST", message);
+    }
+
+    private static void logBestEffortFailure(String action, Exception e) {
+        String detail = e == null || e.getMessage() == null || e.getMessage().isBlank()
+                ? ""
+                : ": " + e.getMessage();
+        WorkflowUiSupport.logStage("WORKFLOW", "[WORKFLOW] WARN: " + action + " failed" + detail);
     }
 
     private String ensureTargetClassOnClasspath(String targetClass, String classpath, File outRoot) {
@@ -1222,7 +1282,7 @@ final class WorkflowJavaBuildSupport {
                 viewer.accept("[TEST] WARN: fallback compile finished but target class is still missing: " + targetClass
                         + (excerpt.isBlank() ? "" : "\n" + excerpt));
             }
-        } catch (Throwable t) {
+        } catch (Exception t) {
             if (viewer != null) {
                 viewer.accept("[TEST] WARN: failed to compile missing target class for EvoSuite: " + t.getMessage());
             }
@@ -1256,7 +1316,8 @@ final class WorkflowJavaBuildSupport {
                         }
                     }
                 }
-            } catch (Throwable ignored) {
+            } catch (Exception e) {
+                logBestEffortFailure("inspect classpath entry for class", e);
             }
         }
         return false;
@@ -1325,7 +1386,8 @@ final class WorkflowJavaBuildSupport {
         int code;
         try {
             code = process.exitValue();
-        } catch (Throwable t) {
+        } catch (IllegalThreadStateException t) {
+            logBestEffortFailure("read generated test javac process exit code", t);
             code = -1;
         }
         if (code != 0 && out != null && out.contains("unmappable character")) {
@@ -1342,7 +1404,8 @@ final class WorkflowJavaBuildSupport {
             out = readProcessOutput(retryProcess);
             try {
                 code = retryProcess.exitValue();
-            } catch (Throwable t) {
+            } catch (IllegalThreadStateException t) {
+                logBestEffortFailure("read generated test javac retry process exit code", t);
                 code = -1;
             }
         }
@@ -1402,7 +1465,8 @@ final class WorkflowJavaBuildSupport {
         int code;
         try {
             code = process.exitValue();
-        } catch (Throwable t) {
+        } catch (IllegalThreadStateException t) {
+            logBestEffortFailure("read single-file javac process exit code", t);
             code = -1;
         }
         if (code != 0) {
@@ -1427,15 +1491,18 @@ final class WorkflowJavaBuildSupport {
                         if (isCancelled() || Thread.currentThread().isInterrupted()) {
                             try {
                                 if (viewer != null) viewer.accept("[WORKFLOW] Cancel requested; killing process...");
-                            } catch (Throwable ignored) {
+                            } catch (Exception e) {
+                                logBestEffortFailure("log process cancellation", e);
                             }
                             try {
                                 proc.destroy();
-                            } catch (Throwable ignored) {
+                            } catch (Exception e) {
+                                logBestEffortFailure("destroy cancelled process", e);
                             }
                             try {
                                 if (proc.isAlive()) proc.destroyForcibly();
-                            } catch (Throwable ignored) {
+                            } catch (Exception e) {
+                                logBestEffortFailure("forcibly destroy cancelled process", e);
                             }
                             break;
                         }
@@ -1446,7 +1513,8 @@ final class WorkflowJavaBuildSupport {
                             break;
                         }
                     }
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("monitor process cancellation", e);
                 }
             }, "acp-cancel-killer");
             killer.setDaemon(true);
@@ -1465,7 +1533,8 @@ final class WorkflowJavaBuildSupport {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw e;
-            } catch (Throwable ignored) {
+            } catch (Exception e) {
+                logBestEffortFailure("read process output", e);
             }
 
             int exit;
@@ -1474,26 +1543,31 @@ final class WorkflowJavaBuildSupport {
             } catch (InterruptedException e) {
                 try {
                     proc.destroy();
-                } catch (Throwable ignored) {
+                } catch (Exception destroyException) {
+                    logBestEffortFailure("destroy interrupted process", destroyException);
                 }
                 try {
                     if (proc.isAlive()) proc.destroyForcibly();
-                } catch (Throwable ignored) {
+                } catch (Exception destroyException) {
+                    logBestEffortFailure("forcibly destroy interrupted process", destroyException);
                 }
                 Thread.currentThread().interrupt();
                 throw e;
-            } catch (Throwable t) {
+            } catch (RuntimeException t) {
+                logBestEffortFailure("wait for process", t);
                 exit = -1;
             }
 
             if (isCancelled() || Thread.currentThread().isInterrupted()) {
                 try {
                     proc.destroy();
-                } catch (Throwable ignored) {
+                } catch (Exception destroyException) {
+                    logBestEffortFailure("destroy cancelled process after output read", destroyException);
                 }
                 try {
                     if (proc.isAlive()) proc.destroyForcibly();
-                } catch (Throwable ignored) {
+                } catch (Exception destroyException) {
+                    logBestEffortFailure("forcibly destroy cancelled process after output read", destroyException);
                 }
                 return new ProcessRun(-1, sb + "\n[CANCELLED]\n");
             }
@@ -1503,7 +1577,8 @@ final class WorkflowJavaBuildSupport {
             if (killer != null) {
                 try {
                     killer.interrupt();
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("interrupt process cancellation monitor", e);
                 }
             }
             if (process != null) {
@@ -1534,7 +1609,8 @@ final class WorkflowJavaBuildSupport {
                     }
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Exception e) {
+            logBestEffortFailure("resolve Java executable from project SDK", e);
         }
 
         String javaHome = System.getenv("JAVA_HOME");
@@ -1557,7 +1633,8 @@ final class WorkflowJavaBuildSupport {
                     String vs = sdk.getVersionString();
                     int m = parseMajorFromText(vs);
                     if (m > 0) return m;
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("parse project SDK version", e);
                 }
 
                 try {
@@ -1568,10 +1645,12 @@ final class WorkflowJavaBuildSupport {
                         int m = parseJavaMajorVersion(out);
                         if (m > 0) return m;
                     }
-                } catch (Throwable ignored) {
+                } catch (Exception e) {
+                    logBestEffortFailure("read project SDK Java version", e);
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Exception e) {
+            logBestEffortFailure("resolve project target Java major", e);
         }
         return 8;
     }
@@ -1628,7 +1707,8 @@ final class WorkflowJavaBuildSupport {
                 }
             }
             return out.exists() ? out : null;
-        } catch (Throwable ignored) {
+        } catch (Exception e) {
+            logBestEffortFailure("materialize bundled library resource", e);
             return null;
         }
     }
@@ -1644,7 +1724,8 @@ final class WorkflowJavaBuildSupport {
                 java.lang.reflect.Field f = cls.getField(n);
                 Object v = f.get(req);
                 if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                // Try the next accessor shape.
             }
 
             try {
@@ -1652,7 +1733,8 @@ final class WorkflowJavaBuildSupport {
                 f.setAccessible(true);
                 Object v = f.get(req);
                 if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                // Try the next accessor shape.
             }
 
             try {
@@ -1660,7 +1742,8 @@ final class WorkflowJavaBuildSupport {
                 java.lang.reflect.Method m = cls.getMethod(mname);
                 Object v = m.invoke(req);
                 if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                // Try the next accessor shape.
             }
 
             try {
@@ -1669,7 +1752,8 @@ final class WorkflowJavaBuildSupport {
                 m.setAccessible(true);
                 Object v = m.invoke(req);
                 if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                // Try the next accessor shape.
             }
 
             try {
@@ -1677,7 +1761,8 @@ final class WorkflowJavaBuildSupport {
                 java.lang.reflect.Method m = cls.getMethod(mname);
                 Object v = m.invoke(req);
                 if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                // Try the next accessor shape.
             }
         }
         return null;
@@ -1741,7 +1826,8 @@ final class WorkflowJavaBuildSupport {
             pb.redirectErrorStream(true);
             Process p = pb.start();
             return readProcessOutput(p);
-        } catch (Throwable t) {
+        } catch (Exception t) {
+            logBestEffortFailure("read Java version", t);
             return "";
         }
     }
@@ -1764,7 +1850,7 @@ final class WorkflowJavaBuildSupport {
             }
             String[] parts = ver.split("\\.");
             return Integer.parseInt(parts[0]);
-        } catch (Throwable ignored) {
+        } catch (NumberFormatException e) {
             return -1;
         }
     }
@@ -1778,7 +1864,8 @@ final class WorkflowJavaBuildSupport {
             try {
                 int v = Integer.parseInt(m.group(1));
                 if (v >= 8 && v <= 99) return v;
-            } catch (Throwable ignored) {
+            } catch (NumberFormatException e) {
+                logBestEffortFailure("parse Java major from text", e);
             }
         }
         return -1;
@@ -1790,7 +1877,8 @@ final class WorkflowJavaBuildSupport {
             boolean isWin = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
             File f = new File(home, "bin" + File.separator + (isWin ? "java.exe" : "java"));
             return f.exists() ? f.getAbsolutePath() : "";
-        } catch (Throwable t) {
+        } catch (RuntimeException t) {
+            logBestEffortFailure("resolve Java executable from SDK home", t);
             return "";
         }
     }
@@ -1806,7 +1894,8 @@ final class WorkflowJavaBuildSupport {
                 String out = readJavaVersion(javaExe);
                 javacMajor = parseJavaMajorVersion(out);
             }
-        } catch (Throwable ignored) {
+        } catch (Exception e) {
+            logBestEffortFailure("read javac Java version", e);
         }
         if (javacMajor <= 0) javacMajor = target;
 
@@ -1827,7 +1916,8 @@ final class WorkflowJavaBuildSupport {
             return s.filter(p -> p != null && p.getFileName() != null && fileName.equals(p.getFileName().toString()))
                     .findFirst()
                     .orElse(null);
-        } catch (Throwable t) {
+        } catch (IOException | RuntimeException t) {
+            logBestEffortFailure("find file by name", t);
             return null;
         }
     }
@@ -1838,7 +1928,8 @@ final class WorkflowJavaBuildSupport {
             return s.filter(p -> p != null && p.toString().endsWith(suffix))
                     .findFirst()
                     .orElse(null);
-        } catch (Throwable t) {
+        } catch (IOException | RuntimeException t) {
+            logBestEffortFailure("find file by suffix", t);
             return null;
         }
     }
@@ -1887,11 +1978,13 @@ final class WorkflowJavaBuildSupport {
                             && Files.isRegularFile(p)
                             && p.getFileName() != null
                             && p.getFileName().toString().endsWith(".java");
-                } catch (Throwable ignored) {
+                } catch (RuntimeException e) {
+                    logBestEffortFailure("inspect Java source candidate", e);
                     return false;
                 }
             });
-        } catch (Throwable t) {
+        } catch (IOException | RuntimeException t) {
+            logBestEffortFailure("scan for Java files", t);
             return false;
         }
     }
