@@ -25,7 +25,7 @@ public final class OpenAICompatibleChatClient implements LlmClient {
     }
 
     public OpenAICompatibleChatClient(String baseUrl, String apiKey, String model, int maxTokens, int maxContinueTurns) {
-        this.baseUrl = baseUrl == null ? "" : baseUrl.trim();
+        this.baseUrl = normalizeBaseUrl(baseUrl);
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.model = model == null ? "" : model.trim();
         this.maxTokens = Math.max(256, maxTokens);
@@ -116,8 +116,7 @@ public final class OpenAICompatibleChatClient implements LlmClient {
     }
 
     private JsonObject sendOnce(JsonObject body) throws Exception {
-        String url = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        url = url + "/v1/chat/completions";
+        String url = baseUrl + "/v1/chat/completions";
 
         HttpRequest.Builder b = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -134,6 +133,29 @@ public final class OpenAICompatibleChatClient implements LlmClient {
 
         JsonObject json = JsonParser.parseString(resp.body()).getAsJsonObject();
         return json.getAsJsonArray("choices").get(0).getAsJsonObject();
+    }
+
+    static String normalizeBaseUrl(String rawBaseUrl) {
+        String normalized = rawBaseUrl == null ? "" : rawBaseUrl.trim();
+        normalized = trimTrailingSlashes(normalized);
+
+        if (normalized.endsWith("/chat/completions")) {
+            normalized = normalized.substring(0, normalized.length() - "/chat/completions".length());
+            normalized = trimTrailingSlashes(normalized);
+        }
+        if (normalized.endsWith("/v1")) {
+            normalized = normalized.substring(0, normalized.length() - "/v1".length());
+        }
+
+        return trimTrailingSlashes(normalized);
+    }
+
+    private static String trimTrailingSlashes(String value) {
+        String out = value == null ? "" : value;
+        while (out.endsWith("/")) {
+            out = out.substring(0, out.length() - 1);
+        }
+        return out;
     }
 
     /**

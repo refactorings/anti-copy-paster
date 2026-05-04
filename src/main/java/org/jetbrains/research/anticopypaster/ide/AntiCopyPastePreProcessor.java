@@ -22,6 +22,7 @@ import com.intellij.psi.PsiMethod;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.llm.LlmConfigurationNotifier;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 import javax.swing.*;
@@ -132,6 +133,16 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
 
         if (currentModelType == ProjectSettingsState.JudgementModel.AIDER) {
             ProjectSettingsState.CloneMode cloneMode = state.getCloneMode();
+            String llmConfigurationProblem = LlmConfigurationNotifier.getConfigurationProblem(project, false);
+            if (llmConfigurationProblem != null) {
+                ApplicationManager.getApplication().invokeLater(() ->
+                        LlmConfigurationNotifier.notifyConfigurationProblem(
+                                project,
+                                "Clone Refactoring",
+                                llmConfigurationProblem
+                        ));
+                return text;
+            }
 
             // Reuse unified target selection across three scopes
             List<VirtualFile> targets =

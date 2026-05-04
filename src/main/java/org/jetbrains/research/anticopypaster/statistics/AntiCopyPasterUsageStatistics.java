@@ -25,6 +25,7 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
 
     @Override
     public @Nullable PluginState getState() {
+        usageState.normalize();
         return usageState;
     }
 
@@ -57,12 +58,22 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
         usageState.onPaste();
     }
 
+    public void refactoringApplied() {
+        usageState.refactoringApplied();
+    }
+
+    public void refactoringCancelled() {
+        usageState.refactoringCancelled();
+    }
+
     public static class PluginState {
         public int notificationCount = 0;
         public int extractMethodAppliedCount = 0;
         public int extractMethodRejectedCount = 0;
         public int copyCount = 0;
         public int pasteCount = 0;
+        public Integer applyCount;
+        public Integer cancelCount;
         public long lastTransmissionTime = 0;
 
         public void notification() {
@@ -85,10 +96,28 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
             pasteCount += 1;
         }
 
+        public void refactoringApplied() {
+            applyCount = getApplyCount() + 1;
+        }
+
+        public void refactoringCancelled() {
+            cancelCount = getCancelCount() + 1;
+        }
+
+        public int getApplyCount() {
+            return applyCount == null ? 0 : applyCount;
+        }
+
+        public int getCancelCount() {
+            return cancelCount == null ? 0 : cancelCount;
+        }
+
+        public void normalize() {
+            applyCount = getApplyCount();
+            cancelCount = getCancelCount();
+        }
+
         public void saveToMongoDB(Project project) {
-            CloneUsageStatistics.PluginState cloneUsageState = CloneUsageStatistics.getInstance(project).getState();
-            int applyCount = cloneUsageState == null ? 0 : cloneUsageState.applyCount;
-            int cancelCount = cloneUsageState == null ? 0 : cloneUsageState.cancelCount;
             AntiCopyPasterTelemetry.saveStatistics(
                     project,
                     notificationCount,
@@ -96,8 +125,8 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
                     extractMethodRejectedCount,
                     copyCount,
                     pasteCount,
-                    applyCount,
-                    cancelCount
+                    getApplyCount(),
+                    getCancelCount()
             );
         }
     }

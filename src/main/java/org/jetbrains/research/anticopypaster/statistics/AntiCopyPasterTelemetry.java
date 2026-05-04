@@ -176,8 +176,8 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
                                       int extractMethodRejectedCount,
                                       int copyCount,
                                       int pasteCount,
-                                      int refactoringAcceptedCount,
-                                      int refactoringCancelledCount) {
+                                      int applyCount,
+                                      int cancelCount) {
         //Get password and username from PasswordSafe
         getUsernameAndPassword(project);
 
@@ -198,8 +198,8 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
                     .append("extractMethodRejectedCount", extractMethodRejectedCount)
                     .append("copyCount", copyCount)
                     .append("pasteCount", pasteCount)
-                    .append("refactoringAcceptedCount", refactoringAcceptedCount)
-                    .append("refactoringCancelledCount", refactoringCancelledCount);
+                    .append("applyCount", applyCount)
+                    .append("cancelCount", cancelCount);
 
             statisticsCollection.updateOne(query, new Document("$set", updatedDocument), new UpdateOptions().upsert(true));
         } catch (MongoException e) {
