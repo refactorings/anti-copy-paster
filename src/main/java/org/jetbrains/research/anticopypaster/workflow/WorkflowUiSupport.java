@@ -32,7 +32,7 @@ import java.util.function.Consumer;
 
 final class WorkflowUiSupport {
     private static final DateTimeFormatter LOG_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
-    private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
+    private static final Map<String, ConsoleView> CONSOLE_BY_PROJECT_AND_TITLE = new ConcurrentHashMap<>();
     private static final java.util.concurrent.atomic.AtomicReference<String> STDOUT_LAST_STAGE =
             new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -132,7 +132,8 @@ final class WorkflowUiSupport {
             ));
 
             var cm = toolWindow.getContentManager();
-            ConsoleView console = CONSOLE_BY_TITLE.get(title);
+            String consoleKey = consoleKey(project, title);
+            ConsoleView console = CONSOLE_BY_PROJECT_AND_TITLE.get(consoleKey);
             Content content = cm.findContent(title);
 
             if (console == null || content == null) {
@@ -144,7 +145,9 @@ final class WorkflowUiSupport {
                 Content newContent = ContentFactory.getInstance().createContent(wrapper, title, true);
 
                 try {
+                    final ConsoleView consoleForContent = console;
                     com.intellij.openapi.util.Disposer.register(newContent, () -> {
+                        CONSOLE_BY_PROJECT_AND_TITLE.remove(consoleKey, consoleForContent);
                         if (onCancel != null) onCancel.accept(writerRef.get());
                     });
                 } catch (Throwable ignored) {
@@ -153,14 +156,14 @@ final class WorkflowUiSupport {
                 if (content != null) cm.removeContent(content, true);
                 cm.addContent(newContent);
                 cm.setSelectedContent(newContent);
-                CONSOLE_BY_TITLE.put(title, console);
+                CONSOLE_BY_PROJECT_AND_TITLE.put(consoleKey, console);
             } else {
                 console.clear();
                 cm.setSelectedContent(content);
             }
 
             toolWindow.activate(null);
-            consoleRef.set(CONSOLE_BY_TITLE.get(title));
+            consoleRef.set(console);
         };
 
         if (ApplicationManager.getApplication().isDispatchThread()) {
@@ -210,6 +213,20 @@ final class WorkflowUiSupport {
 
         writerRef.set(writer);
         return writer;
+    }
+
+    private static String consoleKey(Project project, String title) {
+        String safeTitle = title == null ? "" : title;
+        if (project == null) {
+            return "<no-project>\n" + safeTitle;
+        }
+
+        String basePath = project.getBasePath();
+        if (basePath != null && !basePath.isBlank()) {
+            return basePath + "\n" + safeTitle;
+        }
+
+        return Integer.toHexString(System.identityHashCode(project)) + "\n" + safeTitle;
     }
 
     static void logStage(String stage, String msg) {
