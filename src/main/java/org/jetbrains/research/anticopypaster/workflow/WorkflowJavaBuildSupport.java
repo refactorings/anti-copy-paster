@@ -1164,7 +1164,9 @@ final class WorkflowJavaBuildSupport {
                     }
                 }
                 """;
-        Files.writeString(runner.toPath(), source, StandardCharsets.UTF_8);
+        if (!runner.exists()) {
+            Files.writeString(runner.toPath(), source, StandardCharsets.UTF_8);
+        }
         return runner;
     }
 

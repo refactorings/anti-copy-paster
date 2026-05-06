@@ -18,6 +18,19 @@ public class refactoring {
             new PanelistSpec("P2", "Refactoring Panelist 2"),
             new PanelistSpec("P3", "Refactoring Panelist 3")
     );
+    private static final String USEFUL_CATEGORY_NAME = "EXTRACT_METHOD_CONFIRMED";
+    private static final List<String> NOT_USEFUL_CATEGORY_NAMES = List.of(
+            "EXTRACT_METHOD_NOT_FOUND",
+            "INCOMPLETE_REFACTORING_DETECTED",
+            "EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED",
+            "DIRECT_CLONE_REMOVAL_DETECTED",
+            "POST_EXTRACTION_CLONE_DELETION_DETECTED",
+            "CALL_BASED_CLONE_SUBSTITUTION_DETECTED",
+            "CLONE_REMOVAL_BY_DELEGATION_DETECTED",
+            "FRAGMENTATION_OF_LOGIC_DETECTED",
+            "NON_TARGET_CLONE_REFACTORING_DETECTED",
+            "EXCESSIVE_REFACTORING_DETECTED"
+    );
     private static final Map<String, String> USEFULNESS_CATEGORY_GUIDANCE = Map.ofEntries(
             Map.entry("EXTRACT_METHOD_CONFIRMED", "The candidate clearly extracts one helper and replaces all target clone occurrences with calls to it."),
             Map.entry("EXTRACT_METHOD_NOT_FOUND", "No valid Extract Method is visible for the target clone."),
@@ -164,6 +177,8 @@ public class refactoring {
         public double confidence;
         public String rawResponse;
         public String error;
+        public String generatedHelperMethod;
+        public List<OccurrenceRewrite> generatedOccurrenceReplacements;
 
         private CuratorSelectionResult() {
             this.matchedCategories = List.of();
@@ -172,6 +187,8 @@ public class refactoring {
             this.rawResponse = "";
             this.error = "";
             this.selectedPanelistId = "";
+            this.generatedHelperMethod = "";
+            this.generatedOccurrenceReplacements = List.of();
         }
     }
 
@@ -205,6 +222,8 @@ public class refactoring {
         public String curatorSummary;
         public String curatorFeedback;
         public double curatorConfidence;
+        public boolean curatorGeneratedPlan;
+        public boolean preferPsiUsefulness;
 
         public RefactorResult(String status, String file, String newSource, String message) {
             this.status = status;
@@ -216,6 +235,8 @@ public class refactoring {
             this.curatorSummary = "";
             this.curatorFeedback = "";
             this.curatorConfidence = 0.0d;
+            this.curatorGeneratedPlan = false;
+            this.preferPsiUsefulness = false;
         }
     }
 
@@ -308,17 +329,20 @@ public class refactoring {
         }
 
         CuratorSelectionResult curatorSelection = runCuratorSelection(fileName, fileSource, clone, panelistOutcomes, llmCaller);
-        PanelistOutcome selectedOutcome = resolveSelectedOutcome(curatorSelection, panelistOutcomes);
+        boolean selectedUsefulPanelist = curatorSelectedUsefulPanelist(curatorSelection);
+        PanelistOutcome selectedOutcome = selectedUsefulPanelist
+                ? resolveSelectedOutcome(curatorSelection, panelistOutcomes)
+                : executeCuratorGeneratedPlan(fileName, fileSource, clone, curatorSelection);
         if (selectedOutcome == null || selectedOutcome.result == null
                 || selectedOutcome.result.newSource == null || selectedOutcome.result.newSource.isBlank()) {
-            String detail = curatorSelection != null && curatorSelection.parsed
-                    ? "Curator did not select a valid refactoring candidate."
-                    : "Curator selection failed and no valid refactoring candidate was available.";
+            String detail = buildCandidateSelectionFailureMessage(curatorSelection, panelistOutcomes);
             return fail(fileName, detail);
         }
 
         RefactorResult selectedResult = selectedOutcome.result;
         selectedResult.selectedPanelistId = selectedOutcome.panelistId;
+        selectedResult.curatorGeneratedPlan = "CURATOR".equals(selectedOutcome.panelistId);
+        selectedResult.preferPsiUsefulness = selectedUsefulPanelist && !selectedResult.curatorGeneratedPlan;
         if (curatorSelection != null) {
             selectedResult.curatorMatchedCategories = curatorSelection.matchedCategories == null
                     ? List.of()
@@ -517,7 +541,7 @@ public class refactoring {
             fallback.error = "Curator LLM call failed: " + e.getMessage();
             return fallback;
         }
-        return parseCuratorSelection(raw);
+        return parseCuratorSelection(raw, fileSource, clone);
     }
 
     private String buildCuratorPrompt(String fileName,
@@ -526,13 +550,25 @@ public class refactoring {
                                       List<PanelistOutcome> panelistOutcomes) {
         StringBuilder sb = new StringBuilder();
         sb.append("You are the refactoring curator.\n");
-        sb.append("You must review three candidate Extract Method refactorings and choose the single best candidate.\n");
-        sb.append("Choose the candidate most likely to satisfy the PSI usefulness checker.\n");
-        sb.append("Prefer the candidate that most clearly achieves EXTRACT_METHOD_CONFIRMED and least likely triggers negative usefulness categories.\n\n");
+        sb.append("You must review three candidate Extract Method refactorings.\n");
+        sb.append("If at least one panelist candidate is useful, select the single best useful candidate for PSI usefulness validation.\n");
+        sb.append("If none of the panelist candidates is useful, generate one new structured Extract Method refactoring plan for usefulness panelist validation.\n");
+        sb.append("A useful panelist candidate must clearly achieve EXTRACT_METHOD_CONFIRMED and must not trigger any not-useful category.\n\n");
 
-        sb.append("=== USEFULNESS CATEGORY GUIDANCE ===\n");
-        for (Map.Entry<String, String> entry : USEFULNESS_CATEGORY_GUIDANCE.entrySet()) {
-            sb.append("- ").append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
+        sb.append("=== USEFUL CATEGORY DEFINITION ===\n");
+        sb.append("- ")
+                .append(USEFUL_CATEGORY_NAME)
+                .append(": ")
+                .append(USEFULNESS_CATEGORY_GUIDANCE.get(USEFUL_CATEGORY_NAME))
+                .append("\n\n");
+
+        sb.append("=== NOT-USEFUL CATEGORY DEFINITIONS ===\n");
+        for (String category : NOT_USEFUL_CATEGORY_NAMES) {
+            sb.append("- ")
+                    .append(category)
+                    .append(": ")
+                    .append(USEFULNESS_CATEGORY_GUIDANCE.getOrDefault(category, "Not-useful category"))
+                    .append("\n");
         }
         sb.append("\n");
 
@@ -593,25 +629,49 @@ public class refactoring {
         }
 
         sb.append("=== SELECTION RULES ===\n");
-        sb.append("1) Prefer candidates that clearly extract one helper and replace all target occurrences with calls to it.\n");
-        sb.append("2) Reject candidates that likely trigger EXTRACT_METHOD_NOT_FOUND, INCOMPLETE_REFACTORING_DETECTED, EXTRACTION_WITHOUT_CLONE_REPLACEMENT_DETECTED, NON_TARGET_CLONE_REFACTORING_DETECTED, or DIRECT_CLONE_REMOVAL_DETECTED.\n");
-        sb.append("3) If several candidates look valid, prefer the most conservative change with the smallest safe extraction boundary.\n");
-        sb.append("4) If a candidate failed to parse or apply, do not choose it unless every candidate failed.\n\n");
+        sb.append("1) First classify every panelist candidate using the useful and not-useful definitions above.\n");
+        sb.append("2) A panelist candidate is useful only if it clearly triggers EXTRACT_METHOD_CONFIRMED and triggers none of the not-useful categories.\n");
+        sb.append("3) Reject panelist candidates that likely trigger any not-useful category: ")
+                .append(String.join(", ", NOT_USEFUL_CATEGORY_NAMES))
+                .append(".\n");
+        sb.append("4) If one or more panelist candidates are useful, choose the best useful candidate. Prefer the most conservative change with the smallest safe extraction boundary.\n");
+        sb.append("5) If no panelist candidate is useful, do not select a least-bad panelist. Instead generate one new refactoring plan in generated_refactoring_plan.\n");
+        sb.append("6) If a panelist candidate failed to parse or apply, treat it as not useful.\n\n");
 
         sb.append("=== OUTPUT FORMAT ===\n");
-        sb.append("Return ONLY a JSON object with this exact shape:\n");
+        sb.append("Return ONLY a JSON object with one of these exact shapes.\n");
+        sb.append("When at least one panelist candidate is useful:\n");
         sb.append("{\n");
+        sb.append("  \"decision\": \"select_panelist\",\n");
         sb.append("  \"selected_panelist_id\": \"P1\",\n");
         sb.append("  \"matched_categories\": [\"EXTRACT_METHOD_CONFIRMED\"],\n");
         sb.append("  \"summary\": \"short explanation of why this candidate is best\",\n");
         sb.append("  \"feedback\": \"optional short guidance about the remaining risk of the selected candidate\",\n");
         sb.append("  \"confidence\": 0.85\n");
         sb.append("}\n");
-        sb.append("If no candidate is acceptable, still select the least-bad candidate and explain the residual risks in feedback.\n");
+        sb.append("When no panelist candidate is useful:\n");
+        sb.append("{\n");
+        sb.append("  \"decision\": \"generate_plan\",\n");
+        sb.append("  \"selected_panelist_id\": \"\",\n");
+        sb.append("  \"matched_categories\": [\"NOT_USEFUL_CATEGORY_NAME\"],\n");
+        sb.append("  \"summary\": \"short explanation of why no panelist candidate was useful and what the generated plan fixes\",\n");
+        sb.append("  \"feedback\": \"optional short guidance about residual risks\",\n");
+        sb.append("  \"confidence\": 0.85,\n");
+        sb.append("  \"generated_refactoring_plan\": {\n");
+        sb.append("    \"helper_method\": \"full private helper method declaration only\",\n");
+        sb.append("    \"occurrence_replacements\": [\n");
+        sb.append("      {\n");
+        sb.append("        \"occurrence_id\": \"OCCURRENCE_1\",\n");
+        sb.append("        \"replacement_code\": \"only the code that should replace that occurrence\"\n");
+        sb.append("      }\n");
+        sb.append("    ]\n");
+        sb.append("  }\n");
+        sb.append("}\n");
+        sb.append("For generated_refactoring_plan, include one replacement entry for every target occurrence.\n");
         return sb.toString();
     }
 
-    private CuratorSelectionResult parseCuratorSelection(String raw) {
+    private CuratorSelectionResult parseCuratorSelection(String raw, String fileSource, DetectedClone clone) {
         CuratorSelectionResult result = new CuratorSelectionResult();
         result.rawResponse = raw == null ? "" : raw;
         String jsonStr = extractJsonSubstring(raw);
@@ -623,12 +683,52 @@ public class refactoring {
         try {
             JsonObject obj = JsonParser.parseString(jsonStr).getAsJsonObject();
             result.parsed = true;
-            result.selectedPanelistId = getString(obj, "selected_panelist_id", "selectedPanelistId", "panelist_id", "panelistId");
+            result.selectedPanelistId = getString(
+                    obj,
+                    "selected_panelist_id",
+                    "selectedPanelistId",
+                    "panelist_id",
+                    "panelistId",
+                    "selected_candidate_id",
+                    "selectedCandidateId",
+                    "candidate_id",
+                    "candidateId",
+                    "best_panelist_id",
+                    "bestPanelistId"
+            );
             JsonArray categories = getArray(obj, "matched_categories", "matchedCategories", "categories");
             result.matchedCategories = parseStringArray(categories);
             result.summary = optional(getString(obj, "summary"));
             result.feedback = optional(getString(obj, "feedback"));
             result.confidence = parseDouble(obj, "confidence");
+            JsonObject generatedPlan = getObject(
+                    obj,
+                    "generated_refactoring_plan",
+                    "generatedRefactoringPlan",
+                    "generated_plan",
+                    "generatedPlan",
+                    "refactoring_plan",
+                    "refactoringPlan",
+                    "plan"
+            );
+            if (generatedPlan == null && looksLikeGeneratedRefactoringPlan(obj)) {
+                generatedPlan = obj;
+            }
+            if (generatedPlan != null) {
+                result.generatedHelperMethod = optional(getString(generatedPlan, "helper_method", "helperMethod"));
+                result.generatedOccurrenceReplacements = parseOccurrenceReplacements(
+                        getArray(
+                                generatedPlan,
+                                "occurrence_replacements",
+                                "occurrenceReplacements",
+                                "replacements",
+                                "occurrences",
+                                "refactored_occurrences",
+                                "refactoredOccurrences"
+                        ),
+                        buildOccurrenceSpecs(clone, fileSource)
+                );
+            }
             return result;
         } catch (Throwable t) {
             result.error = "Could not parse curator JSON: " + t.getMessage();
@@ -660,18 +760,141 @@ public class refactoring {
         }
     }
 
+    private boolean curatorSelectedUsefulPanelist(CuratorSelectionResult curatorSelection) {
+        if (curatorSelection == null
+                || !curatorSelection.parsed
+                || curatorSelection.selectedPanelistId == null
+                || curatorSelection.selectedPanelistId.isBlank()) {
+            return false;
+        }
+        if (containsAnyCategory(curatorSelection.matchedCategories, NOT_USEFUL_CATEGORY_NAMES)) {
+            return false;
+        }
+        return containsCategory(curatorSelection.matchedCategories, USEFUL_CATEGORY_NAME);
+    }
+
+    private boolean containsAnyCategory(List<String> categories, List<String> candidates) {
+        if (categories == null || categories.isEmpty() || candidates == null || candidates.isEmpty()) return false;
+        for (String candidate : candidates) {
+            if (containsCategory(categories, candidate)) return true;
+        }
+        return false;
+    }
+
+    private boolean containsCategory(List<String> categories, String candidate) {
+        if (categories == null || candidate == null || candidate.isBlank()) return false;
+        for (String category : categories) {
+            if (category != null && candidate.equalsIgnoreCase(category.trim())) return true;
+        }
+        return false;
+    }
+
+    private PanelistOutcome executeCuratorGeneratedPlan(String fileName,
+                                                        String fileSource,
+                                                        DetectedClone clone,
+                                                        CuratorSelectionResult curatorSelection) {
+        if (!hasGeneratedRefactoringPlan(curatorSelection)) return null;
+
+        PartialRefactorPlan plan = new PartialRefactorPlan();
+        plan.helperMethod = curatorSelection.generatedHelperMethod;
+        plan.occurrenceReplacements = curatorSelection.generatedOccurrenceReplacements;
+        try {
+            String newSource = applyPartialRefactorPlan(fileSource, clone, plan);
+            return new PanelistOutcome(
+                    "CURATOR",
+                    curatorSelection.rawResponse,
+                    new RefactorResult("refactored", fileName, newSource, "Curator generated refactoring plan"),
+                    true,
+                    "",
+                    plan.helperMethod,
+                    plan.occurrenceReplacements
+            );
+        } catch (IllegalStateException e) {
+            return new PanelistOutcome(
+                    "CURATOR",
+                    curatorSelection.rawResponse,
+                    fail(fileName, "Failed to apply curator-generated refactoring plan: " + e.getMessage()),
+                    true,
+                    "Failed to apply curator-generated refactoring plan: " + e.getMessage(),
+                    plan.helperMethod,
+                    plan.occurrenceReplacements
+            );
+        }
+    }
+
+    private boolean hasGeneratedRefactoringPlan(CuratorSelectionResult curatorSelection) {
+        if (curatorSelection == null) return false;
+        if (curatorSelection.generatedHelperMethod != null && !curatorSelection.generatedHelperMethod.isBlank()) return true;
+        return curatorSelection.generatedOccurrenceReplacements != null
+                && !curatorSelection.generatedOccurrenceReplacements.isEmpty();
+    }
+
+    private String buildCandidateSelectionFailureMessage(CuratorSelectionResult curatorSelection,
+                                                         List<PanelistOutcome> panelistOutcomes) {
+        StringBuilder sb = new StringBuilder();
+        if (curatorSelection == null || !curatorSelection.parsed) {
+            sb.append("Curator selection failed");
+            if (curatorSelection != null && curatorSelection.error != null && !curatorSelection.error.isBlank()) {
+                sb.append(": ").append(curatorSelection.error);
+            }
+        } else if (curatorSelectedUsefulPanelist(curatorSelection)) {
+            sb.append("Curator selected a useful panelist candidate, but the selected candidate could not be applied");
+            if (curatorSelection.selectedPanelistId != null && !curatorSelection.selectedPanelistId.isBlank()) {
+                sb.append(" (selected=").append(curatorSelection.selectedPanelistId.trim()).append(")");
+            }
+        } else if (hasGeneratedRefactoringPlan(curatorSelection)) {
+            sb.append("Curator generated a refactoring plan, but it could not be applied");
+        } else {
+            sb.append("Curator found no useful panelist candidate but did not generate a refactoring plan");
+        }
+
+        if (curatorSelection != null && curatorSelection.summary != null && !curatorSelection.summary.isBlank()) {
+            sb.append(": ").append(safeTruncate(curatorSelection.summary, 220).replace("\n", " "));
+        }
+
+        String diagnostics = summarizePanelistOutcomes(panelistOutcomes);
+        if (!diagnostics.isBlank()) {
+            sb.append(". Panelist diagnostics: ").append(diagnostics);
+        }
+        return sb.toString();
+    }
+
+    private String summarizePanelistOutcomes(List<PanelistOutcome> outcomes) {
+        if (outcomes == null || outcomes.isEmpty()) return "";
+
+        List<String> parts = new ArrayList<>();
+        for (PanelistOutcome outcome : outcomes) {
+            if (outcome == null) continue;
+            String id = outcome.panelistId == null || outcome.panelistId.isBlank() ? "UNKNOWN" : outcome.panelistId;
+            String state;
+            if (outcome.result != null && outcome.result.newSource != null && !outcome.result.newSource.isBlank()) {
+                state = "candidate_source_available";
+            } else if (outcome.error != null && !outcome.error.isBlank()) {
+                state = outcome.error;
+            } else if (outcome.result != null && outcome.result.message != null && !outcome.result.message.isBlank()) {
+                state = outcome.result.message;
+            } else {
+                state = outcome.parsed ? "empty refactored source" : "unparsed response";
+            }
+            parts.add(id + "=" + safeTruncate(state, 180).replace("\n", " "));
+        }
+        return String.join("; ", parts);
+    }
+
     private PanelistOutcome resolveSelectedOutcome(CuratorSelectionResult curatorSelection,
                                                    List<PanelistOutcome> panelistOutcomes) {
         if (panelistOutcomes == null || panelistOutcomes.isEmpty()) return null;
 
-        if (curatorSelection != null && curatorSelection.selectedPanelistId != null && !curatorSelection.selectedPanelistId.isBlank()) {
+        String selectedPanelistId = normalizeSelectedPanelistId(curatorSelection, panelistOutcomes);
+        if (selectedPanelistId != null && !selectedPanelistId.isBlank()) {
             for (PanelistOutcome outcome : panelistOutcomes) {
                 if (outcome == null || outcome.result == null) continue;
-                if (!outcome.panelistId.equals(curatorSelection.selectedPanelistId)) continue;
+                if (!outcome.panelistId.equals(selectedPanelistId)) continue;
                 if (outcome.result.newSource != null && !outcome.result.newSource.isBlank()) {
                     return outcome;
                 }
             }
+            return null;
         }
 
         for (PanelistOutcome outcome : panelistOutcomes) {
@@ -681,6 +904,39 @@ public class refactoring {
             }
         }
         return null;
+    }
+
+    private String normalizeSelectedPanelistId(CuratorSelectionResult curatorSelection,
+                                               List<PanelistOutcome> panelistOutcomes) {
+        if (curatorSelection == null
+                || curatorSelection.selectedPanelistId == null
+                || curatorSelection.selectedPanelistId.isBlank()
+                || panelistOutcomes == null
+                || panelistOutcomes.isEmpty()) {
+            return "";
+        }
+
+        String raw = curatorSelection.selectedPanelistId.trim();
+        String normalized = raw.toUpperCase(Locale.ROOT);
+        for (PanelistOutcome outcome : panelistOutcomes) {
+            if (outcome == null || outcome.panelistId == null || outcome.panelistId.isBlank()) continue;
+            String candidateId = outcome.panelistId.trim().toUpperCase(Locale.ROOT);
+            if (normalized.equals(candidateId) || normalized.contains(candidateId)) {
+                return outcome.panelistId;
+            }
+        }
+
+        String digits = normalized.replaceAll("[^0-9]", "");
+        if (!digits.isBlank()) {
+            for (PanelistOutcome outcome : panelistOutcomes) {
+                if (outcome == null || outcome.panelistId == null || outcome.panelistId.isBlank()) continue;
+                String candidateDigits = outcome.panelistId.toUpperCase(Locale.ROOT).replaceAll("[^0-9]", "");
+                if (!candidateDigits.isBlank() && candidateDigits.equals(digits)) {
+                    return outcome.panelistId;
+                }
+            }
+        }
+        return raw;
     }
 
 
@@ -1740,6 +1996,31 @@ public class refactoring {
             }
         }
         return null;
+    }
+
+    private JsonObject getObject(JsonObject obj, String... keys) {
+        if (obj == null || keys == null) return null;
+        for (String key : keys) {
+            if (key == null || !obj.has(key) || obj.get(key).isJsonNull()) continue;
+            try {
+                return obj.getAsJsonObject(key);
+            } catch (Throwable ignored) {
+                // ignore and continue
+            }
+        }
+        return null;
+    }
+
+    private boolean looksLikeGeneratedRefactoringPlan(JsonObject obj) {
+        if (obj == null) return false;
+        return obj.has("helper_method")
+                || obj.has("helperMethod")
+                || obj.has("occurrence_replacements")
+                || obj.has("occurrenceReplacements")
+                || obj.has("replacements")
+                || obj.has("occurrences")
+                || obj.has("refactored_occurrences")
+                || obj.has("refactoredOccurrences");
     }
 
     private String optional(String value) {
