@@ -177,8 +177,6 @@ public class refactoring {
         public double confidence;
         public String rawResponse;
         public String error;
-        public String generatedHelperMethod;
-        public List<OccurrenceRewrite> generatedOccurrenceReplacements;
 
         private CuratorSelectionResult() {
             this.matchedCategories = List.of();
@@ -187,8 +185,6 @@ public class refactoring {
             this.rawResponse = "";
             this.error = "";
             this.selectedPanelistId = "";
-            this.generatedHelperMethod = "";
-            this.generatedOccurrenceReplacements = List.of();
         }
     }
 
@@ -223,7 +219,6 @@ public class refactoring {
         public String curatorFeedback;
         public double curatorConfidence;
         public boolean curatorGeneratedPlan;
-        public boolean preferPsiUsefulness;
 
         public RefactorResult(String status, String file, String newSource, String message) {
             this.status = status;
@@ -236,7 +231,6 @@ public class refactoring {
             this.curatorFeedback = "";
             this.curatorConfidence = 0.0d;
             this.curatorGeneratedPlan = false;
-            this.preferPsiUsefulness = false;
         }
     }
 
@@ -332,7 +326,7 @@ public class refactoring {
         boolean selectedUsefulPanelist = curatorSelectedUsefulPanelist(curatorSelection);
         PanelistOutcome selectedOutcome = selectedUsefulPanelist
                 ? resolveSelectedOutcome(curatorSelection, panelistOutcomes)
-                : executeCuratorGeneratedPlan(fileName, fileSource, clone, curatorSelection);
+                : null;
         if (selectedOutcome == null || selectedOutcome.result == null
                 || selectedOutcome.result.newSource == null || selectedOutcome.result.newSource.isBlank()) {
             String detail = buildCandidateSelectionFailureMessage(curatorSelection, panelistOutcomes);
@@ -341,8 +335,7 @@ public class refactoring {
 
         RefactorResult selectedResult = selectedOutcome.result;
         selectedResult.selectedPanelistId = selectedOutcome.panelistId;
-        selectedResult.curatorGeneratedPlan = "CURATOR".equals(selectedOutcome.panelistId);
-        selectedResult.preferPsiUsefulness = selectedUsefulPanelist && !selectedResult.curatorGeneratedPlan;
+        selectedResult.curatorGeneratedPlan = false;
         if (curatorSelection != null) {
             selectedResult.curatorMatchedCategories = curatorSelection.matchedCategories == null
                     ? List.of()
@@ -541,7 +534,7 @@ public class refactoring {
             fallback.error = "Curator LLM call failed: " + e.getMessage();
             return fallback;
         }
-        return parseCuratorSelection(raw, fileSource, clone);
+        return parseCuratorSelection(raw);
     }
 
     private String buildCuratorPrompt(String fileName,
@@ -551,8 +544,7 @@ public class refactoring {
         StringBuilder sb = new StringBuilder();
         sb.append("You are the refactoring curator.\n");
         sb.append("You must review three candidate Extract Method refactorings.\n");
-        sb.append("If at least one panelist candidate is useful, select the single best useful candidate for PSI usefulness validation.\n");
-        sb.append("If none of the panelist candidates is useful, generate one new structured Extract Method refactoring plan for usefulness panelist validation.\n");
+        sb.append("Select the single best useful panelist candidate for usefulness validation.\n");
         sb.append("A useful panelist candidate must clearly achieve EXTRACT_METHOD_CONFIRMED and must not trigger any not-useful category.\n\n");
 
         sb.append("=== USEFUL CATEGORY DEFINITION ===\n");
@@ -635,12 +627,11 @@ public class refactoring {
                 .append(String.join(", ", NOT_USEFUL_CATEGORY_NAMES))
                 .append(".\n");
         sb.append("4) If one or more panelist candidates are useful, choose the best useful candidate. Prefer the most conservative change with the smallest safe extraction boundary.\n");
-        sb.append("5) If no panelist candidate is useful, do not select a least-bad panelist. Instead generate one new refactoring plan in generated_refactoring_plan.\n");
+        sb.append("5) If no panelist candidate is useful, return an empty selected_panelist_id and explain why in summary.\n");
         sb.append("6) If a panelist candidate failed to parse or apply, treat it as not useful.\n\n");
 
         sb.append("=== OUTPUT FORMAT ===\n");
-        sb.append("Return ONLY a JSON object with one of these exact shapes.\n");
-        sb.append("When at least one panelist candidate is useful:\n");
+        sb.append("Return ONLY a JSON object with this exact shape.\n");
         sb.append("{\n");
         sb.append("  \"decision\": \"select_panelist\",\n");
         sb.append("  \"selected_panelist_id\": \"P1\",\n");
@@ -649,29 +640,10 @@ public class refactoring {
         sb.append("  \"feedback\": \"optional short guidance about the remaining risk of the selected candidate\",\n");
         sb.append("  \"confidence\": 0.85\n");
         sb.append("}\n");
-        sb.append("When no panelist candidate is useful:\n");
-        sb.append("{\n");
-        sb.append("  \"decision\": \"generate_plan\",\n");
-        sb.append("  \"selected_panelist_id\": \"\",\n");
-        sb.append("  \"matched_categories\": [\"NOT_USEFUL_CATEGORY_NAME\"],\n");
-        sb.append("  \"summary\": \"short explanation of why no panelist candidate was useful and what the generated plan fixes\",\n");
-        sb.append("  \"feedback\": \"optional short guidance about residual risks\",\n");
-        sb.append("  \"confidence\": 0.85,\n");
-        sb.append("  \"generated_refactoring_plan\": {\n");
-        sb.append("    \"helper_method\": \"full private helper method declaration only\",\n");
-        sb.append("    \"occurrence_replacements\": [\n");
-        sb.append("      {\n");
-        sb.append("        \"occurrence_id\": \"OCCURRENCE_1\",\n");
-        sb.append("        \"replacement_code\": \"only the code that should replace that occurrence\"\n");
-        sb.append("      }\n");
-        sb.append("    ]\n");
-        sb.append("  }\n");
-        sb.append("}\n");
-        sb.append("For generated_refactoring_plan, include one replacement entry for every target occurrence.\n");
         return sb.toString();
     }
 
-    private CuratorSelectionResult parseCuratorSelection(String raw, String fileSource, DetectedClone clone) {
+    private CuratorSelectionResult parseCuratorSelection(String raw) {
         CuratorSelectionResult result = new CuratorSelectionResult();
         result.rawResponse = raw == null ? "" : raw;
         String jsonStr = extractJsonSubstring(raw);
@@ -701,34 +673,6 @@ public class refactoring {
             result.summary = optional(getString(obj, "summary"));
             result.feedback = optional(getString(obj, "feedback"));
             result.confidence = parseDouble(obj, "confidence");
-            JsonObject generatedPlan = getObject(
-                    obj,
-                    "generated_refactoring_plan",
-                    "generatedRefactoringPlan",
-                    "generated_plan",
-                    "generatedPlan",
-                    "refactoring_plan",
-                    "refactoringPlan",
-                    "plan"
-            );
-            if (generatedPlan == null && looksLikeGeneratedRefactoringPlan(obj)) {
-                generatedPlan = obj;
-            }
-            if (generatedPlan != null) {
-                result.generatedHelperMethod = optional(getString(generatedPlan, "helper_method", "helperMethod"));
-                result.generatedOccurrenceReplacements = parseOccurrenceReplacements(
-                        getArray(
-                                generatedPlan,
-                                "occurrence_replacements",
-                                "occurrenceReplacements",
-                                "replacements",
-                                "occurrences",
-                                "refactored_occurrences",
-                                "refactoredOccurrences"
-                        ),
-                        buildOccurrenceSpecs(clone, fileSource)
-                );
-            }
             return result;
         } catch (Throwable t) {
             result.error = "Could not parse curator JSON: " + t.getMessage();
@@ -789,46 +733,6 @@ public class refactoring {
         return false;
     }
 
-    private PanelistOutcome executeCuratorGeneratedPlan(String fileName,
-                                                        String fileSource,
-                                                        DetectedClone clone,
-                                                        CuratorSelectionResult curatorSelection) {
-        if (!hasGeneratedRefactoringPlan(curatorSelection)) return null;
-
-        PartialRefactorPlan plan = new PartialRefactorPlan();
-        plan.helperMethod = curatorSelection.generatedHelperMethod;
-        plan.occurrenceReplacements = curatorSelection.generatedOccurrenceReplacements;
-        try {
-            String newSource = applyPartialRefactorPlan(fileSource, clone, plan);
-            return new PanelistOutcome(
-                    "CURATOR",
-                    curatorSelection.rawResponse,
-                    new RefactorResult("refactored", fileName, newSource, "Curator generated refactoring plan"),
-                    true,
-                    "",
-                    plan.helperMethod,
-                    plan.occurrenceReplacements
-            );
-        } catch (IllegalStateException e) {
-            return new PanelistOutcome(
-                    "CURATOR",
-                    curatorSelection.rawResponse,
-                    fail(fileName, "Failed to apply curator-generated refactoring plan: " + e.getMessage()),
-                    true,
-                    "Failed to apply curator-generated refactoring plan: " + e.getMessage(),
-                    plan.helperMethod,
-                    plan.occurrenceReplacements
-            );
-        }
-    }
-
-    private boolean hasGeneratedRefactoringPlan(CuratorSelectionResult curatorSelection) {
-        if (curatorSelection == null) return false;
-        if (curatorSelection.generatedHelperMethod != null && !curatorSelection.generatedHelperMethod.isBlank()) return true;
-        return curatorSelection.generatedOccurrenceReplacements != null
-                && !curatorSelection.generatedOccurrenceReplacements.isEmpty();
-    }
-
     private String buildCandidateSelectionFailureMessage(CuratorSelectionResult curatorSelection,
                                                          List<PanelistOutcome> panelistOutcomes) {
         StringBuilder sb = new StringBuilder();
@@ -842,10 +746,8 @@ public class refactoring {
             if (curatorSelection.selectedPanelistId != null && !curatorSelection.selectedPanelistId.isBlank()) {
                 sb.append(" (selected=").append(curatorSelection.selectedPanelistId.trim()).append(")");
             }
-        } else if (hasGeneratedRefactoringPlan(curatorSelection)) {
-            sb.append("Curator generated a refactoring plan, but it could not be applied");
         } else {
-            sb.append("Curator found no useful panelist candidate but did not generate a refactoring plan");
+            sb.append("Curator did not select a useful panelist candidate");
         }
 
         if (curatorSelection != null && curatorSelection.summary != null && !curatorSelection.summary.isBlank()) {
@@ -1996,31 +1898,6 @@ public class refactoring {
             }
         }
         return null;
-    }
-
-    private JsonObject getObject(JsonObject obj, String... keys) {
-        if (obj == null || keys == null) return null;
-        for (String key : keys) {
-            if (key == null || !obj.has(key) || obj.get(key).isJsonNull()) continue;
-            try {
-                return obj.getAsJsonObject(key);
-            } catch (Throwable ignored) {
-                // ignore and continue
-            }
-        }
-        return null;
-    }
-
-    private boolean looksLikeGeneratedRefactoringPlan(JsonObject obj) {
-        if (obj == null) return false;
-        return obj.has("helper_method")
-                || obj.has("helperMethod")
-                || obj.has("occurrence_replacements")
-                || obj.has("occurrenceReplacements")
-                || obj.has("replacements")
-                || obj.has("occurrences")
-                || obj.has("refactored_occurrences")
-                || obj.has("refactoredOccurrences");
     }
 
     private String optional(String value) {
