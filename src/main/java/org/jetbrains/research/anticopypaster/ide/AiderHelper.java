@@ -752,7 +752,7 @@ public class AiderHelper {
                     }
                 }
             }
-            case "GOOGLE", "GEMINI" -> {
+            case "GOOGLE" -> {
                 pb.environment().put("GEMINI_API_KEY", apikey);
                 pb.environment().put("AIDER_GEMINI_PROVIDER", "google-ai-studio");
             }
