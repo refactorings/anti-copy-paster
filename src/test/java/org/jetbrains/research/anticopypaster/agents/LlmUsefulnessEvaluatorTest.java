@@ -139,7 +139,7 @@ class LlmUsefulnessEvaluatorTest {
     }
 
     @Test
-    void evaluateIsUnavailableWhenCuratorJsonCannotBeParsed() {
+    void evaluateUsesMajorityFallbackWhenCuratorJsonCannotBeParsed() {
         LlmUsefulnessEvaluator.UsefulnessInput input = new LlmUsefulnessEvaluator.UsefulnessInput(
                 "Helper.java",
                 LlmUsefulnessEvaluator.CloneKind.FRAGMENT,
@@ -166,10 +166,11 @@ class LlmUsefulnessEvaluatorTest {
                 }
         );
 
-        assertFalse(result.available);
-        assertFalse(result.useful);
+        assertTrue(result.available);
+        assertTrue(result.useful);
         assertNotNull(result.curatorResult);
-        assertFalse(result.curatorResult.parsed);
-        assertTrue(result.curatorResult.error.contains("parse"));
+        assertTrue(result.curatorResult.parsed);
+        assertTrue(result.curatorResult.error.contains("majority vote fallback"));
+        assertTrue(result.curatorResult.summary.contains("3 useful, 0 not useful"));
     }
 }

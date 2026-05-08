@@ -303,8 +303,10 @@ public final class LlmUsefulnessEvaluator {
         StringBuilder sb = new StringBuilder();
         sb.append("You are the usefulness curator.\n");
         sb.append("You must review three panelist outputs and make the final useful/not-useful decision.\n");
-        sb.append("If one or more panelists found strong evidence of a real not-useful category, you should usually set is_useful=false.\n");
-        sb.append("If all parsed panelists say useful or only provide weak/empty evidence, set is_useful=true.\n");
+        sb.append("Apply a majority vote across the three panelists.\n");
+        sb.append("- If 2 or more panelists set is_useful=false with at least one matched category, set is_useful=false.\n");
+        sb.append("- If 2 or more panelists set is_useful=true, set is_useful=true.\n");
+        sb.append("- If there is no majority, use your own judgment based on the strength of the evidence. Prefer is_useful=true unless the flagged category is a critical structural issue such as INCOMPLETE_REFACTORING_DETECTED or EXTRACT_METHOD_NOT_FOUND.\n");
         sb.append("Return ONLY one JSON object and no extra text.\n\n");
 
         sb.append("=== TARGET CONTEXT ===\n");
@@ -363,7 +365,7 @@ public final class LlmUsefulnessEvaluator {
     private static CuratorResult parseCuratorResult(String raw, List<PanelistResult> panelistResults) {
         JsonObject obj = parseJsonObject(raw);
         if (obj == null) {
-            return new CuratorResult(false, false, List.of(), "", "", 0.0d, raw, "Could not parse curator JSON");
+            return buildMajorityFallbackCuratorResult(raw, panelistResults);
         }
 
         boolean useful = getBoolean(obj, true, "is_useful", "isUseful", "useful");
@@ -382,6 +384,72 @@ public final class LlmUsefulnessEvaluator {
         double confidence = getDouble(obj, 0.0d, "confidence", "score");
 
         return new CuratorResult(true, useful, reasons, summary, feedback, confidence, raw, "");
+    }
+
+    private static CuratorResult buildMajorityFallbackCuratorResult(String raw, List<PanelistResult> panelistResults) {
+        if (panelistResults == null || panelistResults.isEmpty()) {
+            return new CuratorResult(false, false, List.of(), "", "", 0.0d, raw, "Could not parse curator JSON");
+        }
+
+        int usefulCount = 0;
+        int notUsefulCount = 0;
+        LinkedHashSet<String> fallbackReasons = new LinkedHashSet<>();
+        StringBuilder feedback = new StringBuilder();
+        for (PanelistResult panelistResult : panelistResults) {
+            if (panelistResult == null || !panelistResult.parsed) continue;
+            if (panelistResult.useful) {
+                usefulCount++;
+            } else if (!panelistResult.matchedCategories.isEmpty()) {
+                notUsefulCount++;
+                fallbackReasons.addAll(panelistResult.matchedCategories);
+                if (panelistResult.feedback != null && !panelistResult.feedback.isBlank()) {
+                    if (feedback.length() > 0) feedback.append("\n");
+                    feedback.append(panelistResult.feedback);
+                }
+            }
+        }
+
+        boolean useful;
+        if (notUsefulCount >= 2) {
+            useful = false;
+        } else if (usefulCount >= 2) {
+            useful = true;
+            fallbackReasons.clear();
+            feedback.setLength(0);
+        } else {
+            useful = !containsCriticalUsefulnessReason(fallbackReasons);
+            if (useful) {
+                fallbackReasons.clear();
+                feedback.setLength(0);
+            }
+        }
+
+        int parsedCount = usefulCount + notUsefulCount;
+        double confidence = parsedCount == 0 ? 0.0d : Math.max(usefulCount, notUsefulCount) / (double) parsedCount;
+        String summary = "Curator JSON was unparseable; majority vote fallback applied (" +
+                usefulCount + " useful, " + notUsefulCount + " not useful).";
+        String error = "Could not parse curator JSON; majority vote fallback applied";
+        return new CuratorResult(
+                true,
+                useful,
+                new ArrayList<>(fallbackReasons),
+                summary,
+                feedback.toString(),
+                confidence,
+                raw,
+                error
+        );
+    }
+
+    private static boolean containsCriticalUsefulnessReason(LinkedHashSet<String> reasons) {
+        if (reasons == null || reasons.isEmpty()) return false;
+        for (String reason : reasons) {
+            if ("INCOMPLETE_REFACTORING_DETECTED".equals(reason)
+                    || "EXTRACT_METHOD_NOT_FOUND".equals(reason)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static JsonObject parseJsonObject(String raw) {

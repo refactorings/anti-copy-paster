@@ -323,10 +323,7 @@ public class refactoring {
         }
 
         CuratorSelectionResult curatorSelection = runCuratorSelection(fileName, fileSource, clone, panelistOutcomes, llmCaller);
-        boolean selectedUsefulPanelist = curatorSelectedUsefulPanelist(curatorSelection);
-        PanelistOutcome selectedOutcome = selectedUsefulPanelist
-                ? resolveSelectedOutcome(curatorSelection, panelistOutcomes)
-                : null;
+        PanelistOutcome selectedOutcome = resolveSelectedOutcome(curatorSelection, panelistOutcomes);
         if (selectedOutcome == null || selectedOutcome.result == null
                 || selectedOutcome.result.newSource == null || selectedOutcome.result.newSource.isBlank()) {
             String detail = buildCandidateSelectionFailureMessage(curatorSelection, panelistOutcomes);
@@ -544,7 +541,8 @@ public class refactoring {
         StringBuilder sb = new StringBuilder();
         sb.append("You are the refactoring curator.\n");
         sb.append("You must review three candidate Extract Method refactorings.\n");
-        sb.append("Select the single best useful panelist candidate for usefulness validation.\n");
+        sb.append("Choose the single best panelist candidate for downstream usefulness validation.\n");
+        sb.append("If no candidate is fully acceptable, still select the least-bad panelist candidate and explain the residual risks in feedback.\n");
         sb.append("A useful panelist candidate must clearly achieve EXTRACT_METHOD_CONFIRMED and must not trigger any not-useful category.\n\n");
 
         sb.append("=== USEFUL CATEGORY DEFINITION ===\n");
@@ -627,7 +625,7 @@ public class refactoring {
                 .append(String.join(", ", NOT_USEFUL_CATEGORY_NAMES))
                 .append(".\n");
         sb.append("4) If one or more panelist candidates are useful, choose the best useful candidate. Prefer the most conservative change with the smallest safe extraction boundary.\n");
-        sb.append("5) If no panelist candidate is useful, return an empty selected_panelist_id and explain why in summary.\n");
+        sb.append("5) If no panelist candidate is useful, still choose the least-bad valid panelist candidate; do not generate your own refactoring plan.\n");
         sb.append("6) If a panelist candidate failed to parse or apply, treat it as not useful.\n\n");
 
         sb.append("=== OUTPUT FORMAT ===\n");
@@ -636,7 +634,7 @@ public class refactoring {
         sb.append("  \"decision\": \"select_panelist\",\n");
         sb.append("  \"selected_panelist_id\": \"P1\",\n");
         sb.append("  \"matched_categories\": [\"EXTRACT_METHOD_CONFIRMED\"],\n");
-        sb.append("  \"summary\": \"short explanation of why this candidate is best\",\n");
+        sb.append("  \"summary\": \"short explanation of why this candidate is best or least-bad\",\n");
         sb.append("  \"feedback\": \"optional short guidance about the remaining risk of the selected candidate\",\n");
         sb.append("  \"confidence\": 0.85\n");
         sb.append("}\n");
@@ -747,7 +745,7 @@ public class refactoring {
                 sb.append(" (selected=").append(curatorSelection.selectedPanelistId.trim()).append(")");
             }
         } else {
-            sb.append("Curator did not select a useful panelist candidate");
+            sb.append("No valid panelist candidate could be applied");
         }
 
         if (curatorSelection != null && curatorSelection.summary != null && !curatorSelection.summary.isBlank()) {
@@ -796,16 +794,37 @@ public class refactoring {
                     return outcome;
                 }
             }
-            return null;
         }
+        return highestScoringPanelistOutcome(panelistOutcomes);
+    }
 
+    private PanelistOutcome highestScoringPanelistOutcome(List<PanelistOutcome> panelistOutcomes) {
+        if (panelistOutcomes == null || panelistOutcomes.isEmpty()) return null;
+        PanelistOutcome best = null;
+        double bestScore = 0.0d;
         for (PanelistOutcome outcome : panelistOutcomes) {
-            if (outcome == null || outcome.result == null) continue;
-            if (outcome.result.newSource != null && !outcome.result.newSource.isBlank()) {
-                return outcome;
+            double score = scorePanelistOutcome(outcome);
+            if (score <= 0.0d) continue;
+            if (best == null || score > bestScore) {
+                best = outcome;
+                bestScore = score;
             }
         }
-        return null;
+        return best;
+    }
+
+    private double scorePanelistOutcome(PanelistOutcome outcome) {
+        if (outcome == null
+                || outcome.result == null
+                || outcome.result.newSource == null
+                || outcome.result.newSource.isBlank()) {
+            return 0.0d;
+        }
+        double score = 0.5d;
+        if (outcome.parsed) score += 0.2d;
+        if (outcome.occurrenceReplacements != null && !outcome.occurrenceReplacements.isEmpty()) score += 0.2d;
+        if (outcome.error == null || outcome.error.isBlank()) score += 0.1d;
+        return score;
     }
 
     private String normalizeSelectedPanelistId(CuratorSelectionResult curatorSelection,

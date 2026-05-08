@@ -418,8 +418,10 @@ public class detection {
         StringBuilder prompt = new StringBuilder();
         prompt.append("You are the detection curator.\n");
         prompt.append("You must review three panelist outputs and produce the final clone detection result.\n");
-        prompt.append("If at least one panelist provides credible evidence of a clone involving the pasted snippet, usually return found_clones.\n");
-        prompt.append("If all panelists report no clones or provide weak/unparsed evidence, return no_clones.\n");
+        prompt.append("Apply a majority vote across the three panelists.\n");
+        prompt.append("- If 2 or more panelists provide credible evidence of a clone, return found_clones.\n");
+        prompt.append("- If 2 or more panelists report no clones or provide weak/unparsed evidence, return no_clones.\n");
+        prompt.append("- If exactly one panelist finds a clone, only return found_clones if that panelist's evidence is exceptionally strong: precise line ranges and clear structural similarity. Otherwise return no_clones.\n");
         prompt.append("Merge duplicate or overlapping clone groups when they clearly refer to the same pasted-snippet clone class.\n");
         prompt.append("Return ONLY one JSON object and no extra text.\n\n");
 
@@ -853,26 +855,39 @@ public class detection {
     }
 
     private DetectionResult mergePanelistResults(List<PanelistResult> panelistResults, String fileName) {
-        LinkedHashMap<String, DetectedClone> mergedClones = new LinkedHashMap<>();
+        LinkedHashMap<String, Integer> signatureVotes = new LinkedHashMap<>();
+        LinkedHashMap<String, DetectedClone> signatureToClone = new LinkedHashMap<>();
         for (PanelistResult panelistResult : panelistResults) {
             if (panelistResult == null || panelistResult.detectionResult == null || panelistResult.detectionResult.clones == null) {
                 continue;
             }
+            HashSet<String> seenInThisPanelist = new HashSet<>();
             for (DetectedClone clone : panelistResult.detectionResult.clones) {
                 if (clone == null || clone.ranges == null || clone.ranges.isEmpty()) continue;
                 DetectedClone copy = deepCopyClone(clone);
-                mergedClones.putIfAbsent(buildCloneSignature(copy), copy);
+                String signature = buildCloneSignature(copy);
+                if (signature.isBlank() || !seenInThisPanelist.add(signature)) continue;
+                signatureVotes.merge(signature, 1, Integer::sum);
+                signatureToClone.putIfAbsent(signature, copy);
             }
         }
 
-        if (mergedClones.isEmpty()) {
+        ArrayList<DetectedClone> majorityClones = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : signatureVotes.entrySet()) {
+            if (entry.getValue() >= 2) {
+                DetectedClone clone = signatureToClone.get(entry.getKey());
+                if (clone != null) majorityClones.add(clone);
+            }
+        }
+
+        if (majorityClones.isEmpty()) {
             return buildNoClonesResult(fileName);
         }
 
         DetectionResult merged = new DetectionResult();
         merged.status = "found_clones";
         merged.file = fileName;
-        merged.clones = new ArrayList<>(mergedClones.values());
+        merged.clones = majorityClones;
         return merged;
     }
 

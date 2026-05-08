@@ -140,6 +140,7 @@ class DetectionTest {
         assertTrue(promptsByRole.get("P1").contains("All panelists review the same file and pasted snippet independently."));
         assertTrue(promptsByRole.get("P2").contains("Selected snippet:"));
         assertTrue(promptsByRole.get("P3").contains("\"status\": \"found_clones\" or \"no_clones\""));
+        assertTrue(promptsByRole.get("CURATOR").contains("Apply a majority vote across the three panelists."));
         assertTrue(promptsByRole.get("CURATOR").contains("[P1]"));
         assertTrue(promptsByRole.get("CURATOR").contains("[P2]"));
         assertTrue(promptsByRole.get("CURATOR").contains("[P3]"));
@@ -244,6 +245,80 @@ class DetectionTest {
         assertNotNull(result.clones);
         assertEquals(1, result.clones.size());
         assertEquals(2, result.clones.get(0).ranges.size());
+    }
+
+    @Test
+    void detectFallbackRejectsSinglePanelistCloneWithoutMajority() {
+        detection agent = new detection();
+
+        String fileSource = """
+                class Demo {
+                    void first() {
+                        int x = 1;
+                        System.out.println(x);
+                    }
+
+                    void second() {
+                        int y = 1;
+                        System.out.println(y);
+                    }
+                }
+                """;
+        String selectedSnippet = """
+                        int x = 1;
+                        System.out.println(x);
+                """;
+
+        detection.DetectionResult result = agent.detect(
+                "Demo.java",
+                fileSource,
+                selectedSnippet,
+                prompt -> {
+                    if (prompt.contains("Detection Panelist 1 (P1)")) {
+                        return """
+                                {
+                                  "status": "found_clones",
+                                  "file": "Demo.java",
+                                  "clones": [
+                                    {
+                                      "id": "clone_p1",
+                                      "ranges": [
+                                        { "startLine": 3, "endLine": 4 },
+                                        { "startLine": 8, "endLine": 9 }
+                                      ],
+                                      "cloneCodes": [
+                                        "int x = 1;\\nSystem.out.println(x);",
+                                        "int y = 1;\\nSystem.out.println(y);"
+                                      ],
+                                      "refactorType": "extracted_method",
+                                      "reason": "same shape",
+                                      "cloneCodeA": "int x = 1;\\nSystem.out.println(x);",
+                                      "cloneCodeB": "int y = 1;\\nSystem.out.println(y);"
+                                    }
+                                  ]
+                                }
+                                """;
+                    }
+                    if (prompt.contains("Detection Panelist 2 (P2)") || prompt.contains("Detection Panelist 3 (P3)")) {
+                        return """
+                                {
+                                  "status": "no_clones",
+                                  "file": "Demo.java",
+                                  "clones": []
+                                }
+                                """;
+                    }
+                    if (prompt.contains("You are the detection curator.")) {
+                        return "not json";
+                    }
+                    fail("Unexpected prompt: " + prompt);
+                    return "";
+                }
+        );
+
+        assertNotNull(result);
+        assertEquals("no_clones", result.status);
+        assertTrue(result.clones == null || result.clones.isEmpty());
     }
 
     @Test
