@@ -101,7 +101,7 @@ import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStati
 import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
 
 public final class CloneRefactorWorkflow {
-    private static final String REFACTOR_RAG_DB_RESOURCE = "rag/refactor_database.csv";
+    private static final String REFACTOR_RAG_DB_RESOURCE = "refactor_database.csv";
     private static final String WORKFLOW_STAGE_SEPARATOR = "————————————";
 
     // RAG retrieval tuning
