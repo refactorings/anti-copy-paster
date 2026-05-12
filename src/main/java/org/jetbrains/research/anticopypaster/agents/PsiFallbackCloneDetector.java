@@ -34,10 +34,12 @@ import java.util.Set;
  *       (The refactoring agent primarily relies on cloneCode; ranges are best-effort.)</li>
  * </ul>
  *
- * <p>Current v1 strategy:
+ * <p>Current strategy:
  * <ul>
- *   <li>Search the current file text for occurrences of the pasted snippet (plus a few robust variants).</li>
- *   <li>If we find 2+ occurrences, we return all of them as clone candidates.</li>
+ *   <li>Search the current file text for conservative exact matches of the pasted snippet.</li>
+ *   <li>If exact matching fails, fall back to a Type-1 token-exact match that ignores whitespace/comments.</li>
+ *   <li>If Type-1 still fails, try Type-2 matching by normalizing identifiers and literals.</li>
+ *   <li>As a final fallback, try conservative Type-3 matching with a bounded token window and LCS threshold.</li>
  * </ul>
  *
  * <p>This intentionally does NOT attempt full project-wide clone detection.
@@ -102,8 +104,9 @@ public final class PsiFallbackCloneDetector {
             String fileText = psiFile.getText();
             if (fileText == null || fileText.isEmpty()) return Collections.emptyList();
 
-            // Build a small set of robust snippet variants.
-            // We keep this conservative so we don't create lots of false positives.
+            // Build a small set of exact-match variants.
+            // Keep this conservative: overlapping matches from aggressively normalized variants can
+            // inflate one real occurrence into multiple fake ones.
             Set<String> variants = buildSnippetVariants(snippet);
 
             // Collect occurrences across variants. Use LinkedHashSet to keep stable order.
@@ -111,32 +114,31 @@ public final class PsiFallbackCloneDetector {
             for (String v : variants) {
                 occurrences.addAll(findAllOccurrences(fileText, v));
             }
+            occurrences = collapseOverlappingOccurrences(occurrences);
 
             if (occurrences.size() < 2) {
-                // Exact/near-exact text match did not find duplicates.
-                // NEW: Type-1 (ignore whitespace/comments) fallback: tokenize both snippet and file,
-                // skip whitespace/comments, and look for exact token-text sequences.
-                occurrences = new LinkedHashSet<>();
-                occurrences.addAll(findType1OccurrencesIgnoreComments(psiFile, snippet, fileText));
+                // Type-1: same token text after ignoring whitespace/comments.
+                occurrences = collapseOverlappingOccurrences(
+                        findType1OccurrencesIgnoreComments(psiFile, snippet, fileText)
+                );
+            }
 
-                if (occurrences.size() < 2) {
-                    // Still nothing — try a lightweight Type-2 fallback: tokenize both snippet and file, normalize identifiers/literals,
-                    // and look for matching token-kind sequences.
-                    occurrences = new LinkedHashSet<>();
-                    occurrences.addAll(findType2Occurrences(project, psiFile, snippet, fileText));
+            if (occurrences.size() < 2) {
+                // Type-2: same normalized token sequence, allowing renamed identifiers/literals.
+                occurrences = collapseOverlappingOccurrences(
+                        findType2OccurrencesNormalized(psiFile, snippet, fileText)
+                );
+            }
 
-                    if (occurrences.size() < 2) {
-                        // Still nothing — try a high-recall Type-3-ish fallback based on token shingles (k-grams).
-                        // This can catch small edits/insertions/deletions while staying fast in same-file scope.
-                        occurrences = new LinkedHashSet<>();
-                        occurrences.addAll(findType3OccurrencesByShingles(psiFile, snippet, fileText));
+            if (occurrences.size() < 2) {
+                // Type-3: similar normalized token sequence with bounded insertions/deletions.
+                occurrences = collapseOverlappingOccurrences(
+                        findType3OccurrencesApproximate(psiFile, snippet, fileText)
+                );
+            }
 
-                        if (occurrences.size() < 2) {
-                            // Still nothing — return empty.
-                            return Collections.emptyList();
-                        }
-                    }
-                }
+            if (occurrences.size() < 2) {
+                return Collections.emptyList();
             }
 
             List<CloneCandidate> out = new ArrayList<>();
@@ -171,60 +173,11 @@ public final class PsiFallbackCloneDetector {
 
     // ---------------------------- helpers ----------------------------
 
-    private static final int MIN_TOKENS_FOR_TYPE2 = 6;
     private static final int MIN_TOKENS_FOR_TYPE1_NO_COMMENTS = 6;
-
-    // Type-3-ish (high recall) shingle matcher settings
-    private static final int MIN_TOKENS_FOR_TYPE3 = 10;
-    private static final int TYPE3_K = 5;
-    // Lower threshold => fewer false negatives (more candidates). Tune if it gets too noisy.
-    private static final double TYPE3_MIN_SIM = 0.40;
-    private static final int TYPE3_MAX_CANDIDATES = 25;
-
-    private static Set<Occurrence> findType2Occurrences(Project project, PsiFile psiFile, String pastedSnippet, String fileText) {
-        if (psiFile == null) return Collections.emptySet();
-        if (pastedSnippet == null) return Collections.emptySet();
-
-        LanguageLevel level;
-        try {
-            level = PsiUtil.getLanguageLevel(psiFile);
-        } catch (Throwable t) {
-            level = LanguageLevel.HIGHEST;
-        }
-
-        List<NormTok> snippetToks = lexAndNormalize(pastedSnippet, level);
-        if (snippetToks.size() < MIN_TOKENS_FOR_TYPE2) return Collections.emptySet();
-
-        List<NormTok> fileToks = lexAndNormalize(fileText, level);
-        if (fileToks.size() < snippetToks.size()) return Collections.emptySet();
-
-        // Prepare the normalized kind sequence for snippet.
-        int m = snippetToks.size();
-        String[] needle = new String[m];
-        for (int i = 0; i < m; i++) needle[i] = snippetToks.get(i).kind;
-
-        Set<Occurrence> out = new LinkedHashSet<>();
-
-        // Naive sliding-window match (single-file scope; acceptable in practice).
-        for (int i = 0; i <= fileToks.size() - m; i++) {
-            boolean ok = true;
-            for (int j = 0; j < m; j++) {
-                if (!needle[j].equals(fileToks.get(i + j).kind)) {
-                    ok = false;
-                    break;
-                }
-            }
-            if (!ok) continue;
-
-            int start = fileToks.get(i).startOffset;
-            int end = fileToks.get(i + m - 1).endOffset;
-            if (start >= 0 && end > start) {
-                out.add(new Occurrence(start, end));
-            }
-        }
-
-        return out;
-    }
+    private static final int MIN_TOKENS_FOR_TYPE2_NORMALIZED = 8;
+    private static final int MIN_TOKENS_FOR_TYPE3_APPROXIMATE = 12;
+    private static final double TYPE3_MIN_NEEDLE_COVERAGE = 0.75;
+    private static final double TYPE3_MIN_LCS_SIMILARITY = 0.78;
 
     private static final class NormTok {
         final String kind;
@@ -245,7 +198,7 @@ public final class PsiFallbackCloneDetector {
         try {
             lexer = new JavaLexer(level);
         } catch (Throwable t) {
-            // If the lexer is unavailable for some reason, we cannot do Type-2 matching.
+            // If the lexer is unavailable for some reason, normalized matching is disabled.
             return Collections.emptyList();
         }
 
@@ -328,25 +281,56 @@ public final class PsiFallbackCloneDetector {
         Set<String> variants = new LinkedHashSet<>();
 
         String s0 = normalizeLineEndings(snippet);
-        variants.add(s0);
+        if (!s0.isEmpty()) variants.add(s0);
 
-        String s1 = s0.trim();
+        String s1 = rstripLines(s0);
         if (!s1.isEmpty()) variants.add(s1);
 
-        String s2 = rstripLines(s0);
+        // Remove only leading/trailing blank lines (common in copy/paste).
+        String s2 = trimBlankLines(s0);
         if (!s2.isEmpty()) variants.add(s2);
 
-        String s3 = dedent(s0);
-        if (!s3.isEmpty()) variants.add(s3);
-
-        String s4 = dedent(rstripLines(s0)).trim();
-        if (!s4.isEmpty()) variants.add(s4);
-
-        // Remove only leading/trailing blank lines (common in copy/paste).
-        String s5 = trimBlankLines(s0);
-        if (!s5.isEmpty()) variants.add(s5);
-
         return variants;
+    }
+
+    private static Set<Occurrence> collapseOverlappingOccurrences(Set<Occurrence> occurrences) {
+        if (occurrences == null || occurrences.isEmpty()) return Collections.emptySet();
+
+        List<Occurrence> sorted = new ArrayList<>(occurrences);
+        sorted.sort((left, right) -> {
+            if (left.startOffset != right.startOffset) {
+                return Integer.compare(left.startOffset, right.startOffset);
+            }
+            int leftLen = left.endOffset - left.startOffset;
+            int rightLen = right.endOffset - right.startOffset;
+            return Integer.compare(rightLen, leftLen);
+        });
+
+        LinkedHashSet<Occurrence> collapsed = new LinkedHashSet<>();
+        Occurrence current = null;
+        for (Occurrence occurrence : sorted) {
+            if (current == null) {
+                current = occurrence;
+                continue;
+            }
+
+            if (occurrence.startOffset < current.endOffset && current.startOffset < occurrence.endOffset) {
+                int currentLen = current.endOffset - current.startOffset;
+                int nextLen = occurrence.endOffset - occurrence.startOffset;
+                if (nextLen > currentLen) {
+                    current = occurrence;
+                }
+                continue;
+            }
+
+            collapsed.add(current);
+            current = occurrence;
+        }
+
+        if (current != null) {
+            collapsed.add(current);
+        }
+        return collapsed;
     }
 
     private static List<Occurrence> findAllOccurrences(String haystack, String needle) {
@@ -392,40 +376,6 @@ public final class PsiFallbackCloneDetector {
     }
 
     /**
-     * Remove common leading indentation across non-blank lines.
-     */
-    private static String dedent(String s) {
-        if (s == null || s.isEmpty()) return "";
-        String[] lines = normalizeLineEndings(s).split("\n", -1);
-        int minIndent = Integer.MAX_VALUE;
-        for (String line : lines) {
-            if (line.trim().isEmpty()) continue;
-            int indent = 0;
-            while (indent < line.length()) {
-                char c = line.charAt(indent);
-                if (c == ' ') indent++;
-                else if (c == '\t') indent++; // treat tab as 1 for simplicity
-                else break;
-            }
-            minIndent = Math.min(minIndent, indent);
-        }
-        if (minIndent == Integer.MAX_VALUE || minIndent == 0) return normalizeLineEndings(s);
-
-        StringBuilder sb = new StringBuilder(s.length());
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i];
-            if (line.trim().isEmpty()) {
-                sb.append(line);
-            } else {
-                int cut = Math.min(minIndent, line.length());
-                sb.append(line.substring(cut));
-            }
-            if (i < lines.length - 1) sb.append('\n');
-        }
-        return sb.toString();
-    }
-
-    /**
      * Trim only blank lines at the start/end.
      */
     private static String trimBlankLines(String s) {
@@ -447,6 +397,14 @@ public final class PsiFallbackCloneDetector {
 
     // Type-1 (ignore whitespace/comments) token matcher helpers
 
+    private static LanguageLevel getLanguageLevel(PsiFile psiFile) {
+        try {
+            return PsiUtil.getLanguageLevel(psiFile);
+        } catch (Throwable t) {
+            return LanguageLevel.HIGHEST;
+        }
+    }
+
     private static final class RawTok {
         final String text;
         final int startOffset;
@@ -464,12 +422,7 @@ public final class PsiFallbackCloneDetector {
         if (pastedSnippet == null || pastedSnippet.trim().isEmpty()) return Collections.emptySet();
         if (fileText == null || fileText.isEmpty()) return Collections.emptySet();
 
-        LanguageLevel level;
-        try {
-            level = PsiUtil.getLanguageLevel(psiFile);
-        } catch (Throwable t) {
-            level = LanguageLevel.HIGHEST;
-        }
+        LanguageLevel level = getLanguageLevel(psiFile);
 
         List<RawTok> needle = lexRawNoComments(pastedSnippet, level);
         if (needle.size() < MIN_TOKENS_FOR_TYPE1_NO_COMMENTS) return Collections.emptySet();
@@ -547,104 +500,170 @@ public final class PsiFallbackCloneDetector {
         return out;
     }
 
+    // Type-2 (rename/literal-normalized exact token sequence) matcher helpers
 
-    private static Set<Occurrence> findType3OccurrencesByShingles(PsiFile psiFile, String pastedSnippet, String fileText) {
+    private static Set<Occurrence> findType2OccurrencesNormalized(PsiFile psiFile, String pastedSnippet, String fileText) {
         if (psiFile == null) return Collections.emptySet();
         if (pastedSnippet == null || pastedSnippet.trim().isEmpty()) return Collections.emptySet();
         if (fileText == null || fileText.isEmpty()) return Collections.emptySet();
 
-        LanguageLevel level;
-        try {
-            level = PsiUtil.getLanguageLevel(psiFile);
-        } catch (Throwable t) {
-            level = LanguageLevel.HIGHEST;
-        }
+        LanguageLevel level = getLanguageLevel(psiFile);
+        List<NormTok> needle = lexAndNormalize(pastedSnippet, level);
+        if (needle.size() < MIN_TOKENS_FOR_TYPE2_NORMALIZED) return Collections.emptySet();
 
-        List<NormTok> snippetToks = lexAndNormalize(pastedSnippet, level);
-        if (snippetToks.size() < MIN_TOKENS_FOR_TYPE3) return Collections.emptySet();
+        List<NormTok> hay = lexAndNormalize(fileText, level);
+        if (hay.size() < needle.size()) return Collections.emptySet();
 
-        List<NormTok> fileToks = lexAndNormalize(fileText, level);
-        if (fileToks.size() < MIN_TOKENS_FOR_TYPE3) return Collections.emptySet();
-
-        int k = Math.min(TYPE3_K, Math.max(3, snippetToks.size() / 3));
-        int m = snippetToks.size();
-        int snippetShinglesCount = Math.max(0, m - k + 1);
-        if (snippetShinglesCount < 4) return Collections.emptySet();
-
-        // Build snippet shingle hash set
-        Set<Long> snippetShingles = new LinkedHashSet<>(snippetShinglesCount * 2);
-        for (int i = 0; i <= m - k; i++) {
-            snippetShingles.add(hashShingleKinds(snippetToks, i, k));
-        }
-
-        int n = fileToks.size();
-        int nf = n - k + 1;
-        if (nf <= 0) return Collections.emptySet();
-
-        // hit[p] = 1 if file shingle at token index p is also in snippet shingles
-        int[] hit = new int[nf];
-        for (int p = 0; p < nf; p++) {
-            long h = hashShingleKinds(fileToks, p, k);
-            hit[p] = snippetShingles.contains(h) ? 1 : 0;
-        }
-
-        // Prefix sums for O(1) window scoring
-        int[] pref = new int[nf + 1];
-        for (int i = 0; i < nf; i++) pref[i + 1] = pref[i] + hit[i];
-
-        // Allow small edits by letting window length vary a bit
-        int delta = Math.max(2, m / 5); // +/- 20%
-        int[] lens = new int[]{Math.max(MIN_TOKENS_FOR_TYPE3, m - delta), m, Math.min(n, m + delta)};
-
+        int m = needle.size();
         Set<Occurrence> out = new LinkedHashSet<>();
 
-        for (int L : lens) {
-            if (L < k) continue;
-            int windowShingles = Math.max(0, L - k + 1);
-            if (windowShingles <= 0) continue;
+        for (int i = 0; i <= hay.size() - m; i++) {
+            if (!matchesNormalizedWindow(needle, hay, i, m)) continue;
 
-            // Similarity: fraction of snippet shingles that appear in the window (recall-like => high recall)
-            int minHits = Math.max(3, (int) Math.floor(snippetShinglesCount * TYPE3_MIN_SIM));
-
-            // Shingle index range for a token window starting at t is [t .. t+L-k]
-            int maxStartToken = n - L;
-            for (int t = 0; t <= maxStartToken; t++) {
-                int l = t;
-                int r = t + L - k;
-                if (r < l) continue;
-                if (r >= nf) break;
-
-                int hits = pref[r + 1] - pref[l];
-                if (hits < minHits) continue;
-
-                double sim = (double) hits / (double) snippetShinglesCount;
-                if (sim < TYPE3_MIN_SIM) continue;
-
-                int startOff = fileToks.get(t).startOffset;
-                int endOff = fileToks.get(t + L - 1).endOffset;
-                if (startOff >= 0 && endOff > startOff) {
-                    out.add(new Occurrence(startOff, endOff));
-                    if (out.size() >= TYPE3_MAX_CANDIDATES) return out;
-                }
+            int start = hay.get(i).startOffset;
+            int end = hay.get(i + m - 1).endOffset;
+            if (start >= 0 && end > start) {
+                out.add(new Occurrence(start, end));
             }
         }
 
         return out;
     }
 
-    private static long hashShingleKinds(List<NormTok> toks, int start, int k) {
-        long h = 1469598103934665603L; // FNV-1a 64-bit offset basis
-        for (int i = 0; i < k; i++) {
-            String s = toks.get(start + i).kind;
-            // FNV-1a over characters
-            for (int c = 0; c < s.length(); c++) {
-                h ^= (byte) s.charAt(c);
-                h *= 1099511628211L;
+    private static boolean matchesNormalizedWindow(List<NormTok> needle, List<NormTok> hay, int hayStart, int length) {
+        if (needle == null || hay == null) return false;
+        if (length != needle.size()) return false;
+        if (hayStart < 0 || hayStart + length > hay.size()) return false;
+
+        for (int i = 0; i < length; i++) {
+            if (!needle.get(i).kind.equals(hay.get(hayStart + i).kind)) {
+                return false;
             }
-            // separator
-            h ^= 0xFF;
-            h *= 1099511628211L;
         }
-        return h;
+        return true;
+    }
+
+    // Type-3 (bounded approximate normalized token sequence) matcher helpers
+
+    private static Set<Occurrence> findType3OccurrencesApproximate(PsiFile psiFile, String pastedSnippet, String fileText) {
+        if (psiFile == null) return Collections.emptySet();
+        if (pastedSnippet == null || pastedSnippet.trim().isEmpty()) return Collections.emptySet();
+        if (fileText == null || fileText.isEmpty()) return Collections.emptySet();
+
+        LanguageLevel level = getLanguageLevel(psiFile);
+        List<NormTok> needle = lexAndNormalize(pastedSnippet, level);
+        if (needle.size() < MIN_TOKENS_FOR_TYPE3_APPROXIMATE) return Collections.emptySet();
+
+        List<NormTok> hay = lexAndNormalize(fileText, level);
+        if (hay.size() < MIN_TOKENS_FOR_TYPE3_APPROXIMATE) return Collections.emptySet();
+
+        int m = needle.size();
+        int delta = Math.max(4, m / 3);
+        int minWindow = Math.max(MIN_TOKENS_FOR_TYPE3_APPROXIMATE, m - delta);
+        int maxWindow = Math.min(hay.size(), m + delta);
+
+        Set<Occurrence> out = new LinkedHashSet<>();
+        String firstKind = needle.get(0).kind;
+        String lastKind = needle.get(m - 1).kind;
+
+        for (int start = 0; start < hay.size(); start++) {
+            if (!firstKind.equals(hay.get(start).kind)) continue;
+
+            int largestPossibleWindow = Math.min(maxWindow, hay.size() - start);
+            if (largestPossibleWindow < minWindow) continue;
+
+            Occurrence best = null;
+            double bestScore = -1.0;
+            int bestLengthDistance = Integer.MAX_VALUE;
+
+            for (int length = minWindow; length <= largestPossibleWindow; length++) {
+                if (!lastKind.equals(hay.get(start + length - 1).kind)) continue;
+                if (!passesType3StructuralGuard(needle, hay, start, length)) continue;
+
+                int lcs = lcsLength(needle, hay, start, length);
+                double needleCoverage = lcs / (double) m;
+                double similarity = lcs / (double) Math.max(m, length);
+                if (needleCoverage < TYPE3_MIN_NEEDLE_COVERAGE) continue;
+                if (similarity < TYPE3_MIN_LCS_SIMILARITY) continue;
+
+                double score = needleCoverage + similarity;
+                int lengthDistance = Math.abs(length - m);
+                if (score > bestScore ||
+                        (Double.compare(score, bestScore) == 0 && lengthDistance < bestLengthDistance)) {
+                    int end = hay.get(start + length - 1).endOffset;
+                    int startOffset = hay.get(start).startOffset;
+                    if (startOffset >= 0 && end > startOffset) {
+                        best = new Occurrence(startOffset, end);
+                        bestScore = score;
+                        bestLengthDistance = lengthDistance;
+                    }
+                }
+            }
+
+            if (best != null) {
+                out.add(best);
+            }
+        }
+
+        return out;
+    }
+
+    private static int lcsLength(List<NormTok> needle, List<NormTok> hay, int hayStart, int hayLength) {
+        int[] previous = new int[hayLength + 1];
+        int[] current = new int[hayLength + 1];
+
+        for (NormTok needleTok : needle) {
+            for (int j = 1; j <= hayLength; j++) {
+                String hayKind = hay.get(hayStart + j - 1).kind;
+                if (needleTok.kind.equals(hayKind)) {
+                    current[j] = previous[j - 1] + 1;
+                } else {
+                    current[j] = Math.max(previous[j], current[j - 1]);
+                }
+            }
+
+            int[] tmp = previous;
+            previous = current;
+            current = tmp;
+            for (int j = 0; j <= hayLength; j++) {
+                current[j] = 0;
+            }
+        }
+
+        return previous[hayLength];
+    }
+
+    private static boolean passesType3StructuralGuard(List<NormTok> needle, List<NormTok> hay, int hayStart, int hayLength) {
+        int anchorCount = 0;
+        int matchedAnchors = 0;
+        boolean[] used = new boolean[hayLength];
+
+        for (NormTok needleTok : needle) {
+            if (!isType3AnchorKind(needleTok.kind)) continue;
+            anchorCount++;
+
+            for (int i = 0; i < hayLength; i++) {
+                if (used[i]) continue;
+                if (!needleTok.kind.equals(hay.get(hayStart + i).kind)) continue;
+                used[i] = true;
+                matchedAnchors++;
+                break;
+            }
+        }
+
+        if (anchorCount < 4) return true;
+        return matchedAnchors * 10 >= anchorCount * 7;
+    }
+
+    private static boolean isType3AnchorKind(String kind) {
+        if (kind == null) return false;
+        if ("ID".equals(kind) || "LIT".equals(kind)) return false;
+        return !("LPARENTH".equals(kind) ||
+                "RPARENTH".equals(kind) ||
+                "LBRACE".equals(kind) ||
+                "RBRACE".equals(kind) ||
+                "SEMICOLON".equals(kind) ||
+                "COMMA".equals(kind) ||
+                "DOT".equals(kind));
     }
 }

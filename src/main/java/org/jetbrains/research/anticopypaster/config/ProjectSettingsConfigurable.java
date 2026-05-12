@@ -64,7 +64,10 @@ public class ProjectSettingsConfigurable implements Configurable {
         modified |= !Objects.equals(settingsComponent.getAiderApiKey(), settings.getAiderApiKey());
         modified |= !Objects.equals(settingsComponent.getAiderPath(), settings.getAiderPath());
         modified |= !Objects.equals(settingsComponent.getSelectedAiderModel(), settings.getAiderModel());
-        modified |= !Objects.equals(settingsComponent.getLlmProvider(), settings.getLlmprovider());
+        modified |= !Objects.equals(
+                ProjectSettingsComponent.normalizeLlmProviderName(settingsComponent.getLlmProvider()),
+                ProjectSettingsComponent.normalizeLlmProviderName(settings.getLlmprovider())
+        );
         modified |= !Objects.equals(settingsComponent.getApiBase(), settings.getApiBase());
         modified |= !Objects.equals(settingsComponent.getApiVersion(), settings.getApiVersion());
         modified |= !Objects.equals(settingsComponent.getFilesPath(), settings.getFilesPath());
@@ -123,7 +126,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settings.modelSensitivity = settingsComponent.getModelSensitivity();
         settings.maxParams = settingsComponent.getMaxParams();
         settings.setMaxAttempts(settingsComponent.getMaxAttempts());
-        settings.setLlmprovider(settingsComponent.getLlmProvider());
+        settings.setLlmprovider(ProjectSettingsComponent.normalizeLlmProviderName(settingsComponent.getLlmProvider()));
         settings.setAiderModel(settingsComponent.getSelectedAiderModel());
         settings.setAiderApiKey(settingsComponent.getAiderApiKey());
         settings.setAiderPath(settingsComponent.getAiderPath());
@@ -165,7 +168,7 @@ public class ProjectSettingsConfigurable implements Configurable {
         settingsComponent.setModelSensitivity(settings.modelSensitivity);
         settingsComponent.setMaxParams(settings.maxParams);
         settingsComponent.setMaxAttempts(settings.getMaxAttempts());
-        settingsComponent.setLlmProvider(settings.getLlmprovider());
+        settingsComponent.setLlmProvider(ProjectSettingsComponent.normalizeLlmProviderName(settings.getLlmprovider()));
         settingsComponent.setSelectedAiderModel(settings.getAiderModel());
         settingsComponent.setAiderApiKey(settings.getAiderApiKey());
         settingsComponent.setAiderPath(settings.getAiderPath());

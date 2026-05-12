@@ -11,7 +11,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Stores information about the plugin usage on the project level in the ./idea/anticopypaster-plugin.xml file.
+ * Stores information about the plugin usage on the project level in the
+ * {@code .idea/anticopypaster-plugin-usage.xml} file.
  */
 @Service(Service.Level.PROJECT)
 @State(name = "AntiCopyPasterUsageStatistics", storages = {@Storage("anticopypaster-plugin-usage.xml")})

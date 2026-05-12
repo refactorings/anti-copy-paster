@@ -393,7 +393,7 @@ public class ExtractionTask {
      *
      * @param project     current IntelliJ project
      * @param codeSnippet Java code for which to propose an extracted method name
-     * @param provider    LLM provider identifier (e.g., OpenAI, Gemini, Anthropic, Azure, Deepseek, xAI)
+     * @param provider    LLM provider identifier (e.g., OpenAI, Google, Anthropic, Azure, Deepseek, xAI)
      * @param model       model name for Aider
      * @param apikey      API key to set in the subprocess environment
      * @param aiderPath   path to the {@code aider} executable

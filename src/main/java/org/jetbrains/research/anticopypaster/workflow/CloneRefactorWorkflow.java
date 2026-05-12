@@ -1,22 +1,46 @@
 package org.jetbrains.research.anticopypaster.workflow;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.containsReasonName;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.definitionForReason;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.extractUsefulnessDebugText;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.parseWrapperNamesFromUsefulnessDebug;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.previewOneLine;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.cancelAwareViewer;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.closeQuietly;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.logStage;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.openLogWriter;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.openViewer;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.showNotification;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.teeViewer;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.throwIfCancelled;
+
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiFileFactory;
 import com.intellij.psi.SmartPointerManager;
 import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.event.DocumentListener;
 
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiStatement;
 import com.intellij.psi.util.PsiTreeUtil;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.diff.DiffContentFactory;
@@ -43,6 +67,7 @@ import org.jetbrains.research.anticopypaster.agents.compilation;
 import org.jetbrains.research.anticopypaster.agents.testing;
 import org.jetbrains.research.anticopypaster.agents.usefulnessChecker;
 import org.jetbrains.research.anticopypaster.agents.FragmentUsefulnessAnalyzer;
+import org.jetbrains.research.anticopypaster.agents.LlmUsefulnessEvaluator;
 import org.jetbrains.research.anticopypaster.agents.PsiFallbackCloneDetector;
 
 import java.io.*;
@@ -64,6 +89,7 @@ import com.intellij.diff.DiffRequestPanel;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.ui.DialogWrapper;
+import com.intellij.openapi.ui.Messages;
 import javax.swing.*;
 import org.jetbrains.research.anticopypaster.llm.LlmClient;
 import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
@@ -72,67 +98,11 @@ import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
+import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
 
 public final class CloneRefactorWorkflow {
-    // ===== Log persistence helpers =====
-    private static final DateTimeFormatter LOG_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
-
-    private static String sanitizeForFilename(String s) {
-        if (s == null) return "unknown";
-        String t = s.trim();
-        if (t.isEmpty()) return "unknown";
-        // Replace anything unsafe for filenames
-        t = t.replaceAll("[^a-zA-Z0-9._-]+", "_");
-        // Avoid overly-long filenames
-        if (t.length() > 80) t = t.substring(0, 80);
-        return t;
-    }
-
-    private static BufferedWriter openLogWriter(Project project, String targetFileName, String modelName) {
-        try {
-            String basePath = project == null ? null : project.getBasePath();
-            if (basePath == null || basePath.isBlank()) return null;
-
-            File dir = new File(basePath, ".anticopypaster" + File.separator + "logs");
-            if (!dir.exists()) dir.mkdirs();
-
-            String ts = LocalDateTime.now().format(LOG_TS_FMT);
-            String safeFile = sanitizeForFilename(targetFileName);
-            String safeModel = sanitizeForFilename(modelName);
-            File out = new File(dir, safeFile + "." + safeModel + "." + ts + ".log");
-
-            return Files.newBufferedWriter(out.toPath(), StandardCharsets.UTF_8);
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    private static void closeQuietly(Closeable c) {
-        try {
-            if (c != null) c.close();
-        } catch (Throwable ignored) {}
-    }
-
-    private static Consumer<String> teeViewer(Consumer<String> viewer, BufferedWriter logWriter) {
-        return (line) -> {
-            if (line == null) return;
-            // 1) Viewer
-            try {
-                if (viewer != null) viewer.accept(line);
-            } catch (Throwable ignored) {}
-            // 2) Log file
-            try {
-                if (logWriter != null) {
-                    logWriter.write(line);
-                    if (!line.endsWith("\n")) logWriter.write("\n");
-                    logWriter.flush();
-                }
-            } catch (Throwable ignored) {}
-        };
-    }
-
-
-    private static final String REFACTOR_RAG_DB_RESOURCE = "rag/refactor_database.csv";
+    private static final String REFACTOR_RAG_DB_RESOURCE = "refactor_database.csv";
+    private static final String WORKFLOW_STAGE_SEPARATOR = "————————————";
 
     // RAG retrieval tuning
     private static final int REFACTOR_RAG_TOP_K = 5;
@@ -141,23 +111,10 @@ public final class CloneRefactorWorkflow {
     // Refactor proposal preview (console)
     private static final int REFACTOR_PROPOSAL_PREVIEW_CHARS = 12000;
 
-    // Captured for buildProjectClasspathFromIde + streaming viewers in test runner
-    private static volatile Project _LAST_PROJECT_FOR_TESTS = null;
-    private static volatile Consumer<String> _LAST_TEST_VIEWER = null;
-    private static volatile String _LAST_TARGET_FQN = null;
-
     // Hard-cancel support
     private static final AtomicReference<Thread> _CURRENT_WORKFLOW_THREAD = new AtomicReference<>();
     private static final AtomicReference<Process> _CURRENT_PROCESS = new AtomicReference<>();
     private static final AtomicLong _WORKFLOW_RUN_ID = new AtomicLong(0L);
-
-    // Last converted (pure JUnit4) EvoSuite test FQN (best-effort), if conversion succeeded.
-    private static volatile String _LAST_CONVERTED_TEST_FQN = null;
-
-    // If set, points to a temp directory containing compiled classes for the *proposed* refactoring.
-    // This directory should be prepended to the runtime classpath so EvoSuite/JUnit see the refactored class
-    // without modifying the original project output.
-    private static volatile String _LAST_PATCHED_CLASSES_DIR = null;
 
     // LLM client resolved from plugin settings (provider/model/key/etc.)
     private static volatile LlmClient LLM = new NoopLlmClient();
@@ -206,139 +163,6 @@ public final class CloneRefactorWorkflow {
         logStage(viewer, "WORKFLOW", "CANCELLED by user (viewer closed; process/thread interrupted)");
     }
 
-    private static java.util.function.Consumer<String> cancelAwareViewer(java.util.function.Consumer<String> viewer) {
-        if (viewer == null) return null;
-        return (msg) -> {
-            if (isCancelled()) return;
-            try { viewer.accept(msg); } catch (Throwable ignored) {}
-        };
-    }
-
-    private static void throwIfCancelled(java.util.function.Consumer<String> viewer) {
-        if (isCancelled() || Thread.currentThread().isInterrupted()) {
-            throw new RuntimeException("CANCELLED");
-        }
-    }
-
-    private static final Map<String, ConsoleView> CONSOLE_BY_TITLE = new ConcurrentHashMap<>();
-
-    /** Open (or reuse) a console tab and return a writer for streaming lines into it. */
-    private static Consumer<String> openViewer(Project project, String title) {
-        final java.util.concurrent.atomic.AtomicReference<ConsoleView> consoleRef = new java.util.concurrent.atomic.AtomicReference<>();
-        final java.util.concurrent.atomic.AtomicReference<java.util.function.Consumer<String>> writerRef = new java.util.concurrent.atomic.AtomicReference<>();
-
-        Runnable createOrReuse = () -> {
-            ToolWindowManager twm = ToolWindowManager.getInstance(project);
-            ToolWindow toolWindow = twm.getToolWindow(ToolWindowId.RUN);
-            if (toolWindow == null) {
-                toolWindow = twm.getToolWindow("AntiCopyPaster");
-                if (toolWindow == null) {
-                    toolWindow = twm.registerToolWindow(RegisterToolWindowTask.notClosable("AntiCopyPaster"));
-                }
-            }
-
-            toolWindow.setTitleActions(java.util.List.of(
-                    new com.intellij.openapi.actionSystem.AnAction(
-                            "Stop Workflow",
-                            "Stop current workflow",
-                            com.intellij.icons.AllIcons.Actions.Suspend
-                    ) {
-                        @Override
-                        public void actionPerformed(com.intellij.openapi.actionSystem.AnActionEvent e) {
-                            java.util.function.Consumer<String> w = writerRef.get();
-                            cancelWorkflow(w);
-                        }
-                    }
-            ));
-
-            var cm = toolWindow.getContentManager();
-            ConsoleView console = CONSOLE_BY_TITLE.get(title);
-            Content content = cm.findContent(title);
-
-            if (console == null || content == null) {
-                console = TextConsoleBuilderFactory.getInstance().createBuilder(project).getConsole();
-
-                javax.swing.JPanel wrapper = new javax.swing.JPanel(new java.awt.BorderLayout());
-                wrapper.add(console.getComponent(), java.awt.BorderLayout.CENTER);
-
-                Content newContent = ContentFactory.getInstance().createContent(wrapper, title, true);
-
-// If the user closes the tab via the content's close button, cancel the workflow too.
-                try {
-                    com.intellij.openapi.util.Disposer.register(newContent, () -> {
-                        java.util.function.Consumer<String> w = writerRef.get();
-                        cancelWorkflow(w);
-                    });
-                } catch (Throwable ignored) {}
-
-                if (content != null) cm.removeContent(content, true);
-                cm.addContent(newContent);
-                cm.setSelectedContent(newContent);
-                CONSOLE_BY_TITLE.put(title, console);
-            } else {
-                console.clear();
-                cm.setSelectedContent(content);
-            }
-
-            toolWindow.activate(null);
-            consoleRef.set(CONSOLE_BY_TITLE.get(title));
-        };
-
-        if (ApplicationManager.getApplication().isDispatchThread()) {
-            createOrReuse.run();
-        } else {
-            ApplicationManager.getApplication().invokeAndWait(createOrReuse);
-        }
-
-        // Throttled EDT printing
-        final java.util.concurrent.ConcurrentLinkedQueue<String> queue = new java.util.concurrent.ConcurrentLinkedQueue<>();
-        final java.util.concurrent.atomic.AtomicBoolean scheduled = new java.util.concurrent.atomic.AtomicBoolean(false);
-
-        // Avoid self-reference initialization issues by storing the runnable in a reference.
-        final java.util.concurrent.atomic.AtomicReference<Runnable> flushRef = new java.util.concurrent.atomic.AtomicReference<>();
-
-        Runnable flush = () -> {
-            scheduled.set(false);
-            ConsoleView c = consoleRef.get();
-            if (c == null) return;
-
-            StringBuilder sb = new StringBuilder();
-            String s;
-            int maxLines = 200;
-            while (maxLines-- > 0 && (s = queue.poll()) != null) {
-                sb.append(s);
-                if (!s.endsWith("\n")) sb.append('\n');
-            }
-            if (sb.length() > 0) {
-                c.print(sb.toString(), ConsoleViewContentType.NORMAL_OUTPUT);
-            }
-
-            // If more remains, schedule another flush (use flushRef to avoid self-reference warnings)
-            if (!queue.isEmpty() && scheduled.compareAndSet(false, true)) {
-                Runnable next = flushRef.get();
-                if (next != null) {
-                    ApplicationManager.getApplication().invokeLater(next, ModalityState.any());
-                }
-            }
-        };
-
-        flushRef.set(flush);
-
-        Consumer<String> writer = line -> {
-            if (line == null) return;
-            if (isCancelled()) return;
-            queue.add(line);
-            if (scheduled.compareAndSet(false, true)) {
-                ApplicationManager.getApplication().invokeLater(flushRef.get(), ModalityState.any());
-            }
-        };
-
-        writerRef.set(writer);
-
-        return writer;
-    }
-
-
     public static void run(Project project, List<VirtualFile> targets) {
         run(project, targets, null);
     }
@@ -362,6 +186,51 @@ public final class CloneRefactorWorkflow {
 
         // Fallback: read from disk.
         return Files.readString(ioFile.toPath(), StandardCharsets.UTF_8);
+    }
+
+    private static void logFeedbackToRefactorAgent(Consumer<String> viewer,
+                                                   String feedback,
+                                                   boolean feedbackOnlyPrompt) {
+        if (feedback == null || feedback.isBlank()) return;
+        String mode = feedbackOnlyPrompt ? "feedback-only" : "combined";
+        logStage(viewer, "FEEDBACK", "sending feedback to refactor agent (mode=" + mode + "):\n" + feedback);
+    }
+
+    private static void logWorkflowStageStart(Consumer<String> viewer, String stageName) {
+        if (stageName == null || stageName.isBlank()) return;
+        logStage(viewer, "STAGE", stageName);
+    }
+
+    private static void logWorkflowStageEnd(Consumer<String> viewer) {
+        logStage(viewer, "STAGE", WORKFLOW_STAGE_SEPARATOR);
+    }
+
+    private static String buildLlmSetupGuidance(Project project) {
+        try {
+            ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
+            if (settings == null) {
+                return "Open Settings > AntiCopyPaster and configure the LLM provider and API key.";
+            }
+
+            String provider = settings.getLlmprovider();
+            String apiKey = settings.getAiderApiKey();
+
+            if (provider == null || provider.isBlank()) {
+                return "Open Settings > AntiCopyPaster, choose an LLM provider, and enter its API key.";
+            }
+
+            if ("Ollama".equalsIgnoreCase(provider)) {
+                return "Open Settings > AntiCopyPaster and complete the Ollama configuration.";
+            }
+
+            if (apiKey == null || apiKey.isBlank()) {
+                return "Open Settings > AntiCopyPaster and enter the API key for " + provider + " in Clone Settings.";
+            }
+
+            return "Open Settings > AntiCopyPaster and verify the provider, model, and API key settings.";
+        } catch (Throwable ignored) {
+            return "Open Settings > AntiCopyPaster and configure the LLM provider and API key.";
+        }
     }
 
     /* ============================================================
@@ -402,11 +271,13 @@ public final class CloneRefactorWorkflow {
                 } catch (Throwable ignored) {}
 
                 logWriter = openLogWriter(project, fileName, modelNameForLog);
-                Consumer<String> baseViewer = cancelAwareViewer(openViewer(project, "Clone Workflow Output"));
+                Consumer<String> baseViewer = cancelAwareViewer(
+                        openViewer(project, "Clone Workflow Output", CloneRefactorWorkflow::cancelWorkflow, CloneRefactorWorkflow::isCancelled),
+                        CloneRefactorWorkflow::isCancelled
+                );
                 Consumer<String> viewer = teeViewer(baseViewer, logWriter);
-
-                _LAST_PROJECT_FOR_TESTS = project;
-                _LAST_TEST_VIEWER = viewer;
+                WorkflowJavaBuildSupport javaBuildSupport =
+                        new WorkflowJavaBuildSupport(project, viewer, _CURRENT_PROCESS, CloneRefactorWorkflow::isCancelled);
 
                 if (logWriter != null) {
                     viewer.accept("[LOG] writing to .anticopypaster/logs for file=" + fileName + ", model=" + modelNameForLog);
@@ -449,7 +320,7 @@ public final class CloneRefactorWorkflow {
                 LLM = LlmClientFactory.fromProjectSettings(project, viewer);
 
                 logStage(viewer, "START", fileName);
-                notify(project, "[Clone] Workflow started for: " + fileName, NotificationType.INFORMATION);
+                showNotification(project, "[Clone] Workflow started for: " + fileName, NotificationType.INFORMATION);
 
                 if (LLM instanceof NoopLlmClient) {
                     String llmConfigurationProblem = LlmConfigurationNotifier.getConfigurationProblem(project, true);
@@ -461,7 +332,7 @@ public final class CloneRefactorWorkflow {
                                 llmConfigurationProblem
                         );
                     } else {
-                        notify(project,
+                        showNotification(project,
                                 "[Clone] LLM is not configured (missing/invalid provider settings or API key). Configure provider/model/API key in Settings.",
                                 NotificationType.ERROR);
                     }
@@ -473,123 +344,134 @@ public final class CloneRefactorWorkflow {
                 compilation compileAgent = new compilation();
                 testing testAgent = new testing();
 
-                Function<String, String> llmCaller = prompt -> {
-                    try {
-                        String resp = LLM.complete(prompt);
-                        // lightweight debug: show if model is returning nothing
-                        String preview = resp == null ? "null" : resp.strip();
-                        if (preview.length() > 300) preview = preview.substring(0, 300) + "...";
-                        logStage(viewer, "LLM", "response preview: " + preview.replace("\n", "\\n"));
-                        return resp == null ? "" : resp;
-                    } catch (Exception e) {
-                        logStage(viewer, "LLM", "exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-                        notify(project, "[Clone] LLM call failed: " + e.getMessage(), NotificationType.ERROR);
-                        return "";
-                    }
-                };
+                Function<String, String> llmCaller = prompt -> callDetectionLlm(prompt, viewer, project);
+                Function<String, String> refactorLlmCaller = prompt -> callRefactorLlm(prompt, viewer, project);
+                LlmUsefulnessEvaluator.LabeledLlmCaller usefulnessLlmCaller =
+                        (label, prompt) -> callUsefulnessLlm(label, prompt, viewer, project);
 
                 /* ---------- Detection ---------- */
-                detection.DetectionResult det =
-                        detectionAgent.detect(
-                                project,
-                                fileName,
-                                originalSource,
-                                pastedSnippet,
-                                llmCaller
-                        );
-
+                detection.DetectedClone clone;
+                logWorkflowStageStart(viewer, "DETECTION STAGE");
                 try {
-                    if (det != null) {
-                        java.nio.file.Path nicadOut =
-                                java.nio.file.Path.of(project.getBasePath(),
-                                        ".anticopypaster",
-                                        "nicad",
-                                        fileName + ".nicad.xml");
+                    detection.DetectionResult det =
+                            detectionAgent.detect(
+                                    project,
+                                    fileName,
+                                    originalSource,
+                                    pastedSnippet,
+                                    llmCaller
+                            );
 
-                        java.nio.file.Files.createDirectories(nicadOut.getParent());
-
-                        detectionAgent.saveAsNiCadXml(det, vf.getPath(), nicadOut);
-
-//                        logStage(viewer, "DETECTION", "NiCad file saved: " + nicadOut);
-                    }
-                } catch (Exception e) {
-//                    logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
-                }
-
-
-                if (det == null || det.clones == null || det.clones.isEmpty()) {
-                    logStage(viewer, "DETECTION", "no clones from LLM; trying PSI fallback (same-file)");
-
-                    // PSI fallback only makes sense when we have a snippet to anchor the search.
-                    if (pastedSnippet != null && !pastedSnippet.isBlank()) {
-                        try {
-                            java.util.List<?> cands = PsiFallbackCloneDetector.detectInSameFile(project, vf, pastedSnippet);
-                            logStage(viewer, "DETECTION", "PSI fallback candidates=" + (cands == null ? 0 : cands.size()));
-
-                            if (cands != null && cands.size() >= 2) {
-                                // Convert PSI candidates into the same DTO shape as the LLM detector output.
-                                detection.DetectedClone psiClone = new detection.DetectedClone();
-                                psiClone.id = "psi_fallback_same_file";
-                                psiClone.ranges = new java.util.ArrayList<>();
-
-                                for (Object cc : cands) {
-                                    if (cc == null) continue;
-
-                                    int sLine = getIntField(cc, "startLine", "start", "fromLine", "start_line", "startline");
-                                    int eLine = getIntField(cc, "endLine", "end", "toLine", "end_line", "endline");
-                                    if (sLine <= 0) sLine = 1;
-                                    if (eLine <= 0) eLine = sLine;
-
-                                    detection.CloneRange range = new detection.CloneRange();
-                                    setIntField(range, sLine, "startLine", "start", "fromLine", "start_line", "startline");
-                                    setIntField(range, eLine, "endLine", "end", "toLine", "end_line", "endline");
-                                    psiClone.ranges.add(range);
-                                }
-
-                                det = new detection.DetectionResult();
-                                det.clones = new java.util.ArrayList<>();
-                                det.clones.add(psiClone);
-
-                                logStage(viewer, "DETECTION", "PSI fallback accepted: ranges=" + psiClone.ranges.size());
-                            }
-                        } catch (Throwable t) {
-                            logStage(viewer, "DETECTION", "PSI fallback failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
-                        }
-                    } else {
-                        logStage(viewer, "DETECTION", "PSI fallback skipped: pastedSnippet is empty");
-                    }
-
-                    // If still no clones after fallback, stop.
                     if (det == null || det.clones == null || det.clones.isEmpty()) {
-                        logStage(viewer, "DETECTION", "no clones (after PSI fallback)");
-                        notify(project, "[Clone] No clones detected in: " + fileName, NotificationType.INFORMATION);
+                        logStage(viewer, "DETECTION", "no clones from LLM; trying PSI fallback (same-file)");
+
+                        // PSI fallback only makes sense when we have a snippet to anchor the search.
+                        if (pastedSnippet != null && !pastedSnippet.isBlank()) {
+                            try {
+                                java.util.List<?> cands = PsiFallbackCloneDetector.detectInSameFile(project, vf, pastedSnippet);
+                                logStage(viewer, "DETECTION", "PSI fallback candidates=" + (cands == null ? 0 : cands.size()));
+
+                                if (cands != null && cands.size() >= 2) {
+                                    // Convert PSI candidates into the same DTO shape as the LLM detector output.
+                                    detection.DetectedClone psiClone = new detection.DetectedClone();
+                                    psiClone.id = "psi_fallback_same_file";
+                                    psiClone.ranges = new java.util.ArrayList<>();
+                                    psiClone.cloneCodes = new java.util.ArrayList<>();
+
+                                    for (Object cc : cands) {
+                                        if (cc == null) continue;
+
+                                        int sLine = getIntField(cc, "startLine", "start", "fromLine", "start_line", "startline");
+                                        int eLine = getIntField(cc, "endLine", "end", "toLine", "end_line", "endline");
+                                        if (sLine <= 0) sLine = 1;
+                                        if (eLine <= 0) eLine = sLine;
+
+                                        detection.CloneRange range = new detection.CloneRange();
+                                        setIntField(range, sLine, "startLine", "start", "fromLine", "start_line", "startline");
+                                        setIntField(range, eLine, "endLine", "end", "toLine", "end_line", "endline");
+                                        psiClone.ranges.add(range);
+                                        String cloneCode = getStringField(cc, "cloneCode", "code", "snippet", "text");
+                                        psiClone.cloneCodes.add(cloneCode == null ? "" : cloneCode);
+                                    }
+                                    if (psiClone.cloneCodes.size() > 0) psiClone.cloneCodeA = psiClone.cloneCodes.get(0);
+                                    if (psiClone.cloneCodes.size() > 1) psiClone.cloneCodeB = psiClone.cloneCodes.get(1);
+
+                                    det = new detection.DetectionResult();
+                                    det.status = "found_clones";
+                                    det.file = fileName;
+                                    det.clones = new java.util.ArrayList<>();
+                                    det.clones.add(psiClone);
+                                    logStage(viewer, "DETECTION", "PSI fallback accepted: ranges=" + psiClone.ranges.size());
+                                }
+                            } catch (Throwable t) {
+                                logStage(viewer, "DETECTION", "PSI fallback failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+                            }
+                        } else {
+                            logStage(viewer, "DETECTION", "PSI fallback skipped: pastedSnippet is empty");
+                        }
+
+                        // If still no clones after fallback, stop.
+                        if (det == null || det.clones == null || det.clones.isEmpty()) {
+                            logStage(viewer, "DETECTION", "no clones (after PSI fallback)");
+                            showNotification(project, "[Clone] No clones detected in: " + fileName, NotificationType.INFORMATION);
+                            return;
+                        }
+                    }
+
+                    det.clones = resolveDetectedCloneRangesWithPsi(project, vf, originalSource, det.clones, viewer);
+                    det.clones = mergeOverlappingDetectedClones(originalSource, det.clones, viewer);
+
+                    try {
+                        if (det != null) {
+                            java.nio.file.Path nicadOut =
+                                    java.nio.file.Path.of(project.getBasePath(),
+                                            ".anticopypaster",
+                                            "nicad",
+                                            fileName + ".nicad.xml");
+
+                            java.nio.file.Files.createDirectories(nicadOut.getParent());
+                            detectionAgent.saveAsNiCadXml(det, vf.getPath(), nicadOut);
+                        }
+                    } catch (Exception e) {
+                        logStage(viewer, "DETECTION", "Failed to save NiCad XML: " + e.getMessage());
+                    }
+
+                    int detectedCloneCount = 1;
+                    if (det.clones != null) {
+                        for (detection.DetectedClone c : det.clones) {
+                            if (c != null && c.ranges != null) {
+                                detectedCloneCount += c.ranges.size() - 1;
+                            }
+                        }
+                    }
+                    logStage(viewer, "DETECTION", "detected clone range count=" + detectedCloneCount);
+                    logStage(viewer, "DETECTION", "detected clone class count=" + det.clones.size());
+
+                    if (detectedCloneCount < minimumCloneCount) {
+                        logStage(viewer, "DETECTION", "stopped: detected clone range count " + detectedCloneCount +
+                                " is smaller than minimumCloneCount=" + minimumCloneCount + " for Clone_multiagent. This parameter is set by the user in the settings and can be adjusted based on your needs.");
+                        showNotification(project,
+                                "[Clone] Only " + detectedCloneCount + " clone range(s) detected in: " + fileName +
+                                        ". Need at least " + minimumCloneCount + " to continue.",
+                                NotificationType.INFORMATION);
                         return;
                     }
-                }
 
-                int detectedCloneCount = 1;
-                if (det.clones != null) {
-                    for (detection.DetectedClone c : det.clones) {
-                        if (c != null && c.ranges != null) {
-                            detectedCloneCount += c.ranges.size() - 1;
-                        }
+                    clone = chooseCloneToRefactor(project, vf, det.clones, viewer);
+                    if (clone == null) {
+                        showNotification(project, "[Clone] Clone selection cancelled for: " + fileName, NotificationType.WARNING);
+                        return;
                     }
-                }
-                logStage(viewer, "DETECTION", "detected clone range count=" + detectedCloneCount);
 
-                if (detectedCloneCount < minimumCloneCount) {
-                    logStage(viewer, "DETECTION", "stopped: detected clone range count " + detectedCloneCount +
-                            " is smaller than minimumCloneCount=" + minimumCloneCount + " for Clone_multiagent. This parameter is set by the user in the settings and can be adjusted based on your needs.");
-                    notify(project,
-                            "[Clone] Only " + detectedCloneCount + " clone range(s) detected in: " + fileName +
-                                    ". Need at least " + minimumCloneCount + " to continue.",
-                            NotificationType.INFORMATION);
-                    return;
+                    clone = chooseCloneRangesToRefactor(project, vf, originalSource, clone, viewer);
+                    if (clone == null) {
+                        showNotification(project, "[Clone] Clone range selection cancelled for: " + fileName, NotificationType.WARNING);
+                        return;
+                    }
+                    showNotification(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
+                } finally {
+                    logWorkflowStageEnd(viewer);
                 }
-
-                detection.DetectedClone clone = det.clones.get(0);
-                logStage(viewer, "DETECTION", "clone found: " + clone.id);
-                notify(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
 
                 final java.util.List<CloneMethodSnapshot> watchedCloneMethods = captureCloneMethodSnapshots(project, vf, clone, viewer);
                 final java.util.List<usefulnessChecker.TargetMethodHint> targetMethodHints =
@@ -603,7 +485,7 @@ public final class CloneRefactorWorkflow {
                             if (isCancelled()) return;
                             String changedMethod = findModifiedCloneMethod(project, vf, listenerSnapshots);
                             if (changedMethod != null) {
-                                CloneRefactorWorkflow.notify(project,
+                                showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethod,
                                         NotificationType.WARNING);
                                 cancelWorkflow(viewer);
@@ -611,7 +493,7 @@ public final class CloneRefactorWorkflow {
                         }
                     };
                     trackedDocument.addDocumentListener(cloneMethodChangeListener);
-                    logStage(viewer, "WATCH", "tracking " + watchedCloneMethods.size() + " cloned method(s) for user edits");
+//                    logStage(viewer, "WATCH", "tracking " + watchedCloneMethods.size() + " cloned method(s) for user edits");
                 } else {
                     logStage(viewer, "WATCH", "no cloned methods to track for user edits");
                 }
@@ -639,18 +521,22 @@ public final class CloneRefactorWorkflow {
 
                 String currentSource = originalSource;
                 String feedback = null;
+                boolean useFeedbackOnlyPrompt = false;
+                boolean baselineCompileChecked = false;
+                compilation.CompileResult baselineCompileResult = null;
+                String baselineCompileLog = null;
 
                 /* ---------- Retry Loop ---------- */
                 for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                         if (isCancelled()) {
-                            notify(project, "[Clone] Cancelled by user.", NotificationType.WARNING);
+                            showNotification(project, "[Clone] Cancelled by user.", NotificationType.WARNING);
                             return;
                         }
 
                     String changedMethodAtAttemptStart = findModifiedCloneMethod(project, vf, watchedCloneMethods);
                         if (changedMethodAtAttemptStart != null) {
                             logStage(viewer, "WATCH", "stopped before attempt because cloned method changed: " + changedMethodAtAttemptStart);
-                            notify(project,
+                            showNotification(project,
                                     "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodAtAttemptStart,
                                     NotificationType.WARNING);
                             cancelWorkflow(viewer);
@@ -660,142 +546,323 @@ public final class CloneRefactorWorkflow {
                         logStage(viewer, "ATTEMPT", attempt + "/" + maxAttempts);
 
                         /* ===== Refactor ===== */
-                        // Prepend refactor few-shot examples (RAG) to the feedback for the refactor agent.
-                        // This keeps the agent signature unchanged while still injecting few-shot context.
-                        String combinedFeedback = "";
-                        if (refactorRagGuidance != null && !refactorRagGuidance.isBlank()) {
-                            combinedFeedback += refactorRagGuidance.strip() + "\n\n";
-                        }
-                        if (feedback != null && !feedback.isBlank()) {
-                            combinedFeedback += "[PREVIOUS_FEEDBACK]\n" + feedback.strip() + "\n";
-                        }
-                        String feedbackForRefactor = combinedFeedback.isBlank() ? null : combinedFeedback;
-
-
-                        refactoring.RefactorResult rr =
-                                refactorAgent.refactorFile(
+                        String proposedSource;
+                        logWorkflowStageStart(viewer, "REFACTORING STAGE (attempt " + attempt + "/" + maxAttempts + ")");
+                        try {
+                            // Prepend refactor few-shot examples (RAG) to the feedback for the refactor agent.
+                            // This keeps the agent signature unchanged while still injecting few-shot context.
+                            refactoring.RefactorResult rr;
+                            refactoring.DetectedClone refactorClone = convertClone(clone);
+                            if (useFeedbackOnlyPrompt && feedback != null && !feedback.isBlank()) {
+                                logStage(viewer, "REFACTOR", "retry mode: feedback-only prompt");
+                                logFeedbackToRefactorAgent(viewer, feedback, true);
+                                rr = refactorAgent.refactorWithPrompt(
                                         fileName,
                                         currentSource,
-                                        convertClone(clone),
-                                        feedbackForRefactor,
-                                        llmCaller
+                                        refactorClone,
+                                        feedback,
+                                        refactorLlmCaller
                                 );
-
-
-                        if (rr == null || rr.newSource == null || rr.newSource.isBlank()) {
-                            String failReason;
-                            if (rr == null) {
-                                failReason = "Refactor agent returned null result.";
-                            } else if (rr.newSource == null) {
-                                failReason = "Refactor agent returned null newSource.";
                             } else {
-                                failReason = "Refactor agent returned empty newSource.";
-                            }
-
-                            feedback = "Refactor produced empty or invalid output. " + failReason;
-                            logStage(viewer, "REFACTOR", "failed: " + failReason);
-
-                            // Try to give a helpful hint for the most common cause: LLM returned empty due to misconfiguration.
-                            String llmHint = "";
-                            try {
-                                if (LLM instanceof NoopLlmClient) {
-                                    llmHint = "\nHint: LLM is not configured (check provider/model/API key in Settings).";
+                                String combinedFeedback = "";
+                                if (refactorRagGuidance != null && !refactorRagGuidance.isBlank()) {
+                                    combinedFeedback += refactorRagGuidance.strip() + "\n\n";
                                 }
-                            } catch (Throwable ignored) {}
+                                if (feedback != null && !feedback.isBlank()) {
+                                    combinedFeedback += "[PREVIOUS_FEEDBACK]\n" + feedback.strip() + "\n";
+                                }
+                                String feedbackForRefactor = combinedFeedback.isBlank() ? null : combinedFeedback;
+                                logFeedbackToRefactorAgent(viewer, feedback, false);
 
-                            notify(project,
-                                    "[Clone] Refactor failed (attempt " + attempt + "/" + maxAttempts + ") for: " + fileName +
-                                            "\nReason: " + failReason +
-                                            llmHint +
-                                            "\nCheck the workflow console/log for details.",
-                                    NotificationType.WARNING);
-                            continue;
-                        }
-
-                        // Do NOT apply immediately. We will compile/test the proposed source in an isolated temp output first.
-                        String proposedSource = rr.newSource;
-                        logStage(viewer, "REFACTOR", "proposal generated (not applied yet)");
-
-                        // ===== Show proposed refactored code (for debugging / transparency) =====
-                        if (viewer != null) {
-                            String src = proposedSource == null ? "" : proposedSource;
-//                            int maxChars = REFACTOR_PROPOSAL_PREVIEW_CHARS; // keep console usable
-//                            String shown = src.length() > maxChars ? (src.substring(0, maxChars) + "\n...<truncated>...") : src;
-                            viewer.accept("[REFACTOR_CODE] proposedSource:" + src);
-                        }
-
-                        // Also persist the full proposed source to a file under the project, so the user can open it.
-                        try {
-                            String basePath = project == null ? null : project.getBasePath();
-                            if (basePath != null && !basePath.isBlank()) {
-                                File outDir = new File(basePath, ".anticopypaster" + File.separator + "proposals");
-                                if (!outDir.exists()) outDir.mkdirs();
-                                File outFile = new File(outDir, fileName + ".attempt" + attempt + ".proposed.java");
-                                Files.writeString(outFile.toPath(), proposedSource, StandardCharsets.UTF_8);
-                                logStage(viewer, "REFACTOR_CODE", "full proposed source saved to: " + outFile.getAbsolutePath());
+                                rr = refactorAgent.refactorFile(
+                                        fileName,
+                                        currentSource,
+                                        refactorClone,
+                                        feedbackForRefactor,
+                                        refactorLlmCaller
+                                );
                             }
-                        } catch (Throwable t) {
-                            logStage(viewer, "REFACTOR_CODE", "failed to save proposed source: " + t.getMessage());
+
+
+                            if (rr == null || rr.newSource == null || rr.newSource.isBlank()) {
+                                String failReason;
+                                if (rr == null) {
+                                    failReason = "Refactor agent returned null result.";
+                                } else if (rr.message != null && !rr.message.isBlank()) {
+                                    failReason = rr.message;
+                                } else if (rr.newSource == null) {
+                                    failReason = "Refactor agent returned null newSource.";
+                                } else {
+                                    failReason = "Refactor agent returned empty newSource.";
+                                }
+
+                                feedback = "Refactor produced empty or invalid output. " + failReason;
+                                useFeedbackOnlyPrompt = false;
+                                logStage(viewer, "REFACTOR", "failed: " + failReason);
+
+                                // Try to give a helpful hint for the most common cause: LLM returned empty due to misconfiguration.
+                                String llmHint = "";
+                                try {
+                                    if (LLM instanceof NoopLlmClient) {
+                                        llmHint = "\nGuide: " + buildLlmSetupGuidance(project);
+                                    }
+                                } catch (Throwable ignored) {}
+
+                                showNotification(project,
+                                        "[Clone] Refactor failed (attempt " + attempt + "/" + maxAttempts + ") for: " + fileName +
+                                                "\nReason: " + failReason +
+                                                llmHint +
+                                                "\nCheck the workflow console/log for details.",
+                                        NotificationType.WARNING);
+                                continue;
+                            }
+
+                            // Do NOT apply immediately. We will compile/test the proposed source in an isolated temp output first.
+                            proposedSource = rr.newSource;
+                            logStage(viewer, "REFACTOR", "proposal generated (not applied yet)");
+                            if (rr.selectedPanelistId != null && !rr.selectedPanelistId.isBlank()) {
+                                String summary = rr.curatorSummary == null ? "" : rr.curatorSummary;
+                                logStage(
+                                        viewer,
+                                        "REFACTOR",
+                                        "curator selected " + rr.selectedPanelistId +
+                                                (summary.isBlank() ? "" : (", summary=" + summary))
+                                );
+                            }
+
+                            // ===== Show proposed refactored code (for debugging / transparency) =====
+                            if (viewer != null) {
+                                String src = proposedSource == null ? "" : proposedSource;
+//                                int maxChars = REFACTOR_PROPOSAL_PREVIEW_CHARS; // keep console usable
+//                                String shown = src.length() > maxChars ? (src.substring(0, maxChars) + "\n...<truncated>...") : src;
+                                viewer.accept("[REFACTOR_CODE] proposedSource:" + src);
+                            }
+
+                            // Also persist the full proposed source to a file under the project, so the user can open it.
+                            try {
+                                String basePath = project == null ? null : project.getBasePath();
+                                if (basePath != null && !basePath.isBlank()) {
+                                    File outDir = new File(basePath, ".anticopypaster" + File.separator + "proposals");
+                                    if (!outDir.exists()) outDir.mkdirs();
+                                    File outFile = new File(outDir, fileName + ".attempt" + attempt + ".proposed.java");
+                                    Files.writeString(outFile.toPath(), proposedSource, StandardCharsets.UTF_8);
+                                    logStage(viewer, "REFACTOR_CODE", "full proposed source saved to: " + outFile.getAbsolutePath());
+                                }
+                            } catch (Throwable t) {
+                                logStage(viewer, "REFACTOR_CODE", "failed to save proposed source: " + t.getMessage());
+                            }
+                        } finally {
+                            logWorkflowStageEnd(viewer);
                         }
 
                         // ===== Usefulness Check (run BEFORE compilation/testing) =====
-                        // If the refactoring is not useful, we treat the attempt as failed and retry.
                         boolean isUseful = true;
+                        logWorkflowStageStart(viewer, "USEFULNESS CHECKER STAGE (attempt " + attempt + "/" + maxAttempts + ")");
+                        try {
+                            boolean runPsiUsefulness = true;
+                            boolean llmCuratorRejected = false;
+                            LlmUsefulnessEvaluator.EvaluationResult llmUsefulnessResult = null;
+                            String llmUsefulnessFeedbackSection = "";
 
-                        if (wholeMethod != null) {
-                            usefulnessChecker.UsefulnessResult urBeforeCompile =
-                                    usefulnessChecker.analyze(
+                            try {
+                                LlmUsefulnessEvaluator.UsefulnessInput llmUsefulnessInput =
+                                        buildLlmUsefulnessInput(
+                                                project,
+                                                fileName,
+                                                clone,
+                                                currentSource,
+                                                proposedSource,
+                                                watchedCloneMethods,
+                                                wholeMethod != null
+                                        );
+                                llmUsefulnessResult = LlmUsefulnessEvaluator.evaluate(
+                                        llmUsefulnessInput,
+                                        usefulnessLlmCaller
+                                );
+                                llmUsefulnessFeedbackSection = buildLlmUsefulnessFeedbackSection(llmUsefulnessResult);
+
+                                if (llmUsefulnessResult != null
+                                        && llmUsefulnessResult.available
+                                        && llmUsefulnessResult.curatorResult != null) {
+                                    if (llmUsefulnessResult.useful) {
+                                        runPsiUsefulness = false;
+                                        String summary = llmUsefulnessResult.curatorResult.summary;
+                                        logStage(
+                                                viewer,
+                                                "USEFUL",
+                                                "LLM curator accepted proposal" +
+                                                        (summary == null || summary.isBlank() ? "" : (": " + summary))
+                                        );
+                                    } else {
+                                        llmCuratorRejected = true;
+                                        logStage(
+                                                viewer,
+                                                "USEFUL",
+                                                "LLM curator rejected proposal: reasons=" +
+                                                        llmUsefulnessResult.curatorResult.reasons +
+                                                        (llmUsefulnessResult.curatorResult.summary == null
+                                                                || llmUsefulnessResult.curatorResult.summary.isBlank()
+                                                                ? ""
+                                                                : (", summary=" + llmUsefulnessResult.curatorResult.summary))
+                                        );
+                                    }
+                                } else {
+                                    String notes = llmUsefulnessResult == null ? "" : llmUsefulnessResult.notes;
+                                    logStage(
+                                            viewer,
+                                            "USEFUL",
+                                            "LLM usefulness unavailable; falling back to PSI check" +
+                                                    (notes == null || notes.isBlank() ? "" : (" (" + notes + ")"))
+                                    );
+                                }
+                            } catch (Throwable t) {
+                                logStage(viewer, "USEFUL", "LLM usefulness evaluation failed: " + t.getMessage() + " (falling back to PSI check)");
+                            }
+
+                            if (runPsiUsefulness && wholeMethod != null) {
+                                usefulnessChecker.UsefulnessResult urBeforeCompile =
+                                        usefulnessChecker.analyze(
+                                                project,
+                                                fileName,
+                                                currentSource,
+                                                proposedSource,
+                                                new usefulnessChecker.UsefulnessConfig(),
+                                                targetMethodHints
+                                        );
+
+                                if (urBeforeCompile == null) {
+                                    isUseful = false;
+                                    String reasonsText = "[PSI_USEFULNESS_UNAVAILABLE]";
+                                    String reasonDefinition = "The PSI usefulness checker could not validate the proposed source. "
+                                            + "This usually means the proposal is still syntactically invalid or structurally inconsistent, "
+                                            + "so it cannot proceed to compilation.";
+                                    String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
                                             project,
                                             fileName,
                                             currentSource,
                                             proposedSource,
-                                            new usefulnessChecker.UsefulnessConfig(),
-                                            targetMethodHints.isEmpty() ? null : targetMethodHints
+                                            watchedCloneMethods
                                     );
-
-                            if (urBeforeCompile != null && !urBeforeCompile.isUseful) {
-                                boolean overridden = false;
-                                try {
-                                    if (urBeforeCompile.reasons != null &&
-                                            urBeforeCompile.reasons.contains(usefulnessChecker.Reason.EXTRACT_METHOD_NOT_FOUND)) {
-                                        String[] wrappers = parseWrapperNamesFromUsefulnessDebug(extractUsefulnessDebugText(urBeforeCompile));
-                                        if (wrappers != null && wrappers.length == 2
-                                                && looksLikeValidExtractMethodDelegation(currentSource, proposedSource, wrappers[0], wrappers[1])) {
-                                            overridden = true;
-                                            isUseful = true;
-                                            logStage(viewer, "USEFUL", "override: both wrappers delegate to the same extracted helper (EXTRACT_METHOD_NOT_FOUND)");
-                                        }
+                                    String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
+                                            ? ""
+                                            : ("\n\n" + llmUsefulnessFeedbackSection);
+                                    String revisionInstruction = mergeRevisionInstructions(
+                                            llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
+                                                    ? llmUsefulnessResult.curatorResult.feedback
+                                                    : "",
+                                            "Revise the refactoring so the PSI usefulness checker can validate it. "
+                                                    + "Keep the target clone methods, preserve valid Java syntax, and make the duplicated code share one extracted implementation."
+                                    );
+                                    if (revisionInstruction == null || revisionInstruction.isBlank()) {
+                                        revisionInstruction = "Revise the refactoring so the PSI usefulness checker can validate it.";
                                     }
-                                } catch (Throwable ignored) {
-                                    // fall through
-                                }
 
-                            if (!overridden) {
-                                isUseful = false;
-                                String msg = "Not useful refactoring proposal: reasons=" + urBeforeCompile.reasons;
-                                logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
-                                notify(project,
-                                        "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
-                                                "for: " + fileName + "\n \n" +
-                                                "Reason:\n" +
-                                                urBeforeCompile.reasons + "\n" +
-                                                definitionForReason(urBeforeCompile.reasons),
-                                        NotificationType.WARNING);
+                                    logStage(
+                                            viewer,
+                                            "USEFUL",
+                                            llmCuratorRejected
+                                                    ? "LLM curator rejected proposal and PSI usefulness was unavailable"
+                                                    : "PSI usefulness check could not validate the proposal"
+                                    );
+                                    showNotification(project,
+                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+                                                    "for: " + fileName + "\n \n" +
+                                                    "Reason:\n" +
+                                                    reasonsText + "\n" +
+                                                    reasonDefinition,
+                                            NotificationType.WARNING);
 
-                                String feedbackPrompt = usefulnessChecker.buildFeedbackPrompt(urBeforeCompile.reasons);
-                                String reasonsText = String.valueOf(urBeforeCompile.reasons);
-                                String reasonDefinition = definitionForReason(urBeforeCompile.reasons);
-                                String notesText = (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank())
-                                        ? ""
-                                        : ("\n\n[USEFULNESS_NOTES]\n" + urBeforeCompile.notes);
-
-                                feedback = """
-Your previous refactoring attempt was rejected by the usefulness checker.
+                                    feedback = """
+Your previous refactoring attempt was rejected by the usefulness checks.
 
 [NOT_USEFUL_REFACTORED_CODE]
 ```java
 %s
-```
+```%s
+
+[REASONS]
+%s
+
+[REASON_DEFINITION]
+%s
+
+[REVISION_INSTRUCTION]
+%s
+""".formatted(
+                                            focusedProposedCode,
+                                            llmFeedbackText,
+                                            reasonsText,
+                                            reasonDefinition,
+                                            revisionInstruction
+                                    );
+                                    useFeedbackOnlyPrompt = true;
+                                } else if (!urBeforeCompile.isUseful) {
+                                    boolean overridden = false;
+                                    try {
+                                        if (containsReasonName(urBeforeCompile.reasons, "EXTRACT_METHOD_NOT_FOUND")) {
+                                            String[] wrappers = parseWrapperNamesFromUsefulnessDebug(extractUsefulnessDebugText(urBeforeCompile));
+                                            if (wrappers != null && wrappers.length == 2
+                                                    && looksLikeValidExtractMethodDelegation(currentSource, proposedSource, wrappers[0], wrappers[1])) {
+                                                overridden = true;
+                                                isUseful = true;
+                                                logStage(viewer, "USEFUL", "override: both wrappers delegate to the same extracted helper");
+                                            }
+                                        }
+                                    } catch (Throwable ignored) {
+                                        // fall through
+                                    }
+
+                                    if (!overridden) {
+                                        isUseful = false;
+                                        String msg = "Not useful refactoring proposal: reasons=" + urBeforeCompile.reasons;
+                                        logStage(viewer, "USEFUL", "PSI rejected proposal: " + msg);
+                                        showNotification(project,
+                                                "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+                                                        "for: " + fileName + "\n \n" +
+                                                        "Reason:\n" +
+                                                        urBeforeCompile.reasons + "\n" +
+                                                        definitionForReason(urBeforeCompile.reasons),
+                                                NotificationType.WARNING);
+
+                                        String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+                                                project,
+                                                fileName,
+                                                currentSource,
+                                                proposedSource,
+                                                watchedCloneMethods
+                                        );
+                                        String feedbackPrompt = buildUsefulnessFeedbackPrompt(
+                                                project,
+                                                fileName,
+                                                proposedSource,
+                                                urBeforeCompile.reasons,
+                                                watchedCloneMethods
+                                        );
+                                        String reasonsText = String.valueOf(urBeforeCompile.reasons);
+                                        String reasonDefinition = definitionForReason(urBeforeCompile.reasons);
+                                        String notesText = (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank())
+                                                ? ""
+                                                : ("\n\n[USEFULNESS_NOTES]\n" + urBeforeCompile.notes);
+                                        String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
+                                                ? ""
+                                                : ("\n\n" + llmUsefulnessFeedbackSection);
+                                        String revisionInstruction = mergeRevisionInstructions(
+                                                llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
+                                                        ? llmUsefulnessResult.curatorResult.feedback
+                                                        : "",
+                                                feedbackPrompt == null ? "" : feedbackPrompt
+                                        );
+                                        if (revisionInstruction == null || revisionInstruction.isBlank()) {
+                                            revisionInstruction = "Restore all target clone methods, keep the extracted helper, and make every original target clone call it.";
+                                        }
+
+                                        feedback = """
+Your previous refactoring attempt was rejected by the usefulness checks.
+
+[NOT_USEFUL_REFACTORED_CODE]
+```java
+%s
+```%s
 
 [REASONS]
 %s
@@ -806,21 +873,24 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 [REVISION_INSTRUCTION]
 %s
 """.formatted(
-                                        proposedSource == null ? "" : proposedSource,
-                                        reasonsText,
-                                        reasonDefinition == null ? "" : reasonDefinition,
-                                        notesText,
-                                        feedbackPrompt == null ? "" : feedbackPrompt
-                                );
-                            }
-                            } else if (urBeforeCompile != null) {
-                                logStage(viewer, "USEFUL", "ok (before compile): score=" + urBeforeCompile.score +
-                                        (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes)));
-                            }
-
-                        } else {
-                            // Fragment path: use the fragment-aware analyzer.
-                            try {
+                                                    focusedProposedCode,
+                                                    llmFeedbackText,
+                                                    reasonsText,
+                                                    reasonDefinition == null ? "" : reasonDefinition,
+                                                    notesText,
+                                                    revisionInstruction
+                                            );
+                                        useFeedbackOnlyPrompt = true;
+                                    }
+                                } else {
+                                    if (llmCuratorRejected) {
+                                        logStage(viewer, "USEFUL", "override: PSI usefulness accepted proposal after LLM curator rejection");
+                                    } else {
+                                        logStage(viewer, "USEFUL", "ok (before compile): score=" + urBeforeCompile.score +
+                                                (urBeforeCompile.notes == null || urBeforeCompile.notes.isBlank() ? "" : (", notes=" + urBeforeCompile.notes)));
+                                    }
+                                }
+                            } else if (runPsiUsefulness) {
                                 detection.CloneRange rA = (clone.ranges != null && clone.ranges.size() > 0) ? clone.ranges.get(0) : null;
                                 detection.CloneRange rB = (clone.ranges != null && clone.ranges.size() > 1) ? clone.ranges.get(1) : null;
 
@@ -832,52 +902,81 @@ Your previous refactoring attempt was rejected by the usefulness checker.
                                         : new FragmentUsefulnessAnalyzer.LineRange(rB.startLine, rB.endLine);
 
                                 String[] ab = extractCloneCodeABFromReason(clone.reason);
-                                String codeA = ab[0];
-                                String codeB = ab[1];
+                                java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, currentSource);
+                                String codeA = cloneCodes.size() > 0 ? firstNonBlank(cloneCodes.get(0), ab[0]) : ab[0];
+                                String codeB = cloneCodes.size() > 1 ? firstNonBlank(cloneCodes.get(1), ab[1]) : ab[1];
 
                                 // Fallbacks: if detection didn't embed code blocks, use the pasted snippet as A.
                                 if (codeA == null || codeA.isBlank()) codeA = pastedSnippet == null ? "" : pastedSnippet;
+                                if ((codeB == null || codeB.isBlank()) && cloneCodes.size() > 1) codeB = cloneCodes.get(1);
 
-                                FragmentUsefulnessAnalyzer.UsefulnessResult frBeforeCompile =
-                                        FragmentUsefulnessAnalyzer.analyze(
+                                try {
+                                    FragmentUsefulnessAnalyzer.UsefulnessResult frBeforeCompile =
+                                            FragmentUsefulnessAnalyzer.analyze(
+                                                    project,
+                                                    fileName,
+                                                    currentSource,
+                                                    proposedSource,
+                                                    lrA,
+                                                    lrB,
+                                                    codeA,
+                                                    codeB,
+                                                    new FragmentUsefulnessAnalyzer.UsefulnessConfig()
+                                            );
+
+                                    if (frBeforeCompile == null || !frBeforeCompile.isUseful) {
+                                        isUseful = false;
+                                        String strategyText = frBeforeCompile == null
+                                                ? "UNKNOWN"
+                                                : String.valueOf(frBeforeCompile.strategy);
+                                        String reasonsText = frBeforeCompile == null
+                                                ? "[ANALYZER_FALLBACK]"
+                                                : String.valueOf(frBeforeCompile.reasons);
+                                        String notesText = (frBeforeCompile == null || frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank())
+                                                ? ""
+                                                : ("\n\n[USEFULNESS_NOTES]\n" + frBeforeCompile.notes);
+                                        String reasonDefinition = frBeforeCompile == null
+                                                ? "The fragment usefulness analyzer could not confidently validate this refactoring, "
+                                                + "so the proposal was rejected conservatively."
+                                                : definitionForReason(frBeforeCompile.strategy);
+                                        String msg = "Not useful refactoring proposal: strategy=" + strategyText +
+                                                ", reasons=" + reasonsText;
+                                        logStage(viewer, "USEFUL", "PSI rejected fragment proposal: " + msg);
+                                        showNotification(project,
+                                                "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+                                                        "for: " + fileName + "\n \n" +
+                                                        "Reason:\n" +
+                                                        strategyText + "\n" +
+                                                        reasonDefinition,
+                                                NotificationType.WARNING);
+
+                                        String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
                                                 project,
                                                 fileName,
                                                 currentSource,
                                                 proposedSource,
-                                                lrA,
-                                                lrB,
-                                                codeA,
-                                                codeB,
-                                                new FragmentUsefulnessAnalyzer.UsefulnessConfig()
+                                                watchedCloneMethods
                                         );
-
-                                if (frBeforeCompile != null && !frBeforeCompile.isUseful) {
-                                    isUseful = false;
-                                    String msg = "Not useful refactoring proposal: strategy=" + frBeforeCompile.strategy +
-                                             ", reasons=" + frBeforeCompile.reasons;
-                                    logStage(viewer, "USEFUL", "Not useful refactoring proposal" + msg);
-                                    notify(project,
-                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
-                                                    "for: " + fileName + "\n \n" +
-                                                    "Reason:\n" +
-                                                    frBeforeCompile.strategy + "\n" +
-                                                    definitionForReason(frBeforeCompile.strategy),
-                                            NotificationType.WARNING);
-
-                                    String reasonsText = String.valueOf(frBeforeCompile.reasons);
-                                    String strategyText = String.valueOf(frBeforeCompile.strategy);
-                                    String reasonDefinition = definitionForReason(frBeforeCompile.strategy);
-                                    String notesText = (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank())
-                                            ? ""
-                                            : ("\n\n[USEFULNESS_NOTES]\n" + frBeforeCompile.notes);
-
-                                    feedback = """
-Your previous refactoring attempt was rejected by the usefulness checker.
+                                        String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
+                                                ? ""
+                                                : ("\n\n" + llmUsefulnessFeedbackSection);
+                                        String fragmentRevisionInstruction = mergeRevisionInstructions(
+                                                llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
+                                                        ? llmUsefulnessResult.curatorResult.feedback
+                                                        : "",
+                                                "Your refactoring is not useful. You must actually remove or significantly reduce the duplicated fragment in BOTH places. "
+                                                        + "Avoid incomplete refactoring, deleting one side, or delegating only one side."
+                                        );
+                                        if (fragmentRevisionInstruction == null || fragmentRevisionInstruction.isBlank()) {
+                                            fragmentRevisionInstruction = "Your refactoring is not useful. You must actually remove or significantly reduce the duplicated fragment in BOTH places.";
+                                        }
+                                        feedback = """
+Your previous refactoring attempt was rejected by the usefulness checks.
 
 [NOT_USEFUL_REFACTORED_CODE]
 ```java
 %s
-```
+```%s
 
 [REASONS]
 %s
@@ -889,181 +988,303 @@ Your previous refactoring attempt was rejected by the usefulness checker.
 %s%s
 
 [REVISION_INSTRUCTION]
-Your refactoring is not useful. You must actually remove or significantly reduce the duplicated fragment in BOTH places. Avoid incomplete refactoring, deleting one side, or delegating only one side.
+%s
 """.formatted(
-                                            proposedSource == null ? "" : proposedSource,
-                                            reasonsText,
-                                            strategyText,
-                                            reasonDefinition == null ? "" : reasonDefinition,
-                                            notesText
-                                    );
-                                } else if (frBeforeCompile != null) {
-                                    logStage(viewer, "USEFUL", "ok(FRAGMENT, before compile): strategy=" + frBeforeCompile.strategy + ", score=" + frBeforeCompile.score +
-                                            (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes)));
-                                }
+                                                    focusedProposedCode,
+                                                    llmFeedbackText,
+                                                    reasonsText,
+                                                    strategyText,
+                                                    reasonDefinition == null ? "" : reasonDefinition,
+                                                    notesText,
+                                                    fragmentRevisionInstruction
+                                            );
+                                        useFeedbackOnlyPrompt = true;
+                                    } else {
+                                        if (llmCuratorRejected) {
+                                            logStage(viewer, "USEFUL", "override: PSI fragment usefulness accepted proposal after LLM curator rejection");
+                                        } else {
+                                            logStage(viewer, "USEFUL", "ok(FRAGMENT, before compile): strategy=" + frBeforeCompile.strategy + ", score=" + frBeforeCompile.score +
+                                                    (frBeforeCompile.notes == null || frBeforeCompile.notes.isBlank() ? "" : (", notes=" + frBeforeCompile.notes)));
+                                        }
+                                    }
 
-                                if (viewer != null) {
-                                    logStage(viewer, "USEFUL", "fragment ranges(before compile): A=" + lrA + ", B=" + lrB +
-                                            ", codeA.preview=" + previewOneLine(codeA, 120) +
-                                            ", codeB.preview=" + previewOneLine(codeB, 120));
+                                    if (viewer != null) {
+                                        logStage(viewer, "USEFUL", "fragment ranges(before compile): A=" + lrA + ", B=" + lrB +
+                                                ", codeA.preview=" + previewOneLine(codeA, 120) +
+                                                ", codeB.preview=" + previewOneLine(codeB, 120));
+                                    }
+                                } catch (Throwable t) {
+                                    isUseful = false;
+                                    String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+                                            project,
+                                            fileName,
+                                            currentSource,
+                                            proposedSource,
+                                            watchedCloneMethods
+                                    );
+                                    String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
+                                            ? ""
+                                            : ("\n\n" + llmUsefulnessFeedbackSection);
+                                    String notesText = "\n\n[USEFULNESS_NOTES]\n" + t.getMessage();
+                                    String revisionInstruction = mergeRevisionInstructions(
+                                            llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
+                                                    ? llmUsefulnessResult.curatorResult.feedback
+                                                    : "",
+                                            "Revise the refactoring so the fragment usefulness analyzer can validate it. "
+                                                    + "Keep both clone sites, preserve valid Java syntax, and extract the shared fragment cleanly."
+                                    );
+                                    if (revisionInstruction == null || revisionInstruction.isBlank()) {
+                                        revisionInstruction = "Revise the refactoring so the fragment usefulness analyzer can validate it.";
+                                    }
+
+                                    logStage(viewer, "USEFUL", "fragment usefulness check failed (before compile): " + t.getMessage());
+                                    showNotification(project,
+                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
+                                                    "for: " + fileName + "\n \n" +
+                                                    "Reason:\n" +
+                                                    "FRAGMENT_ANALYZER_ERROR\n" +
+                                                    "The fragment usefulness analyzer failed before compilation.",
+                                            NotificationType.WARNING);
+
+                                    feedback = """
+Your previous refactoring attempt was rejected by the usefulness checks.
+
+[NOT_USEFUL_REFACTORED_CODE]
+```java
+%s
+```%s
+
+[REASONS]
+[FRAGMENT_USEFULNESS_ANALYZER_ERROR]
+
+[REASON_DEFINITION]
+The fragment usefulness analyzer failed before compilation.%s
+
+[REVISION_INSTRUCTION]
+%s
+""".formatted(
+                                            focusedProposedCode,
+                                            llmFeedbackText,
+                                            notesText,
+                                            revisionInstruction
+                                    );
+                                    useFeedbackOnlyPrompt = true;
                                 }
-                            } catch (Throwable t) {
-                                // If usefulness check fails, do NOT block the attempt.
-                                logStage(viewer, "USEFUL", "fragment usefulness check failed (before compile): " + t.getMessage() + " (proceeding)");
                             }
+                        } finally {
+                            logWorkflowStageEnd(viewer);
                         }
 
                         if (!isUseful) {
                             // Do not compile/test/apply; retry with feedback.
-                            _LAST_PATCHED_CLASSES_DIR = null;
+                            javaBuildSupport.clearPatchedClassesDir();
                             continue;
                         }
+                        useFeedbackOnlyPrompt = false;
                         // ===== End usefulness check =====
 
                         String changedMethodBeforeCompile = findModifiedCloneMethod(project, vf, watchedCloneMethods);
                         if (changedMethodBeforeCompile != null) {
                             logStage(viewer, "WATCH", "stopped before compile because cloned method changed: " + changedMethodBeforeCompile);
-                            notify(project,
+                            showNotification(project,
                                     "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeCompile,
                                     NotificationType.WARNING);
                             cancelWorkflow(viewer);
                             return;
                         }
-                        // Compile the proposed source to a temp classes dir, without touching the original file.
-                        String ideCp = buildProjectClasspathFromIde(project);
-                        String ideSourcePath = buildProjectSourcepathFromIde(project);
-                        ideCp = buildCompileClasspathWithSourceRoots(project, ideCp);
-                        if (viewer != null) {
-                            String cpPreview = ideCp == null ? "" : ideCp;
-                            if (cpPreview.length() > 4000) {
-                                cpPreview = cpPreview.substring(0, 4000) + "\n...<truncated>...";
-                            }
-                            viewer.accept("[COMPILE] ide classpath:\n" + cpPreview);
-
-                            String spPreview = ideSourcePath == null ? "" : ideSourcePath;
-                            if (spPreview.length() > 4000) {
-                                spPreview = spPreview.substring(0, 4000) + "\n...<truncated>...";
-                            }
-                            viewer.accept("[COMPILE] ide sourcepath:\n" + spPreview);
-                        }
-                        File patchedOutDir;
-                        String compileLog;
+                        String ideCp;
+                        logWorkflowStageStart(viewer, "COMPILATION STAGE (attempt " + attempt + "/" + maxAttempts + ")");
                         try {
-                            throwIfCancelled(viewer);
-                            patchedOutDir = compileProposedSourceToTemp(project, ioFile, fileName, proposedSource, ideCp);
-                            _LAST_PATCHED_CLASSES_DIR = patchedOutDir == null ? null : patchedOutDir.getAbsolutePath();
-                            compileLog = "BUILD SUCCESS\n";
-                        } catch (Exception ce) {
-                            _LAST_PATCHED_CLASSES_DIR = null;
-                            compileLog = "BUILD FAILED\n" + (ce.getMessage() == null ? "" : ce.getMessage());
+                            // Compile the proposed source to a temp classes dir, without touching the original file.
+                            ideCp = javaBuildSupport.buildProjectClasspathFromIde();
+                            String ideSourcePath = javaBuildSupport.buildProjectSourcepathFromIde();
+                            ideCp = javaBuildSupport.buildCompileClasspathWithSourceRoots(ideCp);
+                            if (viewer != null) {
+                                String cpPreview = ideCp == null ? "" : ideCp;
+                                if (cpPreview.length() > 4000) {
+                                    cpPreview = cpPreview.substring(0, 4000) + "\n...<truncated>...";
+                                }
+                                viewer.accept("[COMPILE] ide classpath:\n" + cpPreview);
+
+                                String spPreview = ideSourcePath == null ? "" : ideSourcePath;
+                                if (spPreview.length() > 4000) {
+                                    spPreview = spPreview.substring(0, 4000) + "\n...<truncated>...";
+                                }
+                                viewer.accept("[COMPILE] ide sourcepath:\n" + spPreview);
+                            }
+                            WorkflowJavaBuildSupport.CompileAttempt proposalCompileAttempt = null;
+                            String compileLog;
+                            try {
+                                throwIfCancelled(CloneRefactorWorkflow::isCancelled);
+                                proposalCompileAttempt = javaBuildSupport.compileProposedSourceToTempAttempt(ioFile, fileName, proposedSource, ideCp);
+                                compileLog = proposalCompileAttempt.toCompileLog();
+                                if (proposalCompileAttempt.success) {
+                                    javaBuildSupport.setPatchedClassesDir(proposalCompileAttempt.outputDir);
+                                } else {
+                                    javaBuildSupport.clearPatchedClassesDir();
+                                }
+                            } catch (Exception ce) {
+                                javaBuildSupport.clearPatchedClassesDir();
+                                compileLog = "BUILD FAILED\n" + (ce.getMessage() == null ? "" : ce.getMessage());
+                            }
+
+                            if (viewer != null) {
+                                String cl = compileLog == null ? "null" : compileLog;
+                                if (cl.length() > 4000) cl = cl.substring(0, 4000) + "\n...<truncated>...";
+                                viewer.accept("[COMPILE] raw output:\n" + cl);
+                            }
+
+                            compilation.CompileResult cr = compileAgent.analyze(fileName, compileLog);
+
+                            if (cr == null || !"compile_ok".equals(cr.status)) {
+                                if (!baselineCompileChecked) {
+                                    baselineCompileChecked = true;
+                                    try {
+                                        throwIfCancelled(CloneRefactorWorkflow::isCancelled);
+                                        WorkflowJavaBuildSupport.CompileAttempt baselineAttempt =
+                                                javaBuildSupport.compileProposedSourceToTempAttempt(ioFile, fileName, currentSource, ideCp);
+                                        baselineCompileLog = baselineAttempt.toCompileLog();
+                                    } catch (Exception bce) {
+                                        baselineCompileLog = "BUILD FAILED\n" + (bce.getMessage() == null ? "" : bce.getMessage());
+                                    }
+                                    baselineCompileResult = compileAgent.analyze(fileName, baselineCompileLog);
+                                    logStage(viewer, "COMPILE", "baseline check: " +
+                                            (baselineCompileResult == null ? "unknown" : baselineCompileResult.summary));
+                                }
+
+                                compilation.CompileResult adjustedCompileResult =
+                                        ignoreBaselineCompileErrors(fileName, cr, baselineCompileResult);
+                                if (adjustedCompileResult != null
+                                        && "compile_ok".equals(adjustedCompileResult.status)
+                                        && proposalCompileAttempt != null
+                                        && proposalCompileAttempt.outputDir != null) {
+                                    javaBuildSupport.setPatchedClassesDir(proposalCompileAttempt.outputDir);
+                                    cr = adjustedCompileResult;
+                                    logStage(viewer, "COMPILE", adjustedCompileResult.summary);
+                                } else {
+                                    cr = adjustedCompileResult == null ? cr : adjustedCompileResult;
+                                }
+                            }
+
+                            if (cr == null || !"compile_ok".equals(cr.status)) {
+                                feedback = cr == null ? "Compilation failed." : cr.summary;
+                                useFeedbackOnlyPrompt = false;
+                                logStage(viewer, "COMPILE", "failed: " + feedback);
+                                showNotification(project, "[Clone] Compilation failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
+                                continue;
+                            }
+
+                            logStage(viewer, "COMPILE", "ok (isolated)");
+                            showNotification(project, "Compilation successful: Ready to run (attempt " + attempt + ") for: " + fileName, NotificationType.INFORMATION);
+                        } finally {
+                            logWorkflowStageEnd(viewer);
                         }
-
-                        if (viewer != null) {
-                            String cl = compileLog == null ? "null" : compileLog;
-                            if (cl.length() > 4000) cl = cl.substring(0, 4000) + "\n...<truncated>...";
-                            viewer.accept("[COMPILE] raw output:\n" + cl);
-                        }
-
-                        compilation.CompileResult cr = compileAgent.analyze(fileName, compileLog);
-
-                        if (cr == null || !"compile_ok".equals(cr.status)) {
-                            feedback = cr == null ? "Compilation failed." : cr.summary;
-                            logStage(viewer, "COMPILE", "failed: " + feedback);
-                            notify(project, "[Clone] Compilation failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
-                            continue;
-                        }
-
-                        logStage(viewer, "COMPILE", "ok (isolated)");
-                        notify(project, "Compilation successful: Ready to run (attempt " + attempt + ") for: " + fileName, NotificationType.INFORMATION);
 
                         /* ===== Test ===== */
-                        // Resolve target FQN from the proposed source (PSI still reflects the original file until we apply).
-                        String targetFqn = resolvePrimaryClassFqn(proposedSource, fileName);
-                        if (targetFqn == null) targetFqn = "";
+                        boolean testsPassed = false;
+                        logWorkflowStageStart(viewer, "TESTING STAGE (attempt " + attempt + "/" + maxAttempts + ")");
+                        try {
+                            // Resolve target FQN from the proposed source (PSI still reflects the original file until we apply).
+                            String targetFqn = javaBuildSupport.resolvePrimaryClassFqn(proposedSource, fileName);
+                            if (targetFqn == null) targetFqn = "";
 
-                        if (targetFqn.isBlank()) {
-                            // Fallback #1: regex-based parsing from the in-memory source we just produced
-                            String f1 = resolvePrimaryClassFqn(currentSource, fileName);
-                            if (f1 != null && !f1.isBlank()) {
-                                targetFqn = f1;
-                                logStage(viewer, "TEST", "PSI FQN empty; fallback to regex(in-memory): " + targetFqn);
-                            } else {
-                                logStage(viewer, "TEST", "PSI FQN empty; regex(in-memory) also empty");
-                            }
-                        }
-
-                        if (targetFqn.isBlank()) {
-                            // Fallback #2: re-read the on-disk file after write (sometimes source roots/PSI lag)
-                            try {
-                                String onDisk = Files.readString(ioFile.toPath(), StandardCharsets.UTF_8);
-                                String f2 = resolvePrimaryClassFqn(onDisk, fileName);
-                                if (f2 != null && !f2.isBlank()) {
-                                    targetFqn = f2;
-                                    logStage(viewer, "TEST", "Still empty; fallback to regex(on-disk): " + targetFqn);
+                            if (targetFqn.isBlank()) {
+                                // Fallback #1: regex-based parsing from the in-memory source we just produced
+                                String f1 = javaBuildSupport.resolvePrimaryClassFqn(currentSource, fileName);
+                                if (f1 != null && !f1.isBlank()) {
+                                    targetFqn = f1;
+                                    logStage(viewer, "TEST", "PSI FQN empty; fallback to regex(in-memory): " + targetFqn);
                                 } else {
-                                    logStage(viewer, "TEST", "regex(on-disk) also empty");
+                                    logStage(viewer, "TEST", "PSI FQN empty; regex(in-memory) also empty");
                                 }
-                            } catch (Throwable t) {
-                                logStage(viewer, "TEST", "Failed to read on-disk source for FQN fallback: " + t.getMessage());
                             }
+
+                            if (targetFqn.isBlank()) {
+                                // Fallback #2: re-read the on-disk file after write (sometimes source roots/PSI lag)
+                                try {
+                                    String onDisk = Files.readString(ioFile.toPath(), StandardCharsets.UTF_8);
+                                    String f2 = javaBuildSupport.resolvePrimaryClassFqn(onDisk, fileName);
+                                    if (f2 != null && !f2.isBlank()) {
+                                        targetFqn = f2;
+                                        logStage(viewer, "TEST", "Still empty; fallback to regex(on-disk): " + targetFqn);
+                                    } else {
+                                        logStage(viewer, "TEST", "regex(on-disk) also empty");
+                                    }
+                                } catch (Throwable t) {
+                                    logStage(viewer, "TEST", "Failed to read on-disk source for FQN fallback: " + t.getMessage());
+                                }
+                            }
+
+                            if (targetFqn.isBlank()) {
+                                // Last resort: use file basename (may still fail if package exists, but avoids empty targetClass)
+                                String base = fileName != null && fileName.endsWith(".java") ? fileName.substring(0, fileName.length() - 5) : fileName;
+                                targetFqn = (base == null ? "" : base.trim());
+                                logStage(viewer, "TEST", "All FQN resolution failed; last resort basename: " + targetFqn);
+                            }
+
+                            logStage(viewer, "TEST", "targetFqn=" + (targetFqn == null ? "null" : targetFqn));
+                            javaBuildSupport.setTargetFqn(targetFqn);
+
+                            if (targetFqn == null || targetFqn.isBlank()) {
+                                feedback = "Test skipped: target class FQN could not be resolved.";
+                                useFeedbackOnlyPrompt = false;
+                                showNotification(project, "[Clone] Test skipped (attempt " + attempt + ") for: " + fileName + " (cannot resolve class FQN)", NotificationType.WARNING);
+                                continue;
+                            }
+
+                            testing.TestRunRequest treq =
+                                    new testing.TestRunRequest(
+                                            project.getBasePath(),
+                                            targetFqn,
+                                            null,
+                                            false
+                                    );
+
+                            String changedMethodBeforeTest = findModifiedCloneMethod(project, vf, watchedCloneMethods);
+                            if (changedMethodBeforeTest != null) {
+                                logStage(viewer, "WATCH", "stopped before test because cloned method changed: " + changedMethodBeforeTest);
+                                showNotification(project,
+                                        "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeTest,
+                                        NotificationType.WARNING);
+                                cancelWorkflow(viewer);
+                                return;
+                            }
+
+                            throwIfCancelled(CloneRefactorWorkflow::isCancelled);
+                            testing.TestResult tr =
+                                    testAgent.runAndSummarize(
+                                            treq,
+                                            javaBuildSupport::runTests,
+                                            llmCaller,
+                                            originalSource,
+                                            currentSource
+                                    );
+                            if (viewer != null && tr != null) {
+                                String raw = tr.raw == null ? "" : tr.raw;
+                                if (raw.length() > 4000) raw = raw.substring(0, 4000) + "\n...<truncated>...";
+                                viewer.accept("[TEST] raw output:\n" + raw);
+                            }
+
+                            if (tr != null && "tests_passed".equals(tr.status)) {
+                                logStage(viewer, "TEST", "passed");
+                                testsPassed = true;
+                            } else {
+                                feedback = tr == null ? "Tests failed." :
+                                        (tr.summary != null ? tr.summary : tr.raw);
+                                useFeedbackOnlyPrompt = false;
+
+                                logStage(viewer, "TEST", "failed");
+                                showNotification(project, "[Clone] Tests failed (attempt " + attempt + ") for: " + fileName, NotificationType.WARNING);
+                            }
+                        } finally {
+                            logWorkflowStageEnd(viewer);
                         }
 
-                        if (targetFqn.isBlank()) {
-                            // Last resort: use file basename (may still fail if package exists, but avoids empty targetClass)
-                            String base = fileName != null && fileName.endsWith(".java") ? fileName.substring(0, fileName.length() - 5) : fileName;
-                            targetFqn = (base == null ? "" : base.trim());
-                            logStage(viewer, "TEST", "All FQN resolution failed; last resort basename: " + targetFqn);
-                        }
-
-                        logStage(viewer, "TEST", "targetFqn=" + (targetFqn == null ? "null" : targetFqn));
-                        _LAST_TARGET_FQN = targetFqn;
-
-                        if (targetFqn == null || targetFqn.isBlank()) {
-                            feedback = "Test skipped: target class FQN could not be resolved.";
-                            notify(project, "[Clone] Test skipped (attempt " + attempt + ") for: " + fileName + " (cannot resolve class FQN)", NotificationType.WARNING);
-                            continue;
-                        }
-
-                        testing.TestRunRequest treq =
-                                new testing.TestRunRequest(
-                                        project.getBasePath(),
-                                        targetFqn,
-                                        null,
-                                        false
-                                );
-
-                        String changedMethodBeforeTest = findModifiedCloneMethod(project, vf, watchedCloneMethods);
-                        if (changedMethodBeforeTest != null) {
-                            logStage(viewer, "WATCH", "stopped before test because cloned method changed: " + changedMethodBeforeTest);
-                            notify(project,
-                                    "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeTest,
-                                    NotificationType.WARNING);
-                            cancelWorkflow(viewer);
-                            return;
-                        }
-
-                        throwIfCancelled(viewer);
-                        testing.TestResult tr =
-                                testAgent.runAndSummarize(
-                                        treq,
-                                        CloneRefactorWorkflow::runTests,
-                                        llmCaller,
-                                        originalSource,
-                                        currentSource
-                                );
-                        if (viewer != null && tr != null) {
-                            String raw = tr.raw == null ? "" : tr.raw;
-                            if (raw.length() > 4000) raw = raw.substring(0, 4000) + "\n...<truncated>...";
-                            viewer.accept("[TEST] raw output:\n" + raw);
-                        }
-
-                        if (tr != null && "tests_passed".equals(tr.status)) {
-                            logStage(viewer, "TEST", "passed");
-
+                        if (testsPassed) {
                             String changedMethodBeforeApply = findModifiedCloneMethod(project, vf, watchedCloneMethods);
                             if (changedMethodBeforeApply != null) {
                                 logStage(viewer, "WATCH", "stopped before apply because cloned method changed: " + changedMethodBeforeApply);
-                                notify(project,
+                                showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeApply,
                                         NotificationType.WARNING);
                                 cancelWorkflow(viewer);
@@ -1072,39 +1293,35 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                             // Now that compile+test passed, ask user whether to apply the refactor to the real file.
                             boolean applyNow = showDiffAndConfirmApply(project, fileName, currentSource, proposedSource);
                             if (applyNow) {
+                                CloneUsageStatistics.getInstance(project).refactoringAccepted();
                                 currentSource = proposedSource;
                                 Files.writeString(ioFile.toPath(), currentSource, StandardCharsets.UTF_8);
                                 logStage(viewer, "REFACTOR", "applied after verification");
-                                notify(project, "[Clone] Tests passed. Refactor applied for: " + fileName, NotificationType.INFORMATION);
+                                showNotification(project, "[Clone] Tests passed. Refactor applied for: " + fileName, NotificationType.INFORMATION);
                             } else {
+                                CloneUsageStatistics.getInstance(project).refactoringCancelled();
                                 logStage(viewer, "REFACTOR", "verified but not applied (user cancelled)");
-                                notify(project, "[Clone] Tests passed but changes were not applied (user cancelled): " + fileName, NotificationType.WARNING);
+                                showNotification(project, "[Clone] Tests passed but changes were not applied (user cancelled): " + fileName, NotificationType.WARNING);
                             }
 
                             logStage(viewer, "WORKFLOW", "SUCCESS");
                             // Clear patched classes dir for subsequent runs
-                            _LAST_PATCHED_CLASSES_DIR = null;
+                            javaBuildSupport.clearPatchedClassesDir();
                             return;
                         }
-
-                        feedback = tr == null ? "Tests failed." :
-                                (tr.summary != null ? tr.summary : tr.raw);
-
-                        logStage(viewer, "TEST", "failed");
-                        notify(project, "[Clone] Tests failed (attempt " + attempt + ") for: " + fileName, NotificationType.WARNING);
                 }
 
                 logStage(viewer, "WORKFLOW", "FAILED after " + maxAttempts + " retries");
-                notify(project, "[Clone] Workflow failed after " + maxAttempts + " retries for: " + vf.getName(), NotificationType.ERROR);
+                showNotification(project, "[Clone] Workflow failed after " + maxAttempts + " retries for: " + vf.getName(), NotificationType.ERROR);
 
             } catch (Exception e) {
                 if (isCancelled() || Thread.currentThread().isInterrupted()
                         || (e.getMessage() != null && e.getMessage().contains("CANCELLED"))) {
-                    notify(project, "Operation cancelled by user.", NotificationType.WARNING);
+                    showNotification(project, "Operation cancelled by user.", NotificationType.WARNING);
                     return;
                 }
                 e.printStackTrace();
-                notify(project, "[Clone] Workflow crashed: " + e.getMessage(), NotificationType.ERROR);
+                showNotification(project, "[Clone] Workflow crashed: " + e.getMessage(), NotificationType.ERROR);
             } finally {
                 if (trackedDocument != null && cloneMethodChangeListener != null) {
                     try {
@@ -1118,36 +1335,6 @@ Your refactoring is not useful. You must actually remove or significantly reduce
                 closeQuietly(logWriter);
             }
         });
-    }
-
-    // ---- Notification helpers ----
-
-    /**
-     * Escapes HTML special characters for safe notification rendering.
-     */
-    private static String escapeHtml(String s) {
-        if (s == null) return "";
-        String t = s;
-        t = t.replace("&", "&amp;");
-        t = t.replace("<", "&lt;");
-        t = t.replace(">", "&gt;");
-        t = t.replace("\"", "&quot;");
-        return t;
-    }
-
-    /**
-     * Helper for sending notifications (with HTML line break support for multi-line messages).
-     */
-    private static void notify(Project project, String message, NotificationType type) {
-        String content = message == null ? "" : message;
-        // IntelliJ notifications often collapse consecutive newlines in plain text.
-        // Use HTML with <br/> to preserve line breaks (including blank lines).
-        if (content.contains("\n")) {
-            content = escapeHtml(content).replace("\n", "<br/>");
-            content = "<html>" + content + "</html>";
-        }
-        Notification n = new Notification("AntiCopyPaster", "Clone Refactoring", content, type);
-        Notifications.Bus.notify(n, project);
     }
 
     // ---- Snippet classification helpers (whole method vs fragment) ----
@@ -1244,6 +1431,32 @@ Your refactoring is not useful. You must actually remove or significantly reduce
             } catch (Throwable ignored) {}
         }
         return -1;
+    }
+
+    private static String getStringField(Object obj, String... names) {
+        if (obj == null || names == null) return null;
+        Class<?> cls = obj.getClass();
+        for (String n : names) {
+            if (n == null || n.isBlank()) continue;
+            try {
+                java.lang.reflect.Field f = cls.getField(n);
+                Object v = f.get(obj);
+                if (v != null) return String.valueOf(v);
+            } catch (Throwable ignored) {}
+            try {
+                java.lang.reflect.Field f = cls.getDeclaredField(n);
+                f.setAccessible(true);
+                Object v = f.get(obj);
+                if (v != null) return String.valueOf(v);
+            } catch (Throwable ignored) {}
+            try {
+                String mname = "get" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
+                java.lang.reflect.Method m = cls.getMethod(mname);
+                Object v = m.invoke(obj);
+                if (v != null) return String.valueOf(v);
+            } catch (Throwable ignored) {}
+        }
+        return null;
     }
 
     private static void setIntField(Object obj, int value, String... names) {
@@ -1353,1091 +1566,36 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         }
     }
 
-    private static String extractUsefulnessDebugText(Object ur) {
-        try {
-            if (ur == null) return "";
-
-            // Try common field names
-            String[] fieldNames = new String[]{"debug", "debugLines", "debugLine", "pairDebug", "details", "debugInfo"};
-            for (String fn : fieldNames) {
-                try {
-                    java.lang.reflect.Field f = ur.getClass().getField(fn);
-                    Object v = f.get(ur);
-                    String s = stringifyDebugValue(v);
-                    if (s != null && !s.isBlank()) return s;
-                } catch (Throwable ignored) {}
-                try {
-                    java.lang.reflect.Field f = ur.getClass().getDeclaredField(fn);
-                    f.setAccessible(true);
-                    Object v = f.get(ur);
-                    String s = stringifyDebugValue(v);
-                    if (s != null && !s.isBlank()) return s;
-                } catch (Throwable ignored) {}
-            }
-
-            // Try common getters
-            String[] getterNames = new String[]{"getDebug", "getDebugLines", "getDetails", "debug", "debugLines"};
-            for (String mn : getterNames) {
-                try {
-                    java.lang.reflect.Method m = ur.getClass().getMethod(mn);
-                    Object v = m.invoke(ur);
-                    String s = stringifyDebugValue(v);
-                    if (s != null && !s.isBlank()) return s;
-                } catch (Throwable ignored) {}
-            }
-
-            // Fall back to notes (often contains debug-ish info)
-            try {
-                java.lang.reflect.Field f = ur.getClass().getField("notes");
-                Object v = f.get(ur);
-                String s = stringifyDebugValue(v);
-                if (s != null && !s.isBlank()) return s;
-            } catch (Throwable ignored) {}
-            try {
-                java.lang.reflect.Field f = ur.getClass().getDeclaredField("notes");
-                f.setAccessible(true);
-                Object v = f.get(ur);
-                String s = stringifyDebugValue(v);
-                if (s != null && !s.isBlank()) return s;
-            } catch (Throwable ignored) {}
-
-            return String.valueOf(ur);
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
-    private static String stringifyDebugValue(Object v) {
-        if (v == null) return "";
-        if (v instanceof String) return (String) v;
-        if (v instanceof java.util.List) {
-            java.util.List<?> lst = (java.util.List<?>) v;
-            if (lst.isEmpty()) return "";
-            Object first = lst.get(0);
-            return first == null ? "" : String.valueOf(first);
-        }
-        return String.valueOf(v);
-    }
-
-    /* ============================================================
-     * Test
-     * ============================================================ */
-
-    private static String runTests(testing.TestRunRequest req) {
-        try {
-            if (req == null) return "Test error: request is null.";
-            String projectDir = getReqString(req, "projectDir", "projectPath", "baseDir");
-            if (projectDir == null || projectDir.isBlank()) return "Test error: projectDir is empty.";
-
-            String targetClass = getReqString(req, "targetClass", "targetClassFqn", "classFqn", "className", "targetFqn");
-            Consumer<String> viewer = (_LAST_TEST_VIEWER != null) ? _LAST_TEST_VIEWER : null;
-            if (viewer != null) viewer.accept("[TEST] received targetClass=" + (targetClass == null ? "null" : targetClass));
-
-            // Fallback: some TestRunRequest implementations may not store the target class in an accessible field.
-            if (targetClass == null || targetClass.isBlank() || "all".equalsIgnoreCase(targetClass)) {
-                String fallback = _LAST_TARGET_FQN;
-                if (fallback != null && !fallback.isBlank()) {
-                    targetClass = fallback;
-                    if (viewer != null) viewer.accept("[TEST] targetClass missing in request; using workflow fallback: " + targetClass);
-                }
-            }
-
-            if (targetClass == null || targetClass.isBlank() || "all".equalsIgnoreCase(targetClass)) {
-                return "Test error: targetClass (FQN) is empty. Cannot run EvoSuite without a class name.";
-            }
-
-            // 1) Materialize EvoSuite jar to a stable per-project path (avoid broken IntelliJ library roots)
-            File evosuiteJar = materializeResourceToProjectLib(new File(projectDir), "tools/evosuite-1.2.0.jar", "evosuite-1.2.0.jar");
-            if (evosuiteJar == null || !evosuiteJar.exists()) {
-                return "Test error: EvoSuite jar not found in resources at tools/evosuite-1.2.0.jar";
-            }
-
-            // 2) Build project classpath from IntelliJ (module output + dependencies)
-            String projectCp = buildProjectClasspathFromIde(_LAST_PROJECT_FOR_TESTS);
-            if (_LAST_PATCHED_CLASSES_DIR != null && !_LAST_PATCHED_CLASSES_DIR.isBlank()) {
-                // Prepend patched output so the refactored class shadows the original compiled class.
-                projectCp = _LAST_PATCHED_CLASSES_DIR + File.pathSeparator + (projectCp == null ? "" : projectCp);
-            }
-            if (projectCp == null || projectCp.isBlank()) {
-                return "Test error: IDE classpath is empty. Make sure the project is imported and has an SDK.";
-            }
-
-            // 3) Output directories
-            File base = new File(projectDir);
-            File outRoot = new File(base, ".anticopypaster" + File.separator + "evosuite-tests");
-            if (!outRoot.exists() && !outRoot.mkdirs()) {
-                return "Test error: failed to create output dir: " + outRoot.getAbsolutePath();
-            }
-            File testDir = new File(outRoot, "tests");
-            File reportDir = new File(outRoot, "reports");
-            testDir.mkdirs();
-            reportDir.mkdirs();
-            // Ensure IntelliJ resolves native EvoSuite tests (EvoRunner/runtime) in the editor and build.
-            ensureTestDependencies(_LAST_PROJECT_FOR_TESTS, base, evosuiteJar);
-
-            // 4) Run EvoSuite (generation only; does not execute the generated tests here)
-            // Common EvoSuite properties: -Dtest_dir / -Dreport_dir
-            List<String> cmd = new java.util.ArrayList<>();
-
-            String javaExe = resolveJavaExecutable(_LAST_PROJECT_FOR_TESTS);
-            cmd.add(javaExe);
-            String forcedJavaHome = deriveJavaHome(javaExe);
-
-            String jv = readJavaVersion(javaExe);
-            int major = parseJavaMajorVersion(jv);
-            if (viewer != null) {
-                String vv = (jv == null ? "" : jv.strip());
-                if (vv.length() > 800) vv = vv.substring(0, 800) + "\n...<truncated>...";
-                viewer.accept("[EvoSuite] java -version:\n" + vv);
-                viewer.accept("[EvoSuite] detected java major=" + major);
-            }
-
-            // If Java 9+, add module opens to avoid InaccessibleObjectException (XStream reflective access)
-            if (major >= 9) {
-                cmd.add("--add-opens");
-                cmd.add("java.base/java.lang=ALL-UNNAMED");
-                cmd.add("--add-opens");
-                cmd.add("java.base/java.util=ALL-UNNAMED");
-                cmd.add("--add-opens");
-                cmd.add("java.base/java.io=ALL-UNNAMED");
-                cmd.add("--add-opens");
-                cmd.add("java.desktop/java.awt=ALL-UNNAMED");
-                cmd.add("-Djava.awt.headless=true");
-            }
-
-            // IMPORTANT: On Java 8, EvoSuite/ByteBuddy agent attachment relies on the Attach API provider from tools.jar.
-            // When running with `-jar`, tools.jar is NOT on the system classpath, and AttachProvider.providers() may return empty.
-            // So for Java 8 we launch via `-cp tools.jar;evosuite.jar org.evosuite.EvoSuite`.
-            if (major == 8) {
-                String toolsJar = null;
-                try {
-                    if (forcedJavaHome != null && !forcedJavaHome.isBlank()) {
-                        File tj = new File(forcedJavaHome, "lib" + File.separator + "tools.jar");
-                        if (tj.exists()) toolsJar = tj.getAbsolutePath();
-                    }
-                } catch (Throwable ignored) {}
-
-                String cpLaunch;
-                if (toolsJar != null && !toolsJar.isBlank()) {
-                    cpLaunch = toolsJar + File.pathSeparator + evosuiteJar.getAbsolutePath();
-                } else {
-                    // Fallback: still run with EvoSuite jar only (best-effort).
-                    cpLaunch = evosuiteJar.getAbsolutePath();
-                    if (viewer != null) viewer.accept("[EvoSuite] WARN: tools.jar not found under JAVA_HOME; agent attach may fail on Java 8.");
-                }
-
-                cmd.add("-cp");
-                cmd.add(cpLaunch);
-                cmd.add("org.evosuite.EvoSuite");
-            } else {
-                cmd.add("-jar");
-                cmd.add(evosuiteJar.getAbsolutePath());
-            }
-
-            cmd.add("-class");
-            cmd.add(targetClass);
-            cmd.add("-projectCP");
-            cmd.add(projectCp);
-            cmd.add("-Dtest_dir=" + testDir.getAbsolutePath());
-            cmd.add("-Dreport_dir=" + reportDir.getAbsolutePath());
-            cmd.add("-Dsandbox=false");
-            // Disable EvoSuite testability transformation: it can rewrite the SUT bytecode and
-            // generate calls to synthetic "*Clone" methods (eg, getDataClone) that don't exist
-            // in the original sources, causing generated tests to fail compilation.
-            cmd.add("-Dtestability_transformation=false");
-            // Some EvoSuite versions also expose this toggle as "TT".
-            cmd.add("-DTT=false");
-
-            ProcessBuilder pb = new ProcessBuilder(cmd);
-            pb.directory(base);
-            pb.redirectErrorStream(true);
-
-            if (forcedJavaHome != null) {
-                if (viewer != null) viewer.accept("[EvoSuite] Enforcing JAVA_HOME=" + forcedJavaHome);
-                pb.environment().put("JAVA_HOME", forcedJavaHome);
-            }
-
-            if (viewer != null) viewer.accept("[EvoSuite] Running: " + String.join(" ", cmd));
-
-            ProcessRun pr = runProcessStreaming(pb, viewer);
-
-            String evOut = pr == null ? "" : (pr.output == null ? "" : pr.output);
-            int exit = pr == null ? -1 : pr.exitCode;
-
-            // EvoSuite sometimes returns exitCode=0 even when generation fails.
-            // Detect failure by common markers and by checking whether any test files were generated.
-            boolean hasFailureMarker = containsAnyIgnoreCase(evOut,
-                    "problem for ",
-                    "failed to generate",
-                    "no statistics has been saved",
-                    "error while initializing target class",
-                    "no converter available",
-                    "conversionexception",
-                    "inaccessibleobjectexception",
-                    "fatal",
-                    "exception in thread");
-
-            boolean hasGeneratedTests = false;
-            try {
-                if (testDir.exists()) {
-                    // EvoSuite may generate tests under package subdirectories (e.g., tests/org/...)
-                    hasGeneratedTests = java.nio.file.Files.walk(testDir.toPath())
-                            .anyMatch(p -> p != null && p.toString().endsWith(".java"));
-                }
-            } catch (Throwable ignored) {
-                // ignore
-            }
-
-            // If tests were generated, run them in *native EvoSuite form* (keep *_ESTest.java + scaffolding + EvoRunner).
-            String nativeTestFqn = "";
-            if (hasGeneratedTests) {
-                String simpleName;
-                try {
-                    int idx = targetClass.lastIndexOf('.');
-                    simpleName = idx >= 0 ? targetClass.substring(idx + 1) : targetClass;
-                } catch (Throwable t) {
-                    simpleName = targetClass;
-                }
-                if (simpleName == null) simpleName = "";
-
-                String estestName = simpleName + "_ESTest.java";
-                java.nio.file.Path estestPath = findFileRecursivelyByName(testDir.toPath(), estestName);
-                if (estestPath == null) {
-                    // Fallback: first *_ESTest.java under testDir
-                    estestPath = findFirstFileBySuffix(testDir.toPath(), "_ESTest.java");
-                }
-                if (estestPath == null) {
-                    return "[EVOSUITE]\n" +
-                            "exitCode=" + exit + "\n" +
-                            "status=tests_failed\n" +
-                            "reason=generated tests folder exists, but no *_ESTest.java found\n";
-                }
-
-                // Determine scaffolding file next to *_ESTest.java
-                java.nio.file.Path scaffPath = null;
-                try {
-                    String scaffName = simpleName + "_ESTest_scaffolding.java";
-                    java.nio.file.Path candidate = estestPath.getParent().resolve(scaffName);
-                    if (java.nio.file.Files.exists(candidate)) scaffPath = candidate;
-                } catch (Throwable ignored) {
-                    // ignore
-                }
-                if (scaffPath == null) {
-                    // Fallback: find any *_ESTest_scaffolding.java
-                    scaffPath = findFirstFileBySuffix(testDir.toPath(), "_ESTest_scaffolding.java");
-                }
-
-                String rawTest = java.nio.file.Files.readString(estestPath, java.nio.charset.StandardCharsets.UTF_8);
-                if (rawTest == null) rawTest = "";
-                if (looksLikeLiteralNNewlineCorruption(rawTest)) {
-                    rawTest = repairLiteralNNewlineCorruption(rawTest);
-                }
-                rawTest = normalizeBrokenNewlines(rawTest);
-
-                nativeTestFqn = resolvePrimaryClassFqn(rawTest, estestName);
-                _LAST_CONVERTED_TEST_FQN = nativeTestFqn; // reuse existing field as "last generated test to run"
-
-                // Copy native EvoSuite tests into test (preserve package dirs).
-                File projectBase = new File(projectDir);
-                // Use a standalone test directory instead of src/test/java to avoid IntelliJ package mismatch
-                File srcTestJava = new File(projectBase, "test");
-                if (!srcTestJava.exists() && !srcTestJava.mkdirs()) {
-                    return "[EVOSUITE]\n" +
-                            "exitCode=" + exit + "\n" +
-                            "status=tests_failed\n" +
-                            "reason=failed to create test\n";
-                }
-
-                // Preserve package-relative structure
-                java.nio.file.Path rel = testDir.toPath().relativize(estestPath);
-                java.nio.file.Path targetEst = srcTestJava.toPath().resolve(rel);
-                java.nio.file.Files.createDirectories(targetEst.getParent());
-
-                // Clean up any previously-copied converted version for this class
-                try {
-                    String convertedName = simpleName + "_EvoSuiteJUnit4Test.java";
-                    java.nio.file.Path oldConverted = targetEst.getParent().resolve(convertedName);
-                    if (java.nio.file.Files.exists(oldConverted)) {
-                        java.nio.file.Files.delete(oldConverted);
-                    }
-                } catch (Throwable ignored) {
-                    // best-effort
-                }
-
-                // Copy *_ESTest.java
-                java.nio.file.Files.copy(estestPath, targetEst, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-
-                // Copy scaffolding if present
-                if (scaffPath != null && java.nio.file.Files.exists(scaffPath)) {
-                    java.nio.file.Path scaffRel = testDir.toPath().relativize(scaffPath);
-                    java.nio.file.Path targetScaff = srcTestJava.toPath().resolve(scaffRel);
-                    java.nio.file.Files.createDirectories(targetScaff.getParent());
-                    java.nio.file.Files.copy(scaffPath, targetScaff, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                }
-
-                if (viewer != null) {
-                    viewer.accept("[EvoSuite] Native test written: " + targetEst);
-                    if (scaffPath != null) viewer.accept("[EvoSuite] Native scaffolding written: " + srcTestJava.toPath().resolve(testDir.toPath().relativize(scaffPath)));
-                    if (nativeTestFqn != null && !nativeTestFqn.isBlank()) {
-                        viewer.accept("[EvoSuite] Native test FQN: " + nativeTestFqn);
-                    }
-                }
-            }
-
-            // Now actually run tests. For native EvoSuite tests we must run via JUnitCore with EvoSuite runtime on the classpath.
-            // (Build tools usually won't have EvoSuite runtime configured.)
-            String testOutput = runProjectTests(base, viewer, evosuiteJar);
-
-            boolean testSuccess =
-                    testOutput != null &&
-                    testOutput.contains("BUILD SUCCESS");
-
-            String finalStatus = testSuccess ? "tests_passed" : "tests_failed";
-
-            String excerpt = evOut;
-            if (excerpt.length() > 6000) excerpt = excerpt.substring(0, 6000) + "\n...<truncated>...";
-
-            return "[EVOSUITE]\n" +
-                    "exitCode=" + exit + "\n" +
-                    "status=" + finalStatus + "\n" +
-                    "generatedTests=" + hasGeneratedTests + "\n" +
-                    "outputDir=" + outRoot.getAbsolutePath() + "\n" +
-                    "---output---\n" +
-                    testOutput;
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "Test error: CANCELLED";
-        } catch (Exception e) {
-            if (Thread.currentThread().isInterrupted()) {
-                return "Test error: CANCELLED";
-            }
-            return "Test error: " + e.getMessage();
-        }
-    }
-
-    private static void ensureTestDependencies(Project project, File baseDir, File evosuiteJar) {
-        try {
-            if (project == null || project.isDisposed()) return;
-
-            // Materialize JUnit/Hamcrest to a stable on-disk location under the project so IDE libraries don't break.
-            File junit = materializeResourceToProjectLib(baseDir, "tools/junit-4.12.jar", "junit-4.12.jar");
-            File hamcrest = materializeResourceToProjectLib(baseDir, "tools/hamcrest-core-1.3.jar", "hamcrest-core-1.3.jar");
-
-            // Also accept user-provided libs/ if resource extraction failed.
-            if ((junit == null || !junit.exists()) && baseDir != null) {
-                File libJunit = new File(baseDir, "libs" + File.separator + "junit-4.12.jar");
-                if (libJunit.exists()) junit = libJunit;
-            }
-            if ((hamcrest == null || !hamcrest.exists()) && baseDir != null) {
-                File libHam = new File(baseDir, "libs" + File.separator + "hamcrest-core-1.3.jar");
-                if (libHam.exists()) hamcrest = libHam;
-            }
-
-            final File finalJunit = junit;
-            final File finalHamcrest = hamcrest;
-            final File finalEvo = evosuiteJar;
-
-            // Add dependencies + mark project/test as test sources root.
-            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                try {
-                    com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction(() -> {
-                        try {
-                            com.intellij.openapi.module.Module[] modules = com.intellij.openapi.module.ModuleManager.getInstance(project).getModules();
-                            if (modules == null || modules.length == 0) return;
-                            com.intellij.openapi.module.Module module = modules[0];
-
-                            com.intellij.openapi.roots.ModifiableRootModel model = com.intellij.openapi.roots.ModuleRootManager.getInstance(module).getModifiableModel();
-
-                            // 1) Mark project/test as Test Sources Root (best-effort)
-                            try {
-                                if (baseDir != null) {
-                                    File srcTestJava = new File(baseDir, "test");
-                                    if (srcTestJava.exists()) {
-                                        String url = com.intellij.openapi.vfs.VfsUtil.pathToUrl(srcTestJava.getAbsolutePath());
-                                        for (com.intellij.openapi.roots.ContentEntry ce : model.getContentEntries()) {
-                                            if (ce == null) continue;
-                                            // Avoid duplicates
-                                            boolean already = false;
-                                            for (com.intellij.openapi.roots.SourceFolder sf : ce.getSourceFolders()) {
-                                                if (sf != null && url.equals(sf.getUrl()) && sf.isTestSource()) {
-                                                    already = true;
-                                                    break;
-                                                }
-                                            }
-                                            if (!already) {
-                                                // Only add if this content entry contains the folder
-                                                try {
-                                                    com.intellij.openapi.vfs.VirtualFile vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(srcTestJava);
-                                                    if (vf != null) {
-                                                        com.intellij.openapi.vfs.VirtualFile root = ce.getFile();
-                                                        if (root != null && com.intellij.openapi.vfs.VfsUtilCore.isAncestor(root, vf, true)) {
-                                                            ce.addSourceFolder(url, true);
-                                                            break;
-                                                        }
-                                                    }
-                                                } catch (Throwable ignored) {
-                                                    // ignore
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch (Throwable ignored) {
-                                // ignore
-                            }
-
-                            // 2) Add TEST-scoped module library if missing
-                            final String libName = "AntiCopyPaster-TestLib";
-                            com.intellij.openapi.roots.libraries.LibraryTable lt = model.getModuleLibraryTable();
-                            com.intellij.openapi.roots.libraries.Library existing = lt.getLibraryByName(libName);
-
-                            if (existing == null) {
-                                com.intellij.openapi.roots.libraries.Library lib = lt.createLibrary(libName);
-                                com.intellij.openapi.roots.libraries.Library.ModifiableModel lm = lib.getModifiableModel();
-
-                                try {
-                                    if (finalJunit != null && finalJunit.exists()) {
-                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalJunit), com.intellij.openapi.roots.OrderRootType.CLASSES);
-                                    }
-                                    if (finalHamcrest != null && finalHamcrest.exists()) {
-                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalHamcrest), com.intellij.openapi.roots.OrderRootType.CLASSES);
-                                    }
-                                    if (finalEvo != null && finalEvo.exists()) {
-                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalEvo), com.intellij.openapi.roots.OrderRootType.CLASSES);
-                                    }
-                                } catch (Throwable ignored) {
-                                    // ignore
-                                }
-
-                                lm.commit();
-
-                                com.intellij.openapi.roots.LibraryOrderEntry entry = model.addLibraryEntry(lib);
-                                entry.setScope(com.intellij.openapi.roots.DependencyScope.TEST);
-                            } else {
-                                // Ensure scope is TEST (best-effort)
-                                try {
-                                    for (com.intellij.openapi.roots.OrderEntry oe : model.getOrderEntries()) {
-                                        if (oe instanceof com.intellij.openapi.roots.LibraryOrderEntry) {
-                                            com.intellij.openapi.roots.LibraryOrderEntry loe = (com.intellij.openapi.roots.LibraryOrderEntry) oe;
-                                            if (loe.getLibraryName() != null && libName.equals(loe.getLibraryName())) {
-                                                loe.setScope(com.intellij.openapi.roots.DependencyScope.TEST);
-                                                break;
-                                            }
-                                        }
-                                    }
-                                } catch (Throwable ignored) {
-                                    // ignore
-                                }
-
-                                // Repair broken roots if they point to deleted temp files.
-                                try {
-                                    com.intellij.openapi.roots.libraries.Library.ModifiableModel lm = existing.getModifiableModel();
-                                    // Remove any missing roots
-                                    for (String url : lm.getUrls(com.intellij.openapi.roots.OrderRootType.CLASSES)) {
-                                        try {
-                                            com.intellij.openapi.vfs.VirtualFile vf = com.intellij.openapi.vfs.VirtualFileManager.getInstance().findFileByUrl(url);
-                                            if (vf == null || !vf.exists()) {
-                                                lm.removeRoot(url, com.intellij.openapi.roots.OrderRootType.CLASSES);
-                                            }
-                                        } catch (Throwable ignored) {
-                                            // ignore
-                                        }
-                                    }
-                                    // Re-add expected roots from stable locations
-                                    if (finalJunit != null && finalJunit.exists()) {
-                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalJunit), com.intellij.openapi.roots.OrderRootType.CLASSES);
-                                    }
-                                    if (finalHamcrest != null && finalHamcrest.exists()) {
-                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalHamcrest), com.intellij.openapi.roots.OrderRootType.CLASSES);
-                                    }
-                                    if (finalEvo != null && finalEvo.exists()) {
-                                        lm.addRoot(com.intellij.openapi.vfs.VfsUtil.getUrlForLibraryRoot(finalEvo), com.intellij.openapi.roots.OrderRootType.CLASSES);
-                                    }
-                                    lm.commit();
-                                } catch (Throwable ignored) {
-                                    // ignore
-                                }
-                            }
-
-                            model.commit();
-                        } catch (Throwable t) {
-                            // best-effort: do not fail workflow on IDE config issues
-                        }
-                    });
-                } catch (Throwable ignored) {
-                    // ignore
-                }
-            }, com.intellij.openapi.application.ModalityState.any());
-
-        } catch (Throwable ignored) {
-            // ignore
-        }
-    }
-
-    // Helper to run Maven/Gradle tests, or fallback to JUnitCore
-    private static String runProjectTests(File baseDir, Consumer<String> viewer, File evosuiteJar) {
-        try {
-            File pom = new File(baseDir, "pom.xml");
-            File gradle = new File(baseDir, "build.gradle");
-            File gradleKts = new File(baseDir, "build.gradle.kts");
-
-            // 1. Maven/Gradle: Delegate to build tool
-            // NOTE: Native EvoSuite tests require EvoSuite runtime on the classpath. Build tools typically don't include it.
-            // So if we have a generated EvoSuite test to run, prefer the JUnitCore path below.
-            if ((pom.exists() || gradle.exists() || gradleKts.exists()) && (_LAST_CONVERTED_TEST_FQN == null || _LAST_CONVERTED_TEST_FQN.isBlank())) {
-                ProcessBuilder pb;
-                if (pom.exists()) {
-                    pb = new ProcessBuilder("mvn", "-q", "test");
-                } else {
-                    boolean isWin = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
-                    String exe = new File(baseDir, isWin ? "gradlew.bat" : "gradlew").exists()
-                            ? (isWin ? ".\\gradlew.bat" : "./gradlew") : "gradle";
-                    pb = new ProcessBuilder(exe, "test");
-                }
-                pb.directory(baseDir);
-                pb.redirectErrorStream(true);
-
-                if (isCancelled()) return "[CANCELLED]\n";
-                if (viewer != null) viewer.accept("[TEST] Running build tool tests...");
-                ProcessRun pr = runProcessStreaming(pb, viewer);
-                String out = pr == null ? "" : (pr.output == null ? "" : pr.output);
-                return out;
-            }
-
-            // 2. Fallback: Run generated test via JUnitCore
-            if (viewer != null) viewer.accept("[TEST] No build tool found. Running via JUnitCore...");
-
-            Project ideProject = _LAST_PROJECT_FOR_TESTS;
-            if (ideProject == null || ideProject.isDisposed()) {
-                return "Error: IDE project is unavailable.";
-            }
-
-            // Locate the test file
-            String testFqn = _LAST_CONVERTED_TEST_FQN;
-            File testFile = null;
-
-            // Try resolving file from FQN if possible, or search dir
-            if (testFqn != null) {
-                // Heuristic search for the file we just wrote
-                File srcTest = new File(baseDir, "test");
-                String path = testFqn.replace('.', File.separatorChar) + ".java";
-                testFile = new File(srcTest, path);
-                if (!testFile.exists()) {
-                    File tempRoot = new File(baseDir, ".anticopypaster" + File.separator + "evosuite-tests" + File.separator + "tests");
-                    testFile = new File(tempRoot, path);
-                }
-            }
-
-            if (testFile == null || !testFile.exists()) {
-                return "Error: Could not locate test file for " + testFqn;
-            }
-
-            // Prepare Classpath
-            String cp = buildProjectClasspathFromIde(ideProject);
-
-            // Ensure tests compile/run against the same (possibly patched) classes that EvoSuite used.
-            if (_LAST_PATCHED_CLASSES_DIR != null && !_LAST_PATCHED_CLASSES_DIR.isBlank()) {
-                cp = _LAST_PATCHED_CLASSES_DIR + File.pathSeparator + (cp == null ? "" : cp);
-            }
-
-            // Ensure JUnit/Hamcrest are on CP (JUnit 4.12 needs hamcrest at runtime)
-            File junit = materializeResourceToProjectLib(baseDir, "tools/junit-4.12.jar", "junit-4.12.jar");
-            File hamcrest = materializeResourceToProjectLib(baseDir, "tools/hamcrest-core-1.3.jar", "hamcrest-core-1.3.jar");
-
-            // Ensure EvoSuite runtime is on CP for native *_ESTest tests (EvoRunner, RuntimeSettings, mocks, etc.)
-            File evoRuntime = evosuiteJar;
-
-            // Fallbacks: try project libs/ and local Maven repo if the resource is missing
-            if (hamcrest == null || !hamcrest.exists()) {
-                File libHamcrest = new File(baseDir, "libs" + File.separator + "hamcrest-core-1.3.jar");
-                if (libHamcrest.exists()) {
-                    hamcrest = libHamcrest;
-                } else {
-                    File m2Hamcrest = new File(System.getProperty("user.home"),
-                            ".m2" + File.separator + "repository" + File.separator +
-                                    "org" + File.separator + "hamcrest" + File.separator +
-                                    "hamcrest-core" + File.separator + "1.3" + File.separator +
-                                    "hamcrest-core-1.3.jar");
-                    if (m2Hamcrest.exists()) {
-                        hamcrest = m2Hamcrest;
-                    }
-                }
-            }
-
-            if (junit == null || !junit.exists()) {
-                File libJunit = new File(baseDir, "libs" + File.separator + "junit-4.12.jar");
-                if (libJunit.exists()) junit = libJunit;
-            }
-
-            String runCp = cp;
-            if (junit != null && junit.exists()) runCp += File.pathSeparator + junit.getAbsolutePath();
-            if (hamcrest != null && hamcrest.exists()) runCp += File.pathSeparator + hamcrest.getAbsolutePath();
-            if (evoRuntime != null && evoRuntime.exists()) runCp += File.pathSeparator + evoRuntime.getAbsolutePath();
-
-            // STEP 3: Compile the generated test file(s) manually.
-            // Native EvoSuite tests require compiling both *_ESTest.java and *_ESTest_scaffolding.java.
-            if (viewer != null) viewer.accept("[TEST] Compiling generated test (native EvoSuite)...");
-            File compiledClassesDir;
-            try {
-                java.util.List<File> sources = new java.util.ArrayList<>();
-                sources.add(testFile);
-
-                // Add scaffolding if it exists next to the test
-                try {
-                    String tf = testFile.getName();
-                    if (tf.endsWith("_ESTest.java")) {
-                        String base = tf.substring(0, tf.length() - "_ESTest.java".length());
-                        File scaff = new File(testFile.getParentFile(), base + "_ESTest_scaffolding.java");
-                        if (scaff.exists()) sources.add(scaff);
-                    }
-                } catch (Throwable ignored) {
-                    // ignore
-                }
-
-                compiledClassesDir = compileFiles(ideProject, sources, runCp);
-            } catch (Exception e) {
-                return "Compilation Error: " + e.getMessage();
-            }
-
-            // Add compiled output to classpath
-            runCp = compiledClassesDir.getAbsolutePath() + File.pathSeparator + runCp;
-
-            // STEP 4: Run JUnitCore
-            String javaExe = resolveJavaExecutable(ideProject);
-            List<String> cmd = new java.util.ArrayList<>();
-            cmd.add(javaExe);
-            cmd.add("-cp");
-            cmd.add(runCp);
-            cmd.add("org.junit.runner.JUnitCore");
-            cmd.add(testFqn);
-
-            if (viewer != null) viewer.accept("[TEST] Executing: " + String.join(" ", cmd));
-            if (viewer != null && (hamcrest == null || !hamcrest.exists())) {
-                viewer.accept("[TEST] WARN: hamcrest-core-1.3.jar not found; JUnit 4.12 will fail with NoClassDefFoundError.");
-            }
-            if (viewer != null && (evoRuntime == null || !evoRuntime.exists())) {
-                viewer.accept("[TEST] WARN: EvoSuite runtime jar not found; native *_ESTest tests will fail to compile/run (missing EvoRunner/runtime).");
-            }
-
-            ProcessBuilder jpb = new ProcessBuilder(cmd);
-            jpb.directory(baseDir);
-            jpb.redirectErrorStream(true);
-
-            ProcessRun pr = runProcessStreaming(jpb, viewer);
-            String out = pr.output == null ? "" : pr.output;
-
-            if (out.contains("OK (") && !containsAnyIgnoreCase(out, "FAILURES!!!")) {
-                return out + "\nBUILD SUCCESS\n";
-            }
-            return out + "\nBUILD FAILED\n";
-
-        } catch (Exception e) {
-            return "Execution Error: " + e.getMessage();
-        }
-    }
-
-    /* ============================================================
-     * Helpers
-     * ============================================================ */
-
-    private static final class ProcessRun {
-        final int exitCode;
-        final String output;
-        ProcessRun(int exitCode, String output) {
-            this.exitCode = exitCode;
-            this.output = output;
-        }
-    }
-
-    private static ProcessRun runProcessStreaming(ProcessBuilder pb, java.util.function.Consumer<String> viewer) throws Exception {
-        Process p = null;
-        StringBuilder sb = new StringBuilder();
-        Thread killer = null;
-
-        try {
-            p = pb.start();
-            _CURRENT_PROCESS.set(p);
-            final Process proc = p;
-
-            killer = new Thread(() -> {
-                try {
-                    while (proc.isAlive()) {
-                        if (isCancelled() || Thread.currentThread().isInterrupted()) {
-                            try {
-                                if (viewer != null) viewer.accept("[WORKFLOW] Cancel requested; killing process...");
-                            } catch (Throwable ignored) {}
-                            try { proc.destroy(); } catch (Throwable ignored) {}
-                            try {
-                                if (proc.isAlive()) proc.destroyForcibly();
-                            } catch (Throwable ignored) {}
-                            break;
-                        }
-                        try {
-                            Thread.sleep(120);
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            break;
-                        }
-                    }
-                } catch (Throwable ignored) {
-                    // ignore
-                }
-            }, "acp-cancel-killer");
-            killer.setDaemon(true);
-            killer.start();
-
-            try (java.io.BufferedReader br = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    if (Thread.currentThread().isInterrupted()) {
-                        throw new InterruptedException("CANCELLED");
-                    }
-                    sb.append(line).append("\n");
-                    if (viewer != null && !isCancelled()) viewer.accept(line);
-                    if (isCancelled()) break;
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw e;
-            } catch (Throwable ignored) {
-                // best-effort
-            }
-
-            int exit;
-            try {
-                exit = proc.waitFor();
-            } catch (InterruptedException e) {
-                try { proc.destroy(); } catch (Throwable ignored) {}
-                try {
-                    if (proc.isAlive()) proc.destroyForcibly();
-                } catch (Throwable ignored) {}
-                Thread.currentThread().interrupt();
-                throw e;
-            } catch (Throwable t) {
-                exit = -1;
-            }
-
-            if (isCancelled() || Thread.currentThread().isInterrupted()) {
-                try { proc.destroy(); } catch (Throwable ignored) {}
-                try {
-                    if (proc.isAlive()) proc.destroyForcibly();
-                } catch (Throwable ignored) {}
-                return new ProcessRun(-1, sb.toString() + "\n[CANCELLED]\n");
-            }
-
-            return new ProcessRun(exit, sb.toString());
-        } finally {
-            if (killer != null) {
-                try { killer.interrupt(); } catch (Throwable ignored) {}
-            }
-            if (p != null) {
-                _CURRENT_PROCESS.compareAndSet(p, null);
-            }
-        }
-    }
-
-    /**
-     * Extract a resource on the classpath to a temp file (for tools shipped under src/main/resources).
-     */
-    private static File materializeResourceToTempFile(String resourcePath, String prefix, String suffix) throws IOException {
-        InputStream in = CloneRefactorWorkflow.class.getClassLoader().getResourceAsStream(resourcePath);
-        if (in == null) return null;
-        File tmp = File.createTempFile(prefix, suffix);
-        tmp.deleteOnExit();
-        try (in; OutputStream out = new FileOutputStream(tmp)) {
-            in.transferTo(out);
-        }
-        return tmp;
-    }
-
-    /**
-     * Reflection-based access to keep workflow compatible across evolving agent DTOs.
-     * Tries public fields first, then getter methods.
-     */
-    private static String getReqString(Object req, String... names) {
-        if (req == null || names == null) return null;
-        Class<?> cls = req.getClass();
-
-        for (String n : names) {
-            if (n == null || n.isBlank()) continue;
-
-            // 1) Public field
-            try {
-                java.lang.reflect.Field f = cls.getField(n);
-                Object v = f.get(req);
-                if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {
-                // ignore
-            }
-
-            // 2) Declared field (private/protected/package)
-            try {
-                java.lang.reflect.Field f = cls.getDeclaredField(n);
-                f.setAccessible(true);
-                Object v = f.get(req);
-                if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {
-                // ignore
-            }
-
-            // 3) Getter method (getX)
-            try {
-                String mname = "get" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
-                java.lang.reflect.Method m = cls.getMethod(mname);
-                Object v = m.invoke(req);
-                if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {
-                // ignore
-            }
-
-            // 4) Declared getter (non-public)
-            try {
-                String mname = "get" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
-                java.lang.reflect.Method m = cls.getDeclaredMethod(mname);
-                m.setAccessible(true);
-                Object v = m.invoke(req);
-                if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {
-                // ignore
-            }
-
-            // 5) Boolean-style getter (isX)
-            try {
-                String mname = "is" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
-                java.lang.reflect.Method m = cls.getMethod(mname);
-                Object v = m.invoke(req);
-                if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {
-                // ignore
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Resolve the primary class FQN from a Java source text (best-effort).
-     * This avoids PSI dependencies and works even before compilation.
-     */
-    private static String resolvePrimaryClassFqn(String javaSource, String fileName) {
-        if (javaSource == null) return "";
-        String pkg = "";
-        Matcher pm = Pattern.compile("(?m)^\\s*package\\s+([a-zA-Z_][\\w\\.]*)\\s*;").matcher(javaSource);
-        if (pm.find()) pkg = pm.group(1);
-
-        // Prefer the first public top-level class/interface/enum/record, else fall back to file basename.
-        Matcher cm = Pattern.compile("(?m)^\\s*public\\s+(?:final\\s+|abstract\\s+|sealed\\s+|non-sealed\\s+)?(class|interface|enum|record)\\s+([A-Za-z_][\\w]*)\\b").matcher(javaSource);
-        String simple = null;
-        if (cm.find()) {
-            simple = cm.group(2);
-        } else {
-            Matcher c2 = Pattern.compile("(?m)^\\s*(?:final\\s+|abstract\\s+|sealed\\s+|non-sealed\\s+)?(class|interface|enum|record)\\s+([A-Za-z_][\\w]*)\\b").matcher(javaSource);
-            if (c2.find()) simple = c2.group(2);
-        }
-        if (simple == null || simple.isBlank()) {
-            if (fileName != null && fileName.endsWith(".java")) {
-                simple = fileName.substring(0, fileName.length() - 5);
-            } else {
-                simple = "";
-            }
-        }
-        if (pkg.isBlank()) return simple;
-        if (simple.isBlank()) return pkg;
-        return pkg + "." + simple;
-    }
-
-    /**
-     * Builds classpath from IDE module settings.
-     * Includes production and test output paths, ensuring they exist on disk.
-     */
-    private static String buildProjectClasspathFromIde(Project project) {
-        if (project == null || project.isDisposed()) return "";
-        try {
-            com.intellij.openapi.module.Module[] modules = com.intellij.openapi.module.ModuleManager.getInstance(project).getModules();
-            if (modules == null || modules.length == 0) return "";
-
-            java.util.Set<String> paths = new java.util.LinkedHashSet<>();
-
-            for (com.intellij.openapi.module.Module m : modules) {
-                if (m == null || m.isDisposed()) continue;
-
-                try {
-                    com.intellij.util.PathsList orderEntries = com.intellij.openapi.roots.OrderEnumerator.orderEntries(m)
-                            .recursively().withoutSdk().classes().getPathsList();
-                    paths.addAll(orderEntries.getPathList());
-                } catch (Throwable ignored) {
-                }
-
-                try {
-                    com.intellij.openapi.roots.CompilerModuleExtension ext =
-                            com.intellij.openapi.roots.CompilerModuleExtension.getInstance(m);
-                    if (ext != null) {
-                        if (ext.getCompilerOutputPath() != null) {
-                            paths.add(ext.getCompilerOutputPath().getPath());
-                        }
-                        if (ext.getCompilerOutputPathForTests() != null) {
-                            paths.add(ext.getCompilerOutputPathForTests().getPath());
-                        }
-                    }
-                } catch (Throwable ignored) {
-                }
-
-                // Fallback for old multi-module projects: include source roots too.
-                try {
-                    com.intellij.openapi.roots.ModuleRootManager rootManager =
-                            com.intellij.openapi.roots.ModuleRootManager.getInstance(m);
-                    if (rootManager != null) {
-                        for (com.intellij.openapi.vfs.VirtualFile root : rootManager.getSourceRoots(false)) {
-                            if (root != null && root.getPath() != null && !root.getPath().isBlank()) {
-                                paths.add(root.getPath());
-                            }
-                        }
-                        for (com.intellij.openapi.vfs.VirtualFile root : rootManager.getSourceRoots(true)) {
-                            if (root != null && root.getPath() != null && !root.getPath().isBlank()) {
-                                paths.add(root.getPath());
-                            }
-                        }
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
-
-            // Heuristic: include common output dirs anywhere under the project if they exist.
-            try {
-                String basePath = project.getBasePath();
-                if (basePath != null && !basePath.isBlank()) {
-                    java.nio.file.Path base = java.nio.file.Paths.get(basePath);
-                    java.nio.file.Files.walk(base)
-                            .filter(p -> p != null && java.nio.file.Files.isDirectory(p))
-                            .forEach(p -> {
-                                String s = p.toString();
-                                if (s.endsWith(java.io.File.separator + "target" + java.io.File.separator + "classes")
-                                        || s.endsWith(java.io.File.separator + "target" + java.io.File.separator + "test-classes")
-                                        || s.endsWith(java.io.File.separator + "classes" + java.io.File.separator + "production")
-                                        || s.endsWith(java.io.File.separator + "classes" + java.io.File.separator + "test")
-                                        || s.endsWith(java.io.File.separator + "out" + java.io.File.separator + "production")
-                                        || s.endsWith(java.io.File.separator + "out" + java.io.File.separator + "test")) {
-                                    paths.add(s);
-                                }
-                            });
-                }
-            } catch (Throwable ignored) {
-            }
-
-            java.util.Set<String> validPaths = new java.util.LinkedHashSet<>();
-            for (String p : paths) {
-                if (p != null && !p.isBlank() && new File(p).exists()) {
-                    validPaths.add(p);
-                }
-            }
-
-            return String.join(File.pathSeparator, validPaths);
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
-    /**
-     * Given a path to a java executable (e.g. /path/to/jdk/bin/java),
-     * returns the likely JAVA_HOME (e.g. /path/to/jdk).
-     */
-    private static String deriveJavaHome(String javaExe) {
-        if (javaExe == null || javaExe.isBlank()) return null;
-        File f = new File(javaExe);
-        // Walk up: java -> bin -> JAVA_HOME
-        File bin = f.getParentFile();
-        if (bin != null && "bin".equalsIgnoreCase(bin.getName())) {
-            File home = bin.getParentFile();
-            if (home != null && home.exists()) {
-                return home.getAbsolutePath();
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Best-effort java executable resolution. Prefers project SDK, JAVA_8_HOME, JAVA_HOME, else "java".
-     */
-    private static String resolveJavaExecutable(Project project) {
-        // 0) Prefer explicit Java 8 home if provided (EvoSuite 1.2.0 is most stable on Java 8).
-        String java8 = System.getenv("JAVA_8_HOME");
-        if (java8 != null && !java8.isBlank()) {
-            File f = new File(java8, "bin" + File.separator + "java");
-            if (f.exists()) return f.getAbsolutePath();
-            File fExe = new File(java8, "bin" + File.separator + "java.exe");
-            if (fExe.exists()) return fExe.getAbsolutePath();
-        }
-
-        // 1) Use IntelliJ Project SDK if available.
-        try {
-            if (project != null && !project.isDisposed()) {
-                com.intellij.openapi.projectRoots.Sdk sdk = com.intellij.openapi.roots.ProjectRootManager.getInstance(project).getProjectSdk();
-                if (sdk != null) {
-                    String home = sdk.getHomePath();
-                    if (home != null && !home.isBlank()) {
-                        File f = new File(home, "bin" + File.separator + "java");
-                        if (f.exists()) return f.getAbsolutePath();
-                        File fExe = new File(home, "bin" + File.separator + "java.exe");
-                        if (fExe.exists()) return fExe.getAbsolutePath();
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-            // ignore
-        }
-
-        // 2) Fallback to JAVA_HOME
-        String javaHome = System.getenv("JAVA_HOME");
-        if (javaHome != null && !javaHome.isBlank()) {
-            File f = new File(javaHome, "bin" + File.separator + "java");
-            if (f.exists()) return f.getAbsolutePath();
-            File fExe = new File(javaHome, "bin" + File.separator + "java.exe");
-            if (fExe.exists()) return fExe.getAbsolutePath();
-        }
-
-        return "java";
-    }
-
-    private static boolean containsAnyIgnoreCase(String haystack, String... needles) {
-        if (haystack == null) return false;
-        String h = haystack.toLowerCase(java.util.Locale.ROOT);
-        if (needles == null) return false;
-        for (String n : needles) {
-            if (n == null) continue;
-            if (h.contains(n.toLowerCase(java.util.Locale.ROOT))) return true;
-        }
-        return false;
-    }
-
-    private static String readProcessOutput(Process p) throws Exception {
-        StringBuilder sb = new StringBuilder();
-        try (BufferedReader br =
-                     new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                sb.append(line).append("\n");
-            }
-        }
-        p.waitFor();
-        return sb.toString();
-    }
-
     // NOTE: RAG retrieval uses clone code (via buildRefactorRagQueryText) when available; ranges here are only for agent context.
     private static refactoring.DetectedClone convertClone(detection.DetectedClone c) {
+        String representative = "";
+        if (c != null) {
+            java.util.List<String> cloneCodes = getDetectedCloneCodes(c, null);
+            if (!cloneCodes.isEmpty() && cloneCodes.get(0) != null && !cloneCodes.get(0).isBlank()) {
+                representative = cloneCodes.get(0);
+            } else if (c.cloneCodeA != null && !c.cloneCodeA.isBlank()) {
+                representative = c.cloneCodeA;
+            } else if (c.cloneCodeB != null && !c.cloneCodeB.isBlank()) {
+                representative = c.cloneCodeB;
+            }
+        }
         return new refactoring.DetectedClone(
                 c.id,
                 c.ranges.stream()
                         .map(r -> new refactoring.CloneRange(r.startLine, r.endLine))
                         .toList(),
                 c.refactorType,
-                c.reason
+                c.reason,
+                representative,
+                getDetectedCloneCodes(c, null),
+                c.cloneCodeA,
+                c.cloneCodeB
         );
     }
 
 
     // ===== Ablation toggle: set to false to disable RAG retrieval entirely =====
-    private static final boolean ENABLE_REFACTOR_RAG = false;
+    private static final boolean ENABLE_REFACTOR_RAG = true;
 
     /**
      * Build a query string for refactor RAG retrieval.
@@ -2512,124 +1670,716 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         }
     }
 
-    private static void logStage(String stage, String msg) {
-        System.out.printf(Locale.ROOT, "[%s] %s%n", stage, msg);
-    }
+    private static final class CloneSelectionOption {
+        final detection.DetectedClone clone;
+        final String label;
+        final String details;
 
-    private static void logStage(Consumer<String> viewer, String stage, String msg) {
-        logStage(stage, msg);
-        if (viewer != null) {
-            viewer.accept("[" + stage + "] " + (msg == null ? "" : msg));
+        CloneSelectionOption(detection.DetectedClone clone, String label, String details) {
+            this.clone = clone;
+            this.label = label == null ? "<unknown clone>" : label;
+            this.details = details == null ? "" : details;
+        }
+
+        @Override
+        public String toString() {
+            return label;
         }
     }
 
-    /** Run `java -version` and return output for debugging (stdout+stderr). */
-    private static String readJavaVersion(String javaExe) {
-        if (javaExe == null || javaExe.isBlank()) return "";
+    private static final class CloneRangeSelectionOption {
+        final int rangeIndex;
+        final detection.CloneRange range;
+        final String label;
+        final String details;
+        final String snippet;
+        final String uniqueKey;
+
+        CloneRangeSelectionOption(int rangeIndex,
+                                  detection.CloneRange range,
+                                  String label,
+                                  String details,
+                                  String snippet,
+                                  String uniqueKey) {
+            this.rangeIndex = rangeIndex;
+            this.range = range;
+            this.label = label == null ? "<unknown occurrence>" : label;
+            this.details = details == null ? "" : details;
+            this.snippet = snippet == null ? "" : snippet;
+            this.uniqueKey = uniqueKey == null ? "" : uniqueKey;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
+    private static detection.DetectedClone chooseCloneToRefactor(Project project,
+                                                                 VirtualFile vf,
+                                                                 java.util.List<detection.DetectedClone> clones,
+                                                                 Consumer<String> viewer) {
+        if (clones == null || clones.isEmpty()) return null;
+
+        java.util.ArrayList<CloneSelectionOption> options = new java.util.ArrayList<>();
+        int ordinal = 1;
+        for (detection.DetectedClone clone : clones) {
+            if (clone == null) continue;
+            CloneSelectionOption option = buildCloneSelectionOption(project, vf, clone, ordinal++);
+            options.add(option);
+            logStage(viewer, "DETECTION", "clone candidate: " + option.label);
+        }
+
+        if (options.isEmpty()) return null;
+        if (options.size() == 1) {
+            CloneSelectionOption only = options.get(0);
+            logStage(viewer, "DETECTION", "single clone group after merge; skipping group chooser: " + only.label);
+            return only.clone;
+        }
+        for (int i = 0; i < options.size(); i++) {
+            CloneSelectionOption option = options.get(i);
+            previewCloneRangeInEditor(project, vf, getRepresentativeRange(option.clone));
+            int choice = showSequentialChoiceDialog(
+                    project,
+                    "Refactor Clone Candidate",
+                    buildSequentialClonePrompt(option, i + 1, options.size()),
+                    "Refactor This Clone",
+                    (i + 1) < options.size() ? "Next Clone" : "Skip",
+                    "Cancel"
+            );
+            if (choice == Messages.CANCEL) {
+                logStage(viewer, "DETECTION", "clone selection cancelled");
+                return null;
+            }
+            if (choice == Messages.YES) {
+                logStage(viewer, "DETECTION", "selected clone: " + option.label);
+                return option.clone;
+            }
+        }
+
+        logStage(viewer, "DETECTION", "no clone candidate selected");
+        return null;
+    }
+
+    private static detection.DetectedClone chooseCloneRangesToRefactor(Project project,
+                                                                       VirtualFile vf,
+                                                                       String fileSource,
+                                                                       detection.DetectedClone clone,
+                                                                       Consumer<String> viewer) {
+        if (clone == null || clone.ranges == null || clone.ranges.size() <= 1) return clone;
+
+        java.util.LinkedHashMap<String, CloneRangeSelectionOption> uniqueOptions = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < clone.ranges.size(); i++) {
+            CloneRangeSelectionOption option = buildCloneRangeSelectionOption(project, vf, fileSource, clone, i);
+            if (option == null) continue;
+            if (uniqueOptions.containsKey(option.uniqueKey)) continue;
+            uniqueOptions.put(option.uniqueKey, option);
+            logStage(viewer, "DETECTION", "clone range candidate: " + option.label);
+        }
+        java.util.ArrayList<CloneRangeSelectionOption> options = new java.util.ArrayList<>(uniqueOptions.values());
+        if (options.size() <= 1) return clone;
+
+        java.util.ArrayList<CloneRangeSelectionOption> selected = new java.util.ArrayList<>();
+        for (int i = 0; i < options.size(); i++) {
+            CloneRangeSelectionOption option = options.get(i);
+            previewCloneRangeInEditor(project, vf, option.range);
+            int choice = showSequentialChoiceDialog(
+                    project,
+                    "Select Clone Occurrence",
+                    buildSequentialRangePrompt(option, i + 1, options.size(), selected.size()),
+                    "Include",
+                    "Exclude",
+                    "Cancel"
+            );
+            if (choice == Messages.CANCEL) {
+                logStage(viewer, "DETECTION", "clone range selection cancelled");
+                return null;
+            }
+            if (choice == Messages.YES) {
+                selected.add(option);
+            }
+        }
+
+        if (selected.size() < 2) {
+            showNotification(project,
+                    "[Clone] Need at least two clone occurrences to refactor, but only " + selected.size() + " were selected.",
+                    NotificationType.WARNING);
+            logStage(viewer, "DETECTION", "clone range selection rejected: selected=" + selected.size());
+            return null;
+        }
+
+        detection.DetectedClone selectedClone = buildSelectedCloneFromRanges(clone, selected, fileSource);
+        logStage(viewer, "DETECTION", "selected clone ranges: " + summarizeSelectedRangeLabels(selected));
+        return selectedClone;
+    }
+
+    private static CloneSelectionOption buildCloneSelectionOption(Project project,
+                                                                  VirtualFile vf,
+                                                                  detection.DetectedClone clone,
+                                                                  int ordinal) {
+        java.util.List<CloneMethodSnapshot> snapshots = captureCloneMethodSnapshots(project, vf, clone, null);
+        String methodSummary = summarizeCloneMethods(snapshots);
+        String rangeSummary = summarizeCloneRanges(clone == null ? null : clone.ranges);
+
+        String label = "Clone " + ordinal;
+        if (!methodSummary.isBlank()) {
+            label += ": " + methodSummary;
+        }
+        if (!rangeSummary.isBlank()) {
+            label += " [" + rangeSummary + "]";
+        }
+
+        java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, null);
+        String[] ab = extractCloneCodeABFromReason(clone == null ? null : clone.reason);
+        String cloneCodeA = !cloneCodes.isEmpty() ? firstNonBlank(cloneCodes.get(0), ab[0]) : firstNonBlank(clone == null ? null : clone.cloneCodeA, ab[0]);
+        String cloneCodeB = cloneCodes.size() > 1 ? firstNonBlank(cloneCodes.get(1), ab[1]) : firstNonBlank(clone == null ? null : clone.cloneCodeB, ab[1]);
+
+        StringBuilder details = new StringBuilder();
+        details.append("ID: ").append(clone == null || clone.id == null || clone.id.isBlank() ? "<unknown>" : clone.id).append("\n");
+        if (!methodSummary.isBlank()) {
+            details.append("Methods: ").append(methodSummary).append("\n");
+        }
+        if (!rangeSummary.isBlank()) {
+            details.append("Ranges: ").append(rangeSummary).append("\n");
+        }
+        if (clone != null && clone.refactorType != null && !clone.refactorType.isBlank()) {
+            details.append("Suggested refactor type: ").append(clone.refactorType).append("\n");
+        }
+
+        String reasonPreview = previewOneLine(clone == null ? "" : clone.reason, 320);
+        if (reasonPreview != null && !reasonPreview.isBlank()) {
+            details.append("\nReason preview:\n").append(reasonPreview).append("\n");
+        }
+
+        String codeAPreview = previewCodeForSelection(cloneCodeA);
+        if (!codeAPreview.isBlank()) {
+            details.append("\nClone A preview:\n").append(codeAPreview).append("\n");
+        }
+
+        String codeBPreview = previewCodeForSelection(cloneCodeB);
+        if (!codeBPreview.isBlank()) {
+            details.append("\nClone B preview:\n").append(codeBPreview).append("\n");
+        }
+
+        return new CloneSelectionOption(clone, label, details.toString().trim());
+    }
+
+    private static String summarizeCloneMethods(java.util.List<CloneMethodSnapshot> snapshots) {
+        if (snapshots == null || snapshots.isEmpty()) return "";
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        for (CloneMethodSnapshot snapshot : snapshots) {
+            if (snapshot == null || snapshot.displayName == null || snapshot.displayName.isBlank()) continue;
+            names.add(snapshot.displayName);
+        }
+        return String.join(" <-> ", names);
+    }
+
+    private static String summarizeCloneRanges(java.util.List<detection.CloneRange> ranges) {
+        if (ranges == null || ranges.isEmpty()) return "";
+        java.util.ArrayList<String> parts = new java.util.ArrayList<>();
+        for (detection.CloneRange range : ranges) {
+            if (range == null) continue;
+            parts.add(range.startLine + "-" + range.endLine);
+        }
+        return String.join(", ", parts);
+    }
+
+    private static String previewCodeForSelection(String code) {
+        if (code == null || code.isBlank()) return "";
+        String normalized = code.replace("\r\n", "\n").replace("\r", "\n").strip();
+        if (normalized.length() > 800) {
+            normalized = normalized.substring(0, 800) + "\n...<truncated>...";
+        }
+        return normalized;
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) return first;
+        if (second != null && !second.isBlank()) return second;
+        return "";
+    }
+
+    private static String buildSequentialClonePrompt(CloneSelectionOption option, int ordinal, int total) {
+        if (option == null) return "Refactor this clone?";
+        StringBuilder sb = new StringBuilder();
+        sb.append("Clone candidate ").append(ordinal).append("/").append(total).append("\n\n");
+        sb.append(option.label);
+        sb.append("\n\nThe clone code has been highlighted in the editor.");
+        sb.append("\n\nDo you want to refactor this clone?");
+        return sb.toString();
+    }
+
+    private static String buildSequentialRangePrompt(CloneRangeSelectionOption option,
+                                                     int ordinal,
+                                                     int total,
+                                                     int currentSelectedCount) {
+        if (option == null) return "Include this clone occurrence?";
+        StringBuilder sb = new StringBuilder();
+        sb.append("Clone occurrence ").append(ordinal).append("/").append(total).append("\n");
+        sb.append("Currently selected: ").append(currentSelectedCount).append("\n\n");
+        sb.append(option.label);
+        sb.append("\n\nThis clone occurrence has been highlighted in the editor.");
+        sb.append("\n\nInclude this clone occurrence in the refactoring?");
+        return sb.toString();
+    }
+
+    private static int showSequentialChoiceDialog(Project project,
+                                                  String title,
+                                                  String message,
+                                                  String yesText,
+                                                  String noText,
+                                                  String cancelText) {
+        final java.util.concurrent.atomic.AtomicInteger out = new java.util.concurrent.atomic.AtomicInteger(Messages.CANCEL);
+        Runnable ui = () -> {
+            try {
+                int choice = Messages.showYesNoCancelDialog(
+                        project,
+                        message == null ? "" : message,
+                        title == null ? "Clone Refactoring" : title,
+                        yesText == null ? "Yes" : yesText,
+                        noText == null ? "No" : noText,
+                        cancelText == null ? "Cancel" : cancelText,
+                        Messages.getQuestionIcon()
+                );
+                out.set(choice);
+            } catch (Throwable ignored) {
+                out.set(Messages.CANCEL);
+            }
+        };
+
+        if (ApplicationManager.getApplication().isDispatchThread()) {
+            ui.run();
+        } else {
+            ApplicationManager.getApplication().invokeAndWait(ui);
+        }
+        return out.get();
+    }
+
+    private static detection.CloneRange getRepresentativeRange(detection.DetectedClone clone) {
+        if (clone == null || clone.ranges == null || clone.ranges.isEmpty()) return null;
+        return clone.ranges.get(0);
+    }
+
+    private static void previewCloneRangeInEditor(Project project,
+                                                  VirtualFile vf,
+                                                  detection.CloneRange range) {
+        if (project == null || project.isDisposed() || vf == null || range == null) return;
+        Runnable ui = () -> {
+            try {
+                OpenFileDescriptor descriptor = new OpenFileDescriptor(project, vf, Math.max(0, range.startLine - 1), 0);
+                Editor editor = FileEditorManager.getInstance(project).openTextEditor(descriptor, true);
+                if (editor == null) return;
+
+                Document doc = editor.getDocument();
+                if (doc == null || doc.getLineCount() <= 0) return;
+
+                int startLine = Math.max(0, Math.min(range.startLine - 1, doc.getLineCount() - 1));
+                int endLine = Math.max(startLine, Math.min(range.endLine - 1, doc.getLineCount() - 1));
+                int startOffset = doc.getLineStartOffset(startLine);
+                int endOffset = doc.getLineEndOffset(endLine);
+
+                editor.getSelectionModel().setSelection(startOffset, endOffset);
+                editor.getCaretModel().moveToOffset(startOffset);
+                editor.getScrollingModel().scrollToCaret(ScrollType.CENTER);
+            } catch (Throwable ignored) {
+            }
+        };
+
+        if (ApplicationManager.getApplication().isDispatchThread()) {
+            ui.run();
+        } else {
+            ApplicationManager.getApplication().invokeAndWait(ui);
+        }
+    }
+
+    private static java.util.List<String> getDetectedCloneCodes(detection.DetectedClone clone, String fileSource) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        if (clone == null) return out;
+
+        if (clone.cloneCodes != null) {
+            for (String code : clone.cloneCodes) {
+                out.add(code == null ? "" : code);
+            }
+        }
+
+        if (out.isEmpty()) {
+            if (clone.cloneCodeA != null && !clone.cloneCodeA.isBlank()) out.add(clone.cloneCodeA);
+            if (clone.cloneCodeB != null && !clone.cloneCodeB.isBlank()) out.add(clone.cloneCodeB);
+        }
+
+        int rangeCount = clone.ranges == null ? 0 : clone.ranges.size();
+        while (out.size() < rangeCount) {
+            detection.CloneRange range = (clone.ranges == null || out.size() >= clone.ranges.size()) ? null : clone.ranges.get(out.size());
+            out.add(range == null ? "" : sliceSourceByCloneRange(fileSource, range));
+        }
+        return out;
+    }
+
+    private static String getDetectedCloneCodeAt(detection.DetectedClone clone,
+                                                 int rangeIndex,
+                                                 String fileSource) {
+        java.util.List<String> codes = getDetectedCloneCodes(clone, fileSource);
+        if (rangeIndex >= 0 && rangeIndex < codes.size()) {
+            return codes.get(rangeIndex) == null ? "" : codes.get(rangeIndex);
+        }
+        return "";
+    }
+
+    private static CloneRangeSelectionOption buildCloneRangeSelectionOption(Project project,
+                                                                            VirtualFile vf,
+                                                                            String fileSource,
+                                                                            detection.DetectedClone clone,
+                                                                            int rangeIndex) {
+        if (clone == null || clone.ranges == null || rangeIndex < 0 || rangeIndex >= clone.ranges.size()) return null;
+        detection.CloneRange range = clone.ranges.get(rangeIndex);
+        if (range == null) return null;
+
+        PsiMethod method = findMethodContainingLine(project, vf, range.startLine);
+        if (method == null) method = findMethodContainingLine(project, vf, range.endLine);
+        String displayName = method == null ? "<unknown method>" : buildMethodDisplayName(method);
+        String uniqueKey = range.startLine + ":" + range.endLine;
+
+        String snippet = firstNonBlank(getDetectedCloneCodeAt(clone, rangeIndex, fileSource), sliceSourceByCloneRange(fileSource, range));
+        String label = "Occurrence " + (rangeIndex + 1) + ": " + displayName + " [" + range.startLine + "-" + range.endLine + "]";
+        StringBuilder details = new StringBuilder();
+        details.append("Method: ").append(displayName).append("\n");
+        details.append("Lines: ").append(range.startLine).append("-").append(range.endLine).append("\n");
+
+        String snippetPreview = previewCodeForSelection(snippet);
+        if (!snippetPreview.isBlank()) {
+            details.append("\nCode preview:\n").append(snippetPreview);
+        }
+
+        return new CloneRangeSelectionOption(rangeIndex, range, label, details.toString().trim(), snippet, uniqueKey);
+    }
+
+    private static String buildRangeSelectionDetails(java.util.List<CloneRangeSelectionOption> selected) {
+        if (selected == null || selected.isEmpty()) {
+            return "No ranges selected.";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Selected occurrences: ").append(selected.size()).append("\n\n");
+        for (CloneRangeSelectionOption option : selected) {
+            if (option == null) continue;
+            sb.append(option.label).append("\n");
+            if (option.details != null && !option.details.isBlank()) {
+                sb.append(option.details).append("\n");
+            }
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private static detection.DetectedClone buildSelectedCloneFromRanges(detection.DetectedClone original,
+                                                                        java.util.List<CloneRangeSelectionOption> selected,
+                                                                        String fileSource) {
+        detection.DetectedClone clone = new detection.DetectedClone();
+        clone.id = (original == null || original.id == null || original.id.isBlank())
+                ? "selected_clone"
+                : original.id + "_selected";
+        clone.refactorType = original == null ? null : original.refactorType;
+        clone.reason = original == null ? null : original.reason;
+        clone.ranges = new java.util.ArrayList<>();
+        clone.cloneCodes = new java.util.ArrayList<>();
+
+        java.util.ArrayList<CloneRangeSelectionOption> ordered = new java.util.ArrayList<>(selected);
+        ordered.sort(java.util.Comparator.comparingInt(o -> o.rangeIndex));
+
+        for (CloneRangeSelectionOption option : ordered) {
+            if (option == null || option.range == null) continue;
+            detection.CloneRange copy = new detection.CloneRange();
+            copy.startLine = option.range.startLine;
+            copy.endLine = option.range.endLine;
+            clone.ranges.add(copy);
+            clone.cloneCodes.add(firstNonBlank(option.snippet, sliceSourceByCloneRange(fileSource, option.range)));
+        }
+
+        clone.cloneCodeA = clone.cloneCodes.isEmpty() ? "" : clone.cloneCodes.get(0);
+        clone.cloneCodeB = clone.cloneCodes.size() > 1 ? clone.cloneCodes.get(1) : "";
+        return clone;
+    }
+
+    private static detection.CloneRange getRangeAt(java.util.List<CloneRangeSelectionOption> options, int index) {
+        if (options == null || index < 0 || index >= options.size()) return null;
+        CloneRangeSelectionOption option = options.get(index);
+        return option == null ? null : option.range;
+    }
+
+    private static String summarizeSelectedRangeLabels(java.util.List<CloneRangeSelectionOption> selected) {
+        if (selected == null || selected.isEmpty()) return "";
+        java.util.ArrayList<String> labels = new java.util.ArrayList<>();
+        for (CloneRangeSelectionOption option : selected) {
+            if (option == null || option.label == null || option.label.isBlank()) continue;
+            labels.add(option.label);
+        }
+        return String.join(" | ", labels);
+    }
+
+    private static String sliceSourceByCloneRange(String fileSource, detection.CloneRange range) {
         try {
-            ProcessBuilder pb = new ProcessBuilder(javaExe, "-version");
-            pb.redirectErrorStream(true);
-            Process p = pb.start();
-            return readProcessOutput(p);
+            if (fileSource == null || fileSource.isBlank() || range == null) return "";
+            String[] lines = fileSource.replace("\r\n", "\n").replace("\r", "\n").split("\n", -1);
+            if (lines.length == 0) return "";
+            int start = Math.max(1, range.startLine);
+            int end = Math.max(start, range.endLine);
+            int startIdx = Math.min(lines.length, start) - 1;
+            int endIdx = Math.min(lines.length, end) - 1;
+            if (startIdx < 0 || endIdx < startIdx) return "";
+            StringBuilder sb = new StringBuilder();
+            for (int i = startIdx; i <= endIdx; i++) {
+                sb.append(lines[i]).append("\n");
+            }
+            return sb.toString().strip();
         } catch (Throwable t) {
             return "";
         }
     }
 
-    /** Best-effort parse of Java major version from `java -version` output. */
-    private static int parseJavaMajorVersion(String javaVersionOutput) {
-        if (javaVersionOutput == null || javaVersionOutput.isBlank()) return -1;
+    private static java.util.List<detection.DetectedClone> resolveDetectedCloneRangesWithPsi(Project project,
+                                                                                              VirtualFile vf,
+                                                                                              String fileSource,
+                                                                                              java.util.List<detection.DetectedClone> clones,
+                                                                                              Consumer<String> viewer) {
+        if (clones == null || clones.isEmpty()) return java.util.Collections.emptyList();
 
-        java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("version\\s+\\\"([^\\\"]+)\\\"")
-                .matcher(javaVersionOutput);
+        java.util.ArrayList<detection.DetectedClone> resolved = new java.util.ArrayList<>();
+        int changedCloneCount = 0;
+        for (detection.DetectedClone clone : clones) {
+            detection.DetectedClone adjusted = resolveSingleDetectedCloneWithPsi(project, vf, fileSource, clone);
+            resolved.add(adjusted);
 
-        if (!m.find()) return -1;
-
-        String ver = m.group(1);
-        if (ver == null) return -1;
-        ver = ver.trim();
-
-        try {
-            if (ver.startsWith("1.")) {
-                // 1.8.x => major 8
-                String[] parts = ver.split("\\.");
-                if (parts.length >= 2) return Integer.parseInt(parts[1]);
-                return -1;
+            String beforeSummary = summarizeCloneRanges(clone == null ? null : clone.ranges);
+            String afterSummary = summarizeCloneRanges(adjusted == null ? null : adjusted.ranges);
+            if (!java.util.Objects.equals(beforeSummary, afterSummary)) {
+                changedCloneCount++;
+                String cloneId = clone == null || clone.id == null || clone.id.isBlank() ? "<unknown>" : clone.id;
+                logStage(viewer, "DETECTION", "psi-resolved clone ranges for " + cloneId + ": [" + beforeSummary + "] -> [" + afterSummary + "]");
             }
-            // 9+ => first token is major
-            String[] parts = ver.split("\\.");
-            return Integer.parseInt(parts[0]);
-        } catch (Throwable ignored) {
-            return -1;
         }
-    }
 
-    /** Recursively find the first file with the given name under root. */
-    private static java.nio.file.Path findFileRecursivelyByName(java.nio.file.Path root, String fileName) {
-        if (root == null || fileName == null || fileName.isBlank()) return null;
-        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.walk(root)) {
-            return s.filter(p -> p != null && p.getFileName() != null && fileName.equals(p.getFileName().toString()))
-                    .findFirst()
-                    .orElse(null);
-        } catch (Throwable t) {
-            return null;
+        if (changedCloneCount > 0) {
+            logStage(viewer, "DETECTION", "psi-resolved clone ranges: " + changedCloneCount + "/" + resolved.size() + " clone group(s)");
         }
+        return resolved;
     }
 
-    /** Recursively find the first file ending with the given suffix under root. */
-    private static java.nio.file.Path findFirstFileBySuffix(java.nio.file.Path root, String suffix) {
-        if (root == null || suffix == null || suffix.isBlank()) return null;
-        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.walk(root)) {
-            return s.filter(p -> p != null && p.toString().endsWith(suffix))
-                    .findFirst()
-                    .orElse(null);
-        } catch (Throwable t) {
-            return null;
+    private static detection.DetectedClone resolveSingleDetectedCloneWithPsi(Project project,
+                                                                             VirtualFile vf,
+                                                                             String fileSource,
+                                                                             detection.DetectedClone clone) {
+        if (clone == null) return null;
+        if ("psi_fallback_same_file".equals(clone.id)) {
+            return clone;
         }
+
+        detection.DetectedClone adjusted = new detection.DetectedClone();
+        adjusted.id = clone.id;
+        adjusted.refactorType = clone.refactorType;
+        adjusted.reason = clone.reason;
+        adjusted.cloneCodes = new java.util.ArrayList<>();
+        adjusted.ranges = new java.util.ArrayList<>();
+
+        java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, fileSource);
+        int occurrenceCount = Math.max(
+                cloneCodes.size(),
+                clone.ranges == null ? 0 : clone.ranges.size()
+        );
+
+        for (int i = 0; i < occurrenceCount; i++) {
+            detection.CloneRange rawRange = (clone.ranges == null || i >= clone.ranges.size()) ? null : clone.ranges.get(i);
+            String snippet = i < cloneCodes.size() ? cloneCodes.get(i) : "";
+            detection.CloneRange resolvedRange = resolveCloneRangeWithPsi(project, vf, fileSource, snippet, rawRange);
+            if (resolvedRange != null) {
+                adjusted.ranges.add(resolvedRange);
+                adjusted.cloneCodes.add(snippet == null ? "" : snippet);
+            }
+        }
+
+        adjusted.cloneCodeA = adjusted.cloneCodes.isEmpty() ? "" : adjusted.cloneCodes.get(0);
+        adjusted.cloneCodeB = adjusted.cloneCodes.size() > 1 ? adjusted.cloneCodes.get(1) : "";
+        return adjusted;
     }
 
-    private static boolean looksLikeLiteralNNewlineCorruption(String code) {
-        if (code == null) return false;
-        // common corruption patterns observed when stdout/stderr encoding or newline normalization goes wrong
-        return code.contains("npackage ") || code.contains(";n") || code.contains("{n") || code.contains("}n") || code.contains(")n");
+    private static detection.CloneRange resolveCloneRangeWithPsi(Project project,
+                                                                 VirtualFile vf,
+                                                                 String fileSource,
+                                                                 String snippet,
+                                                                 detection.CloneRange rawRange) {
+        PsiMethod rawHostMethod = findMethodContainingCloneRange(project, vf, rawRange);
+        if (rawHostMethod != null) {
+            detection.CloneRange fragmentRange = findFragmentRangeInMethod(project, vf, rawHostMethod, fileSource, snippet, rawRange);
+            if (fragmentRange != null) {
+                return fragmentRange;
+            }
+            if (rawRange != null) {
+                return copyCloneRange(rawRange);
+            }
+
+            int[] methodLines = elementLineRange(project, vf, rawHostMethod);
+            if (methodLines != null) {
+                detection.CloneRange methodRange = new detection.CloneRange();
+                methodRange.startLine = methodLines[0];
+                methodRange.endLine = methodLines[1];
+                return methodRange;
+            }
+        }
+
+        PsiMethod method = findMethodForCloneSnippet(project, vf, fileSource, snippet, rawRange);
+        if (method != null) {
+            detection.CloneRange fragmentRange = findFragmentRangeInMethod(project, vf, method, fileSource, snippet, rawRange);
+            if (fragmentRange != null) {
+                return fragmentRange;
+            }
+            int[] methodLines = elementLineRange(project, vf, method);
+            if (methodLines != null) {
+                detection.CloneRange methodRange = new detection.CloneRange();
+                methodRange.startLine = methodLines[0];
+                methodRange.endLine = methodLines[1];
+                return methodRange;
+            }
+        }
+        return copyCloneRange(rawRange);
     }
 
-    private static String repairLiteralNNewlineCorruption(String code) {
-        if (code == null) return "";
-
-        // IMPORTANT: Only repair *very specific* patterns that strongly indicate newline corruption.
-
-        String s = code;
-
-        // High-confidence boundary patterns where a newline became 'n'
-        s = s.replace(";n", ";\n");
-        s = s.replace(")n", ")\n");
-        s = s.replace("{n", "{\n");
-        s = s.replace("}n", "}\n");
-
-        // Keyword boundaries at start-of-line only (avoid touching identifiers like nodeFigure0)
-        s = s.replaceAll("(?m)^[\\t ]*n(?=package\\s)", "");
-        s = s.replaceAll("(?m)^[\\t ]*n(?=import\\s)", "");
-        s = s.replaceAll("(?m)^[\\t ]*n(?=(public|private|protected)\\b)", "");
-        s = s.replaceAll("(?m)^[\\t ]*n(?=(class|interface|enum|record)\\b)", "");
-
-        // Also handle common inline corruption
-        s = s.replace("npackage ", "\npackage ");
-        s = s.replace("nimport ", "\nimport ");
-
-        return s;
+    private static detection.CloneRange copyCloneRange(detection.CloneRange range) {
+        if (range == null) return null;
+        detection.CloneRange copy = new detection.CloneRange();
+        copy.startLine = range.startLine;
+        copy.endLine = range.endLine;
+        return copy;
     }
 
-    private static String normalizeBrokenNewlines(String code) {
-        if (code == null) return "";
-        // Normalize CRLF/LF first
-        String out = code.replace("\r\n", "\n").replace("\r", "\n");
-        // If we still see lots of ";n"-like artifacts, split them.
-        out = out.replaceAll(";\\s*n+", ";\n");
-        out = out.replaceAll("\\{\\s*n+", "{\n");
-        out = out.replaceAll("\\}\\s*n+", "}\n");
+    private static java.util.List<detection.DetectedClone> mergeOverlappingDetectedClones(String fileSource,
+                                                                                           java.util.List<detection.DetectedClone> clones,
+                                                                                           Consumer<String> viewer) {
+        if (clones == null || clones.isEmpty()) return java.util.Collections.emptyList();
+
+        java.util.ArrayList<detection.DetectedClone> working = new java.util.ArrayList<>();
+        for (detection.DetectedClone clone : clones) {
+            if (clone != null) working.add(clone);
+        }
+        if (working.size() <= 1) return working;
+
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            outer:
+            for (int i = 0; i < working.size(); i++) {
+                for (int j = i + 1; j < working.size(); j++) {
+                    if (detectedClonesOverlap(working.get(i), working.get(j))) {
+                        detection.DetectedClone merged = mergeDetectedClonePair(fileSource, working.get(i), working.get(j));
+                        working.set(i, merged);
+                        working.remove(j);
+                        changed = true;
+                        break outer;
+                    }
+                }
+            }
+        }
+
+        if (working.size() != clones.size()) {
+            logStage(viewer, "DETECTION", "merged overlapping clone groups: " + clones.size() + " -> " + working.size());
+        }
+        return working;
+    }
+
+    private static boolean detectedClonesOverlap(detection.DetectedClone first, detection.DetectedClone second) {
+        if (first == null || second == null || first.ranges == null || second.ranges == null) return false;
+        for (detection.CloneRange left : first.ranges) {
+            for (detection.CloneRange right : second.ranges) {
+                if (cloneRangesOverlap(left, right)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean cloneRangesOverlap(detection.CloneRange left, detection.CloneRange right) {
+        if (left == null || right == null) return false;
+        return left.startLine <= right.endLine && left.endLine >= right.startLine;
+    }
+
+    private static detection.DetectedClone mergeDetectedClonePair(String fileSource,
+                                                                  detection.DetectedClone first,
+                                                                  detection.DetectedClone second) {
+        detection.DetectedClone merged = new detection.DetectedClone();
+        merged.id = mergeCloneIds(first, second);
+        merged.refactorType = firstNonBlank(first == null ? null : first.refactorType, second == null ? null : second.refactorType);
+        merged.reason = mergeCloneReasons(first, second);
+        java.util.ArrayList<MergedCloneOccurrence> mergedOccurrences = mergeCloneOccurrences(fileSource, first, second);
+        merged.ranges = new java.util.ArrayList<>();
+        merged.cloneCodes = new java.util.ArrayList<>();
+        for (MergedCloneOccurrence occurrence : mergedOccurrences) {
+            if (occurrence == null || occurrence.range == null) continue;
+            merged.ranges.add(occurrence.range);
+            merged.cloneCodes.add(occurrence.code == null ? "" : occurrence.code);
+        }
+        merged.cloneCodeA = merged.cloneCodes.isEmpty() ? "" : merged.cloneCodes.get(0);
+        merged.cloneCodeB = merged.cloneCodes.size() > 1 ? merged.cloneCodes.get(1) : "";
+        return merged;
+    }
+
+    private static String mergeCloneIds(detection.DetectedClone first, detection.DetectedClone second) {
+        String a = first == null ? "" : first.id;
+        String b = second == null ? "" : second.id;
+        if (a == null || a.isBlank()) return b == null ? "" : b;
+        if (b == null || b.isBlank()) return a;
+        if (a.equals(b)) return a;
+        return a + "__" + b;
+    }
+
+    private static String mergeCloneReasons(detection.DetectedClone first, detection.DetectedClone second) {
+        java.util.LinkedHashSet<String> parts = new java.util.LinkedHashSet<>();
+        if (first != null && first.reason != null && !first.reason.isBlank()) parts.add(first.reason.strip());
+        if (second != null && second.reason != null && !second.reason.isBlank()) parts.add(second.reason.strip());
+        return String.join("\n\n", parts);
+    }
+
+    private static java.util.ArrayList<MergedCloneOccurrence> mergeCloneOccurrences(String fileSource,
+                                                                                     detection.DetectedClone first,
+                                                                                     detection.DetectedClone second) {
+        java.util.LinkedHashMap<String, MergedCloneOccurrence> unique = new java.util.LinkedHashMap<>();
+        addCloneOccurrences(unique, first, fileSource);
+        addCloneOccurrences(unique, second, fileSource);
+        java.util.ArrayList<MergedCloneOccurrence> out = new java.util.ArrayList<>(unique.values());
+        out.sort((a, b) -> {
+            int cmp = Integer.compare(a.range.startLine, b.range.startLine);
+            return cmp != 0 ? cmp : Integer.compare(a.range.endLine, b.range.endLine);
+        });
         return out;
+    }
+
+    private static void addCloneOccurrences(java.util.Map<String, MergedCloneOccurrence> out,
+                                            detection.DetectedClone clone,
+                                            String fileSource) {
+        if (out == null || clone == null || clone.ranges == null) return;
+        java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, fileSource);
+        for (int i = 0; i < clone.ranges.size(); i++) {
+            detection.CloneRange range = clone.ranges.get(i);
+            if (range == null) continue;
+            String key = range.startLine + ":" + range.endLine;
+            String code = i < cloneCodes.size() ? cloneCodes.get(i) : "";
+            if (out.containsKey(key)) {
+                MergedCloneOccurrence existing = out.get(key);
+                if (existing != null && (existing.code == null || existing.code.isBlank()) && code != null && !code.isBlank()) {
+                    existing.code = code;
+                }
+                continue;
+            }
+            detection.CloneRange copy = new detection.CloneRange();
+            copy.startLine = range.startLine;
+            copy.endLine = range.endLine;
+            out.put(key, new MergedCloneOccurrence(copy, code));
+        }
+    }
+
+    private static final class MergedCloneOccurrence {
+        private final detection.CloneRange range;
+        private String code;
+
+        private MergedCloneOccurrence(detection.CloneRange range, String code) {
+            this.range = range;
+            this.code = code == null ? "" : code;
+        }
     }
 
     /**
@@ -2693,122 +2443,647 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         return decision.get();
     }
 
-    /**
-     * Compile the proposed refactored source to a temp output directory, without modifying the original source file.
-     * The caller should prepend the returned output directory to the runtime classpath so tests execute against
-     * the refactored class.
-     */
-    private static File compileProposedSourceToTemp(Project project,
-                                                    File originalFile,
-                                                    String fileName,
-                                                    String proposedSource,
-                                                    String classpath) throws Exception {
-        if (originalFile == null) throw new IllegalArgumentException("originalFile is null");
-        if (proposedSource == null) throw new IllegalArgumentException("proposedSource is null");
-
-        // Create temp workspace
-        File tempSrcRoot = java.nio.file.Files.createTempDirectory("acp_refactor_src_").toFile();
-        tempSrcRoot.deleteOnExit();
-        File tempOut = java.nio.file.Files.createTempDirectory("acp_refactor_out_").toFile();
-        tempOut.deleteOnExit();
-
-        // Determine relative path under source root (best effort): preserve package directories.
-        String pkg = "";
-        java.util.regex.Matcher pm = java.util.regex.Pattern
-                .compile("(?m)^\\s*package\\s+([a-zA-Z_][\\w\\.]*)\\s*;\\s*$")
-                .matcher(proposedSource);
-        if (pm.find()) {
-            pkg = pm.group(1);
-            if (pkg == null) pkg = "";
-        }
-
-        String relDir = pkg.isBlank() ? "" : pkg.replace('.', File.separatorChar);
-        File dir = relDir.isBlank() ? tempSrcRoot : new File(tempSrcRoot, relDir);
-        if (!dir.exists() && !dir.mkdirs()) {
-            throw new RuntimeException("Failed to create temp source dir: " + dir.getAbsolutePath());
-        }
-
-        String fn = (fileName == null || fileName.isBlank()) ? originalFile.getName() : fileName;
-        if (fn == null || fn.isBlank()) fn = "Refactored.java";
-        File tempJava = new File(dir, fn);
-        java.nio.file.Files.writeString(tempJava.toPath(), proposedSource, java.nio.charset.StandardCharsets.UTF_8);
-        tempJava.deleteOnExit();
-
-        // Resolve javac strictly from Project SDK (DO NOT fall back to PATH)
-        if (project == null || project.isDisposed()) {
-            throw new RuntimeException("Cannot compile: project is null or disposed");
-        }
-
-        com.intellij.openapi.projectRoots.Sdk sdk =
-                com.intellij.openapi.roots.ProjectRootManager.getInstance(project).getProjectSdk();
-        if (sdk == null || sdk.getHomePath() == null || sdk.getHomePath().isBlank()) {
-            throw new RuntimeException("Cannot resolve Project SDK for compilation");
-        }
-
-        File javacFile = new File(sdk.getHomePath(),
-                "bin" + File.separator + (System.getProperty("os.name").toLowerCase().contains("win") ? "javac.exe" : "javac"));
-
-        if (!javacFile.exists()) {
-            throw new RuntimeException("javac not found under Project SDK: " + javacFile.getAbsolutePath());
-        }
-
-        String javacExe = javacFile.getAbsolutePath();
-        String sourcepath = buildProjectSourcepathFromIde(project);
-
-        java.util.List<String> cmd = new java.util.ArrayList<>();
-        cmd.add(javacExe);
-        cmd.add("-encoding");
-        cmd.add("UTF-8");
-        addJavacTargetFlags(cmd, sdk.getHomePath(), resolveProjectTargetMajor(project));
-        cmd.add("-cp");
-        cmd.add(classpath == null ? "" : classpath);
-        if (sourcepath != null && !sourcepath.isBlank()) {
-            cmd.add("-sourcepath");
-            cmd.add(sourcepath);
-        }
-        cmd.add("-d");
-        cmd.add(tempOut.getAbsolutePath());
-        cmd.add(tempJava.getAbsolutePath());
-
+    private static String buildFocusedFeedbackRefactoredCode(Project project,
+                                                             String fileName,
+                                                             String beforeSource,
+                                                             String afterSource,
+                                                             java.util.List<CloneMethodSnapshot> snapshots) {
+        String fullSource = afterSource == null ? "" : afterSource;
         try {
-            logStage("COMPILE", "javac classpath:\n" + (classpath == null ? "" : classpath));
-            logStage("COMPILE", "javac sourcepath:\n" + (sourcepath == null ? "" : sourcepath));
-        } catch (Throwable ignored) {
-            // ignore
+            if (project == null || project.isDisposed() || fullSource.isBlank()) return fullSource;
+
+            PsiJavaFile afterPsi = parseInMemoryJavaFile(project, fileName, fullSource);
+            if (afterPsi == null) return fullSource;
+            PsiJavaFile beforePsi = parseInMemoryJavaFile(project, fileName, beforeSource == null ? "" : beforeSource);
+
+            java.util.LinkedHashMap<String, PsiMethod> afterMethods = collectAllMethodsByUsefulnessKey(afterPsi);
+            if (afterMethods.isEmpty()) return fullSource;
+
+            java.util.LinkedHashMap<String, PsiMethod> beforeMethods =
+                    beforePsi == null ? new java.util.LinkedHashMap<>() : collectAllMethodsByUsefulnessKey(beforePsi);
+
+            java.util.LinkedHashSet<String> targetKeys = collectTargetMethodUsefulnessKeys(snapshots);
+            if (targetKeys.isEmpty()) return fullSource;
+
+            java.util.LinkedHashSet<String> addedKeys = new java.util.LinkedHashSet<>(afterMethods.keySet());
+            addedKeys.removeAll(beforeMethods.keySet());
+
+            java.util.LinkedHashSet<String> helperKeys = collectRelevantHelperMethodKeys(afterMethods, targetKeys, addedKeys);
+
+            StringBuilder sb = new StringBuilder();
+            appendFocusedMethodSection(sb, "Target clone methods", targetKeys, afterMethods, snapshots, false);
+            appendFocusedMethodSection(sb, "New helper methods", helperKeys, afterMethods, snapshots, true);
+
+            String focused = sb.toString().trim();
+            return focused.isEmpty() ? fullSource : focused;
+        } catch (Throwable t) {
+            return fullSource;
+        }
+    }
+
+    private static String buildUsefulnessFeedbackPrompt(Project project,
+                                                        String fileName,
+                                                        String proposedSource,
+                                                        java.util.List<usefulnessChecker.Reason> reasons,
+                                                        java.util.List<CloneMethodSnapshot> snapshots) {
+        if (!containsReasonName(reasons, "POST_EXTRACTION_CLONE_DELETION_DETECTED")) {
+            return usefulnessChecker.buildFeedbackPrompt(reasons);
         }
 
-        // First attempt: UTF-8
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.redirectErrorStream(true);
-        Process p = pb.start();
-        String out = readProcessOutput(p);
-        int exitCode;
-        try { exitCode = p.exitValue(); } catch (Throwable t) { exitCode = -1; }
+        java.util.List<String> missingMethods = findMissingTargetMethodDisplayNames(project, fileName, proposedSource, snapshots);
+        StringBuilder missingText = new StringBuilder();
+        if (!missingMethods.isEmpty()) {
+            missingText.append("\n\nMissing target clone methods in the proposed source:\n");
+            for (String name : missingMethods) {
+                if (name == null || name.isBlank()) continue;
+                missingText.append("- ").append(name).append("\n");
+            }
+            while (missingText.length() > 0 && Character.isWhitespace(missingText.charAt(missingText.length() - 1))) {
+                missingText.setLength(missingText.length() - 1);
+            }
+        }
 
-        // If encoding error, retry with ISO-8859-1
-        if (exitCode != 0 && out != null && out.contains("unmappable character")) {
-            logStage("COMPILE", "Retry with ISO-8859-1 due to encoding error...");
+        return """
+Your previous refactoring was rejected because one or more target clone methods were deleted after extraction.
 
-            java.util.List<String> retryCmd = new java.util.ArrayList<>(cmd);
-            for (int i = 0; i < retryCmd.size() - 1; i++) {
-                if ("-encoding".equals(retryCmd.get(i))) {
-                    retryCmd.set(i + 1, "ISO-8859-1");
-                    break;
+Problem:
+A valid Extract Method refactoring must preserve all original target clone methods.%s
+
+How to fix it:
+- Restore every missing target clone method.
+- Keep the helper method.
+- Make all original target clone methods call the helper.
+
+Important constraints:
+- Do not delete target clone methods.
+- Do not merge them.
+- Only perform Extract Method.
+Follow the required output format for the refactoring task.
+""".formatted(missingText);
+    }
+
+    private static LlmUsefulnessEvaluator.UsefulnessInput buildLlmUsefulnessInput(Project project,
+                                                                                  String fileName,
+                                                                                  detection.DetectedClone clone,
+                                                                                  String beforeSource,
+                                                                                  String afterSource,
+                                                                                  java.util.List<CloneMethodSnapshot> snapshots,
+                                                                                  boolean wholeMethodClone) {
+        String cloneContext = buildLlmUsefulnessCloneContext(clone, snapshots);
+        String focusedBeforeCode = buildFocusedFeedbackRefactoredCode(
+                project,
+                fileName,
+                beforeSource,
+                beforeSource,
+                snapshots
+        );
+        String focusedAfterCode = buildFocusedFeedbackRefactoredCode(
+                project,
+                fileName,
+                beforeSource,
+                afterSource,
+                snapshots
+        );
+        return new LlmUsefulnessEvaluator.UsefulnessInput(
+                fileName,
+                wholeMethodClone
+                        ? LlmUsefulnessEvaluator.CloneKind.WHOLE_METHOD
+                        : LlmUsefulnessEvaluator.CloneKind.FRAGMENT,
+                cloneContext,
+                focusedBeforeCode,
+                focusedAfterCode
+        );
+    }
+
+    private static String buildLlmUsefulnessCloneContext(detection.DetectedClone clone,
+                                                         java.util.List<CloneMethodSnapshot> snapshots) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Clone ID: ").append(clone == null || clone.id == null || clone.id.isBlank()
+                ? "<unknown>"
+                : clone.id).append("\n");
+
+        String methodSummary = summarizeCloneMethods(snapshots);
+        if (!methodSummary.isBlank()) {
+            sb.append("Target methods: ").append(methodSummary).append("\n");
+        }
+
+        String rangeSummary = summarizeCloneRanges(clone == null ? null : clone.ranges);
+        if (!rangeSummary.isBlank()) {
+            sb.append("Selected ranges: ").append(rangeSummary).append("\n");
+        }
+
+        if (clone != null && clone.refactorType != null && !clone.refactorType.isBlank()) {
+            sb.append("Requested refactor type: ").append(clone.refactorType).append("\n");
+        }
+
+        String reasonPreview = previewOneLine(clone == null ? "" : clone.reason, 400);
+        if (reasonPreview != null && !reasonPreview.isBlank()) {
+            sb.append("Detection reason preview: ").append(reasonPreview).append("\n");
+        }
+
+        java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, null);
+        String[] ab = extractCloneCodeABFromReason(clone == null ? null : clone.reason);
+        String cloneCodeA = !cloneCodes.isEmpty()
+                ? firstNonBlank(cloneCodes.get(0), ab[0])
+                : firstNonBlank(clone == null ? null : clone.cloneCodeA, ab[0]);
+        String cloneCodeB = cloneCodes.size() > 1
+                ? firstNonBlank(cloneCodes.get(1), ab[1])
+                : firstNonBlank(clone == null ? null : clone.cloneCodeB, ab[1]);
+
+        String cloneAPreview = previewOneLine(cloneCodeA, 200);
+        if (cloneAPreview != null && !cloneAPreview.isBlank()) {
+            sb.append("Clone A preview: ").append(cloneAPreview).append("\n");
+        }
+
+        String cloneBPreview = previewOneLine(cloneCodeB, 200);
+        if (cloneBPreview != null && !cloneBPreview.isBlank()) {
+            sb.append("Clone B preview: ").append(cloneBPreview).append("\n");
+        }
+
+        return sb.toString().trim();
+    }
+
+    private static String buildLlmUsefulnessFeedbackSection(LlmUsefulnessEvaluator.EvaluationResult evaluation) {
+        if (evaluation == null || evaluation.curatorResult == null || !evaluation.curatorResult.parsed) {
+            return "";
+        }
+
+        LlmUsefulnessEvaluator.CuratorResult curator = evaluation.curatorResult;
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\n[LLM_USEFULNESS]\n");
+        sb.append("Curator decision: ").append(curator.useful ? "USEFUL" : "NOT_USEFUL").append("\n");
+        if (!curator.reasons.isEmpty()) {
+            sb.append("Reasons: ").append(curator.reasons).append("\n");
+        }
+        if (!curator.summary.isBlank()) {
+            sb.append("Summary: ").append(curator.summary).append("\n");
+        }
+        if (!curator.feedback.isBlank()) {
+            sb.append("Feedback: ").append(curator.feedback).append("\n");
+        }
+        if (curator.confidence > 0.0d) {
+            sb.append("Confidence: ").append(String.format(Locale.ROOT, "%.2f", curator.confidence)).append("\n");
+        }
+        if (evaluation.notes != null && !evaluation.notes.isBlank()) {
+            sb.append("Notes: ").append(evaluation.notes).append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private static String mergeRevisionInstructions(String primary, String secondary) {
+        String first = primary == null ? "" : primary.strip();
+        String second = secondary == null ? "" : secondary.strip();
+        if (first.isBlank()) return second;
+        if (second.isBlank()) return first;
+        if (first.equals(second)) return first;
+        return first + "\n\nAdditional PSI guidance:\n" + second;
+    }
+
+    private static String callRefactorLlm(String prompt,
+                                          Consumer<String> viewer,
+                                          Project project) {
+        String stageLabel = inferRefactorLlmLabel(prompt);
+        try {
+            String resp = LLM.complete(prompt);
+            String full = resp == null ? "" : resp;
+            String preview = full.strip();
+            if (preview.length() > 300) preview = preview.substring(0, 300) + "...";
+            logStage(viewer, "LLM_REFACTOR", "[" + stageLabel + "] request sent");
+            logStage(viewer, "LLM_REFACTOR", "[" + stageLabel + "] response preview: " + preview.replace("\n", "\\n"));
+            logStage(viewer, "LLM_REFACTOR", "[" + stageLabel + "] full response begin");
+            if (viewer != null) {
+                StringBuilder block = new StringBuilder();
+                block.append("[LLM_REFACTOR] [").append(stageLabel).append("] output").append("\n");
+                block.append(full);
+                if (!full.endsWith("\n")) {
+                    block.append("\n");
                 }
+                viewer.accept(block.toString());
+            }
+            logStage(viewer, "LLM_REFACTOR", "[" + stageLabel + "] full response end");
+            return full;
+        } catch (Exception e) {
+            logStage(viewer, "LLM_REFACTOR", "[" + stageLabel + "] exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            showNotification(project, "[Clone] LLM refactor call failed: " + e.getMessage(), NotificationType.ERROR);
+            return "";
+        }
+    }
+
+    private static String callUsefulnessLlm(String label,
+                                            String prompt,
+                                            Consumer<String> viewer,
+                                            Project project) {
+        String stageLabel = switch (label == null ? "" : label) {
+            case "P1" -> "Usefulness Panelist 1";
+            case "P2" -> "Usefulness Panelist 2";
+            case "P3" -> "Usefulness Panelist 3";
+            case "CURATOR" -> "Usefulness Curator";
+            default -> "Usefulness";
+        };
+        try {
+            logStage(viewer, "LLM_USEFULNESS", "[" + stageLabel + "] request sent");
+            String resp = LLM.complete(prompt);
+            String full = resp == null ? "" : resp;
+            String preview = full.strip();
+            if (preview.length() > 300) preview = preview.substring(0, 300) + "...";
+            logStage(viewer, "LLM_USEFULNESS", "[" + stageLabel + "] response preview: " + preview.replace("\n", "\\n"));
+            logStage(viewer, "LLM_USEFULNESS", "[" + stageLabel + "] full response begin");
+            if (viewer != null) {
+                StringBuilder block = new StringBuilder();
+                block.append("[LLM_USEFULNESS] [").append(stageLabel).append("] output").append("\n");
+                block.append(full);
+                if (!full.endsWith("\n")) {
+                    block.append("\n");
+                }
+                viewer.accept(block.toString());
+            }
+            logStage(viewer, "LLM_USEFULNESS", "[" + stageLabel + "] full response end");
+            return full;
+        } catch (Exception e) {
+            logStage(viewer, "LLM_USEFULNESS", "[" + stageLabel + "] exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            showNotification(project, "[Clone] LLM usefulness call failed: " + e.getMessage(), NotificationType.ERROR);
+            return "";
+        }
+    }
+
+    private static String callDetectionLlm(String prompt,
+                                           Consumer<String> viewer,
+                                           Project project) {
+        String stageLabel = inferDetectionLlmLabel(prompt);
+        try {
+            logStage(viewer, "LLM_DETECTION", "[" + stageLabel + "] request sent");
+            String resp = LLM.complete(prompt);
+            String full = resp == null ? "" : resp;
+            String preview = resp == null ? "null" : resp.strip();
+            if (preview.length() > 300) preview = preview.substring(0, 300) + "...";
+            logStage(viewer, "LLM_DETECTION", "[" + stageLabel + "] response preview: " + preview.replace("\n", "\\n"));
+            logStage(viewer, "LLM_DETECTION", "[" + stageLabel + "] full response begin");
+            if (viewer != null) {
+                StringBuilder block = new StringBuilder();
+                block.append("[LLM_DETECTION] [").append(stageLabel).append("] output").append("\n");
+                block.append(full);
+                if (!full.endsWith("\n")) {
+                    block.append("\n");
+                }
+                viewer.accept(block.toString());
+            }
+            logStage(viewer, "LLM_DETECTION", "[" + stageLabel + "] full response end");
+            return full;
+        } catch (Exception e) {
+            logStage(viewer, "LLM_DETECTION", "[" + stageLabel + "] exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            showNotification(project, "[Clone] LLM call failed: " + e.getMessage(), NotificationType.ERROR);
+            return "";
+        }
+    }
+
+    private static compilation.CompileResult ignoreBaselineCompileErrors(String targetFileName,
+                                                                         compilation.CompileResult proposal,
+                                                                         compilation.CompileResult baseline) {
+        if (proposal == null || "compile_ok".equals(proposal.status)) return proposal;
+        if (proposal.errors == null || proposal.errors.isEmpty()) return proposal;
+        if (baseline == null || baseline.errors == null || baseline.errors.isEmpty()) return proposal;
+
+        java.util.Set<String> baselineKeys = new java.util.LinkedHashSet<>();
+        for (compilation.CompileError error : baseline.errors) {
+            String key = compileErrorKey(targetFileName, error);
+            if (key != null && !key.isBlank()) {
+                baselineKeys.add(key);
+            }
+        }
+        if (baselineKeys.isEmpty()) return proposal;
+
+        java.util.List<compilation.CompileError> newErrors = new java.util.ArrayList<>();
+        for (compilation.CompileError error : proposal.errors) {
+            String key = compileErrorKey(targetFileName, error);
+            if (key == null || key.isBlank() || !baselineKeys.contains(key)) {
+                newErrors.add(error);
+            }
+        }
+
+        if (newErrors.isEmpty()) {
+            String summary = "Compilation produced only " + proposal.errors.size() +
+                    " pre-existing baseline error(s); ignoring them for this proposal.";
+            return new compilation.CompileResult("compile_ok", proposal.buildTool, proposal.errors, summary);
+        }
+
+        String first = newErrors.get(0).message != null ? newErrors.get(0).message : "(no message)";
+        String summary = String.format(
+                Locale.ROOT,
+                "Compilation failed with %d new error(s). First: %s",
+                newErrors.size(),
+                first
+        );
+        return new compilation.CompileResult(proposal.status, proposal.buildTool, newErrors, summary);
+    }
+
+    private static String compileErrorKey(String targetFileName, compilation.CompileError error) {
+        if (error == null) return "";
+        String file = normalizeCompileErrorFile(targetFileName, error.file);
+        String message = error.message != null ? error.message : error.raw;
+        message = message == null ? "" : message.replaceAll("\\s+", " ").trim();
+        if (file.isBlank() && message.isBlank()) return "";
+        String line = "";
+        if (!isTargetCompileErrorFile(targetFileName, error.file) && error.line != null) {
+            line = ":" + error.line;
+        }
+        return file + line + "|" + message;
+    }
+
+    private static String normalizeCompileErrorFile(String targetFileName, String file) {
+        if (file == null || file.isBlank()) return "";
+        String normalized = file.replace('\\', '/').trim();
+        int slash = normalized.lastIndexOf('/');
+        String basename = slash >= 0 ? normalized.substring(slash + 1) : normalized;
+        String targetBasename = targetFileName == null ? "" : new File(targetFileName).getName();
+        if (!targetBasename.isBlank() && targetBasename.equals(basename)) {
+            return basename;
+        }
+        return normalized;
+    }
+
+    private static boolean isTargetCompileErrorFile(String targetFileName, String file) {
+        if (file == null || file.isBlank()) return false;
+        String normalized = file.replace('\\', '/').trim();
+        int slash = normalized.lastIndexOf('/');
+        String basename = slash >= 0 ? normalized.substring(slash + 1) : normalized;
+        String targetBasename = targetFileName == null ? "" : new File(targetFileName).getName();
+        return !targetBasename.isBlank() && targetBasename.equals(basename);
+    }
+
+    private static String inferDetectionLlmLabel(String prompt) {
+        if (prompt == null || prompt.isBlank()) {
+            return "Detection";
+        }
+        if (prompt.contains("Detection Panelist 1 (P1)")) {
+            return "Detection Panelist 1";
+        }
+        if (prompt.contains("Detection Panelist 2 (P2)")) {
+            return "Detection Panelist 2";
+        }
+        if (prompt.contains("Detection Panelist 3 (P3)")) {
+            return "Detection Panelist 3";
+        }
+        if (prompt.contains("You are the detection curator.")) {
+            return "Detection Curator";
+        }
+        return "Detection";
+    }
+
+    private static String inferRefactorLlmLabel(String prompt) {
+        if (prompt == null || prompt.isBlank()) {
+            return "Refactoring";
+        }
+        if (prompt.contains("Refactoring Panelist 1 (P1)")) {
+            return "Refactoring Panelist 1";
+        }
+        if (prompt.contains("Refactoring Panelist 2 (P2)")) {
+            return "Refactoring Panelist 2";
+        }
+        if (prompt.contains("Refactoring Panelist 3 (P3)")) {
+            return "Refactoring Panelist 3";
+        }
+        if (prompt.contains("You are the refactoring curator.")) {
+            return "Refactoring Curator";
+        }
+        return "Refactoring";
+    }
+
+    private static void appendFocusedMethodSection(StringBuilder sb,
+                                                   String title,
+                                                   java.util.LinkedHashSet<String> keys,
+                                                   java.util.Map<String, PsiMethod> afterMethods,
+                                                   java.util.List<CloneMethodSnapshot> snapshots,
+                                                   boolean helperSection) {
+        if (sb == null || keys == null || keys.isEmpty()) return;
+
+        if (sb.length() > 0) sb.append("\n\n");
+        sb.append("// ").append(title).append("\n");
+
+        for (String key : keys) {
+            if (key == null || key.isBlank()) continue;
+            PsiMethod method = afterMethods == null ? null : afterMethods.get(key);
+            if (method == null) {
+                if (!helperSection) {
+                    String displayName = findSnapshotDisplayName(snapshots, key);
+                    sb.append("// Missing in proposed source: ").append(displayName == null ? key : displayName).append("\n");
+                }
+                continue;
             }
 
-            ProcessBuilder pb2 = new ProcessBuilder(retryCmd);
-            pb2.redirectErrorStream(true);
-            Process p2 = pb2.start();
-            out = readProcessOutput(p2);
-            try { exitCode = p2.exitValue(); } catch (Throwable t) { exitCode = -1; }
+            String displayName = buildMethodDisplayName(method);
+            if (displayName != null && !displayName.isBlank()) {
+                sb.append("// ").append(displayName).append("\n");
+            }
+            sb.append(method.getText().strip()).append("\n\n");
         }
 
-        if (exitCode != 0) {
-            throw new RuntimeException("Compilation failed:\n" + out);
+        while (sb.length() > 0 && Character.isWhitespace(sb.charAt(sb.length() - 1))) {
+            sb.setLength(sb.length() - 1);
+        }
+    }
+
+    private static java.util.LinkedHashSet<String> collectTargetMethodUsefulnessKeys(java.util.List<CloneMethodSnapshot> snapshots) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (snapshots == null || snapshots.isEmpty()) return out;
+        for (CloneMethodSnapshot snapshot : snapshots) {
+            if (snapshot == null) continue;
+            if (snapshot.methodKey != null && !snapshot.methodKey.isBlank()) {
+                out.add(snapshot.methodKey);
+            }
+        }
+        return out;
+    }
+
+    private static java.util.List<String> findMissingTargetMethodDisplayNames(Project project,
+                                                                              String fileName,
+                                                                              String proposedSource,
+                                                                              java.util.List<CloneMethodSnapshot> snapshots) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        try {
+            if (project == null || project.isDisposed() || proposedSource == null || proposedSource.isBlank()) return out;
+            java.util.LinkedHashSet<String> targetKeys = collectTargetMethodUsefulnessKeys(snapshots);
+            if (targetKeys.isEmpty()) return out;
+
+            PsiJavaFile afterPsi = parseInMemoryJavaFile(project, fileName, proposedSource);
+            java.util.LinkedHashMap<String, PsiMethod> afterMethods = collectAllMethodsByUsefulnessKey(afterPsi);
+            for (String key : targetKeys) {
+                if (key == null || key.isBlank()) continue;
+                if (afterMethods.containsKey(key)) continue;
+                String displayName = findSnapshotDisplayName(snapshots, key);
+                out.add((displayName == null || displayName.isBlank()) ? key : displayName);
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    private static java.util.LinkedHashSet<String> collectRelevantHelperMethodKeys(java.util.Map<String, PsiMethod> afterMethods,
+                                                                                   java.util.Set<String> targetKeys,
+                                                                                   java.util.Set<String> addedKeys) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (afterMethods == null || afterMethods.isEmpty() || targetKeys == null || targetKeys.isEmpty()
+                || addedKeys == null || addedKeys.isEmpty()) {
+            return out;
         }
 
-        return tempOut;
+        for (String targetKey : targetKeys) {
+            PsiMethod targetMethod = afterMethods.get(targetKey);
+            if (targetMethod == null) continue;
+            out.addAll(collectCalledAddedMethodKeys(targetMethod, addedKeys));
+        }
+        if (!out.isEmpty()) return out;
+
+        java.util.LinkedHashSet<String> targetClasses = new java.util.LinkedHashSet<>();
+        for (String targetKey : targetKeys) {
+            String className = extractClassNameFromUsefulnessKey(targetKey);
+            if (className != null && !className.isBlank()) targetClasses.add(className);
+        }
+
+        for (String addedKey : addedKeys) {
+            if (targetClasses.contains(extractClassNameFromUsefulnessKey(addedKey))) {
+                out.add(addedKey);
+            }
+        }
+        return out;
+    }
+
+    private static java.util.LinkedHashSet<String> collectCalledAddedMethodKeys(PsiMethod method,
+                                                                                java.util.Set<String> addedKeys) {
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        try {
+            if (method == null || addedKeys == null || addedKeys.isEmpty()) return out;
+            PsiCodeBlock body = method.getBody();
+            if (body == null) return out;
+
+            java.util.Collection<PsiMethodCallExpression> calls =
+                    PsiTreeUtil.findChildrenOfType(body, PsiMethodCallExpression.class);
+            if (calls == null || calls.isEmpty()) return out;
+
+            for (PsiMethodCallExpression call : calls) {
+                PsiMethod resolved = null;
+                try {
+                    resolved = call.resolveMethod();
+                } catch (Throwable ignored) {
+                }
+
+                String key = null;
+                if (resolved != null) {
+                    key = buildUsefulnessMethodKey(resolved);
+                }
+                if ((key == null || key.isBlank()) && call.getMethodExpression() != null) {
+                    String name = call.getMethodExpression().getReferenceName();
+                    int arity = call.getArgumentList() == null ? 0 : call.getArgumentList().getExpressionCount();
+                    key = findAddedMethodKeyByNameAndArity(addedKeys, name, arity);
+                }
+
+                if (key != null && addedKeys.contains(key)) out.add(key);
+            }
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    private static String findAddedMethodKeyByNameAndArity(java.util.Set<String> addedKeys,
+                                                           String methodName,
+                                                           int parameterCount) {
+        if (addedKeys == null || addedKeys.isEmpty() || methodName == null || methodName.isBlank()) return null;
+        for (String key : addedKeys) {
+            if (key == null || key.isBlank()) continue;
+            if (!methodName.equals(extractMethodNameFromUsefulnessKey(key))) continue;
+            if (extractParameterCountFromUsefulnessKey(key) == parameterCount) return key;
+        }
+        return null;
+    }
+
+    private static String findSnapshotDisplayName(java.util.List<CloneMethodSnapshot> snapshots, String trackingKey) {
+        if (snapshots == null || snapshots.isEmpty() || trackingKey == null || trackingKey.isBlank()) return trackingKey;
+        for (CloneMethodSnapshot snapshot : snapshots) {
+            if (snapshot == null) continue;
+            if (trackingKey.equals(snapshot.methodKey)) return snapshot.displayName;
+            String fallbackKey = buildMethodTrackingKey(snapshot.className, snapshot.methodName, snapshot.parameterCount);
+            if (trackingKey.equals(fallbackKey)) return snapshot.displayName;
+        }
+        return trackingKey;
+    }
+
+    private static PsiJavaFile parseInMemoryJavaFile(Project project, String fileName, String text) {
+        try {
+            String effectiveName = (fileName == null || fileName.isBlank()) ? "Temp.java" : fileName;
+            if (!effectiveName.endsWith(".java")) effectiveName = effectiveName + ".java";
+            String effectiveText = text == null ? "" : text;
+            PsiFile psi = PsiFileFactory.getInstance(project)
+                    .createFileFromText(effectiveName, JavaLanguage.INSTANCE, effectiveText, false, true);
+            return (psi instanceof PsiJavaFile javaFile) ? javaFile : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static java.util.LinkedHashMap<String, PsiMethod> collectAllMethodsByUsefulnessKey(PsiJavaFile javaFile) {
+        java.util.LinkedHashMap<String, PsiMethod> out = new java.util.LinkedHashMap<>();
+        if (javaFile == null) return out;
+        PsiClass[] classes = javaFile.getClasses();
+        if (classes == null) return out;
+        for (PsiClass psiClass : classes) {
+            collectMethodsByUsefulnessKeyRecursive(psiClass, out);
+        }
+        return out;
+    }
+
+    private static void collectMethodsByUsefulnessKeyRecursive(PsiClass psiClass,
+                                                               java.util.LinkedHashMap<String, PsiMethod> out) {
+        if (psiClass == null || out == null) return;
+        for (PsiMethod method : psiClass.getMethods()) {
+            String key = buildUsefulnessMethodKey(method);
+            if (key != null && !key.isBlank()) out.putIfAbsent(key, method);
+        }
+        for (PsiClass inner : psiClass.getInnerClasses()) {
+            collectMethodsByUsefulnessKeyRecursive(inner, out);
+        }
+    }
+
+    private static String extractClassNameFromUsefulnessKey(String usefulnessKey) {
+        if (usefulnessKey == null || usefulnessKey.isBlank()) return "";
+        int idx = usefulnessKey.indexOf('#');
+        return idx < 0 ? usefulnessKey : usefulnessKey.substring(0, idx);
+    }
+
+    private static String extractMethodNameFromUsefulnessKey(String usefulnessKey) {
+        if (usefulnessKey == null || usefulnessKey.isBlank()) return "";
+        int hashIdx = usefulnessKey.indexOf('#');
+        int parenIdx = usefulnessKey.indexOf('(');
+        if (hashIdx < 0 || parenIdx < hashIdx) return "";
+        return usefulnessKey.substring(hashIdx + 1, parenIdx);
+    }
+
+    private static int extractParameterCountFromUsefulnessKey(String usefulnessKey) {
+        if (usefulnessKey == null || usefulnessKey.isBlank()) return -1;
+        int start = usefulnessKey.indexOf('(');
+        int end = usefulnessKey.lastIndexOf(')');
+        if (start < 0 || end < start) return -1;
+        String params = usefulnessKey.substring(start + 1, end).trim();
+        if (params.isEmpty()) return 0;
+        int count = 1;
+        int genericDepth = 0;
+        for (int i = 0; i < params.length(); i++) {
+            char ch = params.charAt(i);
+            if (ch == '<') genericDepth++;
+            else if (ch == '>' && genericDepth > 0) genericDepth--;
+            else if (ch == ',' && genericDepth == 0) count++;
+        }
+        return count;
+    }
+
+    private static String buildMethodTrackingKey(String className, String methodName, int parameterCount) {
+        String safeClass = (className == null || className.isBlank()) ? "<no-class>" : className;
+        String safeMethod = (methodName == null || methodName.isBlank()) ? "<unknown>" : methodName;
+        return safeClass + "#" + safeMethod + "#" + parameterCount;
+    }
+
+    private static String extractClassNameFromTrackingKey(String trackingKey) {
+        if (trackingKey == null || trackingKey.isBlank()) return "";
+        int idx = trackingKey.indexOf('#');
+        return idx < 0 ? trackingKey : trackingKey.substring(0, idx);
     }
 
     // Extract clone code blocks embedded by the detection agent in `clone.reason`.
@@ -2825,38 +3100,6 @@ Your refactoring is not useful. You must actually remove or significantly reduce
             return new String[]{a == null ? "" : a.strip(), b == null ? "" : b.strip()};
         } catch (Throwable t) {
             return new String[]{"", ""};
-        }
-    }
-
-    private static String previewOneLine(String s, int max) {
-        if (s == null) return "";
-        String v = s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n").strip();
-        if (v.length() > max) v = v.substring(0, max) + "...";
-        return v;
-    }
-
-    private static String[] parseWrapperNamesFromUsefulnessDebug(String debugText) {
-        try {
-            if (debugText == null || debugText.isBlank()) return null;
-
-            String s = debugText;
-
-            if (s == null) return null;
-
-            // ...#rotate(double) <-> ...#rotate_Cloned(double)
-            java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("#([A-Za-z_][\\w$]*)\\s*\\([^)]*\\)\\s*<->\\s*[^#]*#([A-Za-z_][\\w$]*)\\s*\\(")
-                    .matcher(s);
-
-            if (!m.find()) return null;
-
-            String a = m.group(1);
-            String b = m.group(2);
-            if (a == null || a.isBlank() || b == null || b.isBlank()) return null;
-
-            return new String[]{a, b};
-        } catch (Throwable t) {
-            return null;
         }
     }
 
@@ -2936,6 +3179,18 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    private static String readProcessOutput(Process p) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line).append("\n");
+            }
+        }
+        p.waitFor();
+        return sb.toString();
     }
 
     /**
@@ -3163,6 +3418,41 @@ Your refactoring is not useful. You must actually remove or significantly reduce
         return -1;
     }
 
+    private static String readJavaVersion(String javaExe) {
+        if (javaExe == null || javaExe.isBlank()) return "";
+        try {
+            ProcessBuilder pb = new ProcessBuilder(javaExe, "-version");
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            return readProcessOutput(p);
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    private static int parseJavaMajorVersion(String javaVersionOutput) {
+        if (javaVersionOutput == null || javaVersionOutput.isBlank()) return -1;
+
+        Matcher m = Pattern.compile("version\\s+\\\"([^\\\"]+)\\\"").matcher(javaVersionOutput);
+        if (!m.find()) return -1;
+
+        String ver = m.group(1);
+        if (ver == null) return -1;
+        ver = ver.trim();
+
+        try {
+            if (ver.startsWith("1.")) {
+                String[] parts = ver.split("\\.");
+                if (parts.length >= 2) return Integer.parseInt(parts[1]);
+                return -1;
+            }
+            String[] parts = ver.split("\\.");
+            return Integer.parseInt(parts[0]);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
     /** Build an absolute java executable path from an SDK home. */
     private static String javaExecutableFromSdkHome(String home) {
         try {
@@ -3269,6 +3559,17 @@ Your refactoring is not useful. You must actually remove or significantly reduce
      * Copy a bundled JAR resource to a stable per-project location so IntelliJ libraries do not break
      * when OS temp directories are cleaned.
      */
+    private static File materializeResourceToTempFile(String resourcePath, String prefix, String suffix) throws IOException {
+        InputStream in = CloneRefactorWorkflow.class.getClassLoader().getResourceAsStream(resourcePath);
+        if (in == null) return null;
+        File tmp = File.createTempFile(prefix, suffix);
+        tmp.deleteOnExit();
+        try (in; OutputStream out = new FileOutputStream(tmp)) {
+            in.transferTo(out);
+        }
+        return tmp;
+    }
+
     private static File materializeResourceToProjectLib(File baseDir, String resourcePath, String fileName) {
         try {
             if (baseDir == null) {
@@ -3452,6 +3753,297 @@ Your refactoring is not useful. You must actually remove or significantly reduce
             return PsiTreeUtil.getParentOfType(at, PsiMethod.class, false);
         } catch (Throwable t) {
             return null;
+        }
+    }
+
+    private static boolean methodContainsSnippet(PsiMethod method, String snippet) {
+        if (method == null || snippet == null || snippet.isBlank()) return false;
+        try {
+            String rawSnippet = snippet.strip();
+            String rawSnippetNoBraces = stripOuterBraces(rawSnippet);
+            String normalizedSnippet = normalizeForMatch(rawSnippet);
+            String normalizedSnippetNoBraces = normalizeForMatch(rawSnippetNoBraces);
+
+            String methodText = method.getText();
+            if (methodText != null && !methodText.isBlank()) {
+                if (methodText.contains(rawSnippet)) return true;
+                if (!rawSnippetNoBraces.isBlank() && methodText.contains(rawSnippetNoBraces)) return true;
+
+                String normalizedMethodText = normalizeForMatch(methodText);
+                if (!normalizedSnippet.isBlank() && normalizedMethodText.contains(normalizedSnippet)) return true;
+                if (!normalizedSnippetNoBraces.isBlank() && normalizedMethodText.contains(normalizedSnippetNoBraces)) return true;
+            }
+
+            PsiElement body = method.getBody();
+            String bodyText = body == null ? "" : body.getText();
+            if (!bodyText.isBlank()) {
+                if (bodyText.contains(rawSnippet)) return true;
+                if (!rawSnippetNoBraces.isBlank() && bodyText.contains(rawSnippetNoBraces)) return true;
+
+                String normalizedBodyText = normalizeForMatch(bodyText);
+                if (!normalizedSnippet.isBlank() && normalizedBodyText.contains(normalizedSnippet)) return true;
+                if (!normalizedSnippetNoBraces.isBlank() && normalizedBodyText.contains(normalizedSnippetNoBraces)) return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private static boolean textMatchesSnippet(String candidateText, String snippet) {
+        if (candidateText == null || candidateText.isBlank() || snippet == null || snippet.isBlank()) return false;
+
+        String rawSnippet = snippet.strip();
+        String rawSnippetNoBraces = stripOuterBraces(rawSnippet);
+        String normalizedSnippet = normalizeForMatch(rawSnippet);
+        String normalizedSnippetNoBraces = normalizeForMatch(rawSnippetNoBraces);
+        String normalizedCandidate = normalizeForMatch(candidateText);
+
+        if (candidateText.contains(rawSnippet)) return true;
+        if (!rawSnippetNoBraces.isBlank() && candidateText.contains(rawSnippetNoBraces)) return true;
+        if (!normalizedSnippet.isBlank() && normalizedCandidate.equals(normalizedSnippet)) return true;
+        if (!normalizedSnippetNoBraces.isBlank() && normalizedCandidate.equals(normalizedSnippetNoBraces)) return true;
+        if (!normalizedSnippet.isBlank() && normalizedCandidate.contains(normalizedSnippet)) return true;
+        return !normalizedSnippetNoBraces.isBlank() && normalizedCandidate.contains(normalizedSnippetNoBraces);
+    }
+
+    private static boolean snippetMatchesWholeMethod(PsiMethod method, String snippet) {
+        if (method == null || snippet == null || snippet.isBlank()) return false;
+        String methodText = method.getText();
+        PsiCodeBlock body = method.getBody();
+        String bodyText = body == null ? "" : body.getText();
+        return textMatchesSnippet(methodText, snippet)
+                || textMatchesSnippet(bodyText, snippet)
+                || textMatchesSnippet(stripOuterBraces(bodyText), snippet);
+    }
+
+    private static detection.CloneRange offsetLineRange(Project project,
+                                                        VirtualFile vf,
+                                                        int startOffset,
+                                                        int endOffset) {
+        try {
+            if (project == null || project.isDisposed() || vf == null) return null;
+            Document doc = FileDocumentManager.getInstance().getDocument(vf);
+            if (doc == null) return null;
+
+            int safeStart = Math.max(0, Math.min(startOffset, doc.getTextLength()));
+            int safeEnd = Math.max(safeStart, Math.min(endOffset, doc.getTextLength()));
+            detection.CloneRange range = new detection.CloneRange();
+            range.startLine = doc.getLineNumber(safeStart) + 1;
+            range.endLine = doc.getLineNumber(Math.max(safeStart, safeEnd - 1)) + 1;
+            return range;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static PsiMethod findMethodContainingCloneRange(Project project,
+                                                            VirtualFile vf,
+                                                            detection.CloneRange range) {
+        if (range == null) return null;
+        PsiMethod start = findMethodContainingLine(project, vf, range.startLine);
+        PsiMethod end = findMethodContainingLine(project, vf, range.endLine);
+        if (start != null && end != null) {
+            String startKey = buildMethodTrackingKey(start);
+            String endKey = buildMethodTrackingKey(end);
+            if (startKey.equals(endKey)) return start;
+        }
+        return start != null ? start : end;
+    }
+
+    private static detection.CloneRange findFragmentRangeInMethod(Project project,
+                                                                  VirtualFile vf,
+                                                                  PsiMethod method,
+                                                                  String fileSource,
+                                                                  String snippet,
+                                                                  detection.CloneRange rawRange) {
+        if (method == null || snippet == null || snippet.isBlank()) return null;
+
+        if (snippetMatchesWholeMethod(method, snippet)) {
+            int[] methodLines = elementLineRange(project, vf, method);
+            if (methodLines != null) {
+                detection.CloneRange methodRange = new detection.CloneRange();
+                methodRange.startLine = methodLines[0];
+                methodRange.endLine = methodLines[1];
+                return methodRange;
+            }
+        }
+
+        PsiRangeCandidate best = findBestStatementSequenceCandidate(project, vf, method, fileSource, snippet, rawRange);
+        PsiRangeCandidate single = findBestSingleElementCandidate(project, vf, method, snippet, rawRange);
+        if (isBetterPsiRangeCandidate(single, best)) {
+            best = single;
+        }
+        return best == null ? null : best.range;
+    }
+
+    private static PsiRangeCandidate findBestStatementSequenceCandidate(Project project,
+                                                                        VirtualFile vf,
+                                                                        PsiMethod method,
+                                                                        String fileSource,
+                                                                        String snippet,
+                                                                        detection.CloneRange rawRange) {
+        if (method == null || fileSource == null || fileSource.isBlank() || snippet == null || snippet.isBlank()) return null;
+
+        PsiRangeCandidate best = null;
+        java.util.Collection<PsiCodeBlock> blocks = PsiTreeUtil.findChildrenOfType(method, PsiCodeBlock.class);
+        for (PsiCodeBlock block : blocks) {
+            if (block == null) continue;
+            PsiStatement[] statements = block.getStatements();
+            for (int start = 0; start < statements.length; start++) {
+                for (int end = start; end < statements.length; end++) {
+                    PsiStatement first = statements[start];
+                    PsiStatement last = statements[end];
+                    if (first == null || last == null) continue;
+
+                    int startOffset = first.getTextRange().getStartOffset();
+                    int endOffset = last.getTextRange().getEndOffset();
+                    if (startOffset < 0 || endOffset <= startOffset || endOffset > fileSource.length()) continue;
+
+                    String candidateText = fileSource.substring(startOffset, endOffset);
+                    if (!textMatchesSnippet(candidateText, snippet)) continue;
+
+                    detection.CloneRange range = offsetLineRange(project, vf, startOffset, endOffset);
+                    PsiRangeCandidate candidate = buildPsiRangeCandidate(range, rawRange);
+                    if (isBetterPsiRangeCandidate(candidate, best)) {
+                        best = candidate;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    private static PsiRangeCandidate findBestSingleElementCandidate(Project project,
+                                                                    VirtualFile vf,
+                                                                    PsiMethod method,
+                                                                    String snippet,
+                                                                    detection.CloneRange rawRange) {
+        if (method == null || snippet == null || snippet.isBlank()) return null;
+
+        PsiRangeCandidate best = null;
+        for (PsiElement element : PsiTreeUtil.findChildrenOfAnyType(method, PsiStatement.class, PsiCodeBlock.class)) {
+            if (element == null) continue;
+            if (element instanceof PsiCodeBlock && element == method.getBody()) continue;
+            if (!textMatchesSnippet(element.getText(), snippet)) continue;
+
+            int[] lines = elementLineRange(project, vf, element);
+            if (lines == null) continue;
+
+            detection.CloneRange range = new detection.CloneRange();
+            range.startLine = lines[0];
+            range.endLine = lines[1];
+            PsiRangeCandidate candidate = buildPsiRangeCandidate(range, rawRange);
+            if (isBetterPsiRangeCandidate(candidate, best)) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private static PsiRangeCandidate buildPsiRangeCandidate(detection.CloneRange range,
+                                                            detection.CloneRange preferredRange) {
+        if (range == null) return null;
+        int distance = preferredRange == null
+                ? 0
+                : Math.abs(range.startLine - preferredRange.startLine) + Math.abs(range.endLine - preferredRange.endLine);
+        int span = Math.max(0, range.endLine - range.startLine);
+        return new PsiRangeCandidate(range, distance, span);
+    }
+
+    private static boolean isBetterPsiRangeCandidate(PsiRangeCandidate candidate,
+                                                     PsiRangeCandidate best) {
+        if (candidate == null) return false;
+        if (best == null) return true;
+        if (candidate.distanceScore != best.distanceScore) {
+            return candidate.distanceScore < best.distanceScore;
+        }
+        if (candidate.spanScore != best.spanScore) {
+            return candidate.spanScore < best.spanScore;
+        }
+        if (candidate.range.startLine != best.range.startLine) {
+            return candidate.range.startLine < best.range.startLine;
+        }
+        return candidate.range.endLine < best.range.endLine;
+    }
+
+    private static final class PsiRangeCandidate {
+        private final detection.CloneRange range;
+        private final int distanceScore;
+        private final int spanScore;
+
+        private PsiRangeCandidate(detection.CloneRange range, int distanceScore, int spanScore) {
+            this.range = range;
+            this.distanceScore = distanceScore;
+            this.spanScore = spanScore;
+        }
+    }
+
+    private static PsiMethod findMethodForCloneSnippet(Project project,
+                                                       VirtualFile vf,
+                                                       String fileSource,
+                                                       String snippet,
+                                                       detection.CloneRange preferredRange) {
+        try {
+            if (project == null || project.isDisposed() || vf == null) return null;
+            if (snippet == null || snippet.isBlank()) return null;
+
+            PsiMethod preferredHost = findMethodContainingCloneRange(project, vf, preferredRange);
+            if (preferredHost != null && (methodContainsSnippet(preferredHost, snippet) || snippetMatchesWholeMethod(preferredHost, snippet))) {
+                return preferredHost;
+            }
+
+            PsiMethod exactWhole = findWholeMethodCoveredBySnippet(project, vf, fileSource, snippet);
+            if (exactWhole != null) return exactWhole;
+
+            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+            if (!(psiFile instanceof PsiJavaFile)) return null;
+
+            PsiMethod best = null;
+            long bestScore = Long.MAX_VALUE;
+            for (PsiMethod method : PsiTreeUtil.findChildrenOfType(psiFile, PsiMethod.class)) {
+                if (!methodContainsSnippet(method, snippet)) continue;
+
+                long score = 0L;
+                if (preferredRange != null) {
+                    int[] methodLines = elementLineRange(project, vf, method);
+                    if (methodLines != null) {
+                        int deltaStart = Math.abs(methodLines[0] - preferredRange.startLine);
+                        int deltaEnd = Math.abs(methodLines[1] - preferredRange.endLine);
+                        score = (long) deltaStart + deltaEnd;
+                    }
+                }
+
+                if (best == null || score < bestScore) {
+                    best = method;
+                    bestScore = score;
+                }
+            }
+            return best;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static void addCloneMethodSnapshot(java.util.Map<String, CloneMethodSnapshot> out,
+                                               Project project,
+                                               PsiMethod method,
+                                               Consumer<String> viewer) {
+        try {
+            if (out == null || project == null || project.isDisposed() || method == null) return;
+
+            String key = buildMethodTrackingKey(method);
+            if (out.containsKey(key)) return;
+
+            SmartPsiElementPointer<PsiMethod> ptr = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(method);
+            String displayName = buildMethodDisplayName(method);
+            String className = getMethodClassName(method);
+            String methodName = method.getName();
+            int parameterCount = method.getParameterList().getParametersCount();
+            String exactMethodKey = buildUsefulnessMethodKey(method);
+            String baselineBodyText = normalizeMethodBodyText(getMethodBodyText(method));
+            out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, exactMethodKey, baselineBodyText, displayName));
+            logStage(viewer, "WATCH", "tracking cloned method: " + displayName);
+        } catch (Throwable t) {
+            logStage(viewer, "WATCH", "failed to snapshot cloned method: " + t.getMessage());
         }
     }
 

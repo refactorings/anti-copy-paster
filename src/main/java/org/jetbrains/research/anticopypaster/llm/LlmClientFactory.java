@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.llm;
 
 import com.intellij.openapi.project.Project;
 
+import java.util.Locale;
 import java.util.function.Consumer;
 
 public final class LlmClientFactory {
@@ -12,7 +13,7 @@ public final class LlmClientFactory {
         try {
             LlmConfig cfg = ProjectSettingsReader.read(project);
 
-            String provider = cfg == null ? "" : cfg.provider;
+            String provider = normalizeProviderName(cfg == null ? "" : cfg.provider);
             String model = cfg == null ? "" : cfg.model;
             String apiKey = cfg == null ? "" : cfg.apiKey;
             String apiBase = cfg == null ? "" : cfg.apiBase;
@@ -50,7 +51,7 @@ public final class LlmClientFactory {
 
             if (provider.equalsIgnoreCase("Google") || provider.equalsIgnoreCase("Gemini")) {
                 String m = model.isBlank() ? "gemini-2.5-pro" : model;
-                log(viewer, "Gemini", m, "", "", apiKey);
+                log(viewer, "Google", m, "", "", apiKey);
                 return apiKey.isBlank() ? new NoopLlmClient() : new GeminiGenerateContentClient(apiKey, m);
             }
 
@@ -91,6 +92,37 @@ public final class LlmClientFactory {
         }
     }
 
+    static String resolveProviderBaseUrl(String provider, String configuredBase) {
+        String normalizedProvider = provider == null ? "" : provider.trim().toLowerCase(Locale.ROOT);
+        String trimmedBase = configuredBase == null ? "" : configuredBase.trim();
+
+        return switch (normalizedProvider) {
+            case "ollama" -> trimmedBase.isBlank() ? "http://localhost:11434" : trimmedBase;
+            // DeepSeek/xAI API base is not editable in the UI, so stale stored values from
+            // Azure/Ollama should never leak into these providers.
+            case "deepseek" -> "https://api.deepseek.com";
+            case "xai" -> "https://api.x.ai";
+            default -> trimmedBase;
+        };
+    }
+
+    static String normalizeProviderName(String provider) {
+        if (provider == null) return "";
+        String trimmed = provider.trim();
+        if (trimmed.equalsIgnoreCase("Gemini") || trimmed.equalsIgnoreCase("Google")) {
+            return "Google";
+        }
+        return trimmed;
+    }
+
+    static boolean shouldLogApiBase(String provider) {
+        if (provider == null) return false;
+        return switch (provider.trim().toLowerCase(Locale.ROOT)) {
+            case "ollama", "azure", "deepseek", "xai" -> true;
+            default -> false;
+        };
+    }
+
     private static void log(Consumer<String> viewer, String provider, String model, String base, String version, String key) {
         if (viewer == null) return;
 
@@ -106,11 +138,7 @@ public final class LlmClientFactory {
         msg.append("[LLM_SETTINGS] provider=").append(provider)
                 .append(", model=").append(model);
 
-        // Only include base/version for providers that use them
-        if (provider != null && (
-                provider.equalsIgnoreCase("Ollama") ||
-                        provider.equalsIgnoreCase("Azure")
-        )) {
+        if (shouldLogApiBase(provider)) {
             msg.append(", apiBase=").append(base);
             if (provider.equalsIgnoreCase("Azure")) {
                 msg.append(", apiVersion=").append(version);

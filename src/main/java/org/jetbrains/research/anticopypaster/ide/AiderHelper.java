@@ -50,6 +50,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.List;
 import org.jetbrains.research.anticopypaster.rag.RagService;
+import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.roots.ProjectRootManager;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
@@ -163,7 +164,7 @@ public class AiderHelper {
      *
      * @param project    the IntelliJ project
      * @param file       file to analyze for clones
-     * @param provider   model provider identifier (e.g., OpenAI, Gemini, Anthropic, Azure, Deepseek, xAI)
+     * @param provider   model provider identifier (e.g., OpenAI, Google, Anthropic, Azure, Deepseek, xAI)
      * @param model      model name (provider‑specific; some are normalized inside)
      * @param apikey     API key to expose via environment variables to the Aider process
      * @param aiderPath  path to the {@code aider} executable
@@ -660,6 +661,8 @@ public class AiderHelper {
                                                      String provider, String model, String apikey,
                                                      String apiBase, String apiVersion, Consumer<String> viewer)
             throws IOException, InterruptedException {
+        provider = normalizeProviderName(provider);
+
         if (provider.equals("DeepSeek")) {
             model = "deepseek/" + model;
         }
@@ -749,7 +752,7 @@ public class AiderHelper {
                     }
                 }
             }
-            case "GOOGLE", "GEMINI" -> {
+            case "GOOGLE" -> {
                 pb.environment().put("GEMINI_API_KEY", apikey);
                 pb.environment().put("AIDER_GEMINI_PROVIDER", "google-ai-studio");
             }
@@ -848,6 +851,35 @@ public class AiderHelper {
         }
 
         return output.toString();
+    }
+
+    private static String normalizeProviderName(String provider) {
+        if (provider == null) {
+            return "";
+        }
+        String trimmed = provider.trim();
+        if ("Google".equalsIgnoreCase(trimmed) || "Gemini".equalsIgnoreCase(trimmed)) {
+            return "Google";
+        }
+        if ("OpenAI".equalsIgnoreCase(trimmed)) {
+            return "OpenAI";
+        }
+        if ("Anthropic".equalsIgnoreCase(trimmed)) {
+            return "Anthropic";
+        }
+        if ("DeepSeek".equalsIgnoreCase(trimmed)) {
+            return "DeepSeek";
+        }
+        if ("Azure".equalsIgnoreCase(trimmed)) {
+            return "Azure";
+        }
+        if ("Ollama".equalsIgnoreCase(trimmed)) {
+            return "Ollama";
+        }
+        if ("xAI".equalsIgnoreCase(trimmed)) {
+            return "xAI";
+        }
+        return trimmed;
     }
 
     /**
@@ -1043,6 +1075,7 @@ public class AiderHelper {
         cmd.add("-jar");
         cmd.add(evoSuiteJarPath);
         cmd.add("-Dsandbox=false");
+        cmd.add("-Djunit_check=FALSE");
         cmd.add("-generateSuite");
         cmd.add("-class");
         cmd.add(targetClass);
