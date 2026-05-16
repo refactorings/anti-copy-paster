@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -354,8 +355,9 @@ public final class LlmUsefulnessEvaluator {
             return new PanelistResult(spec.id, spec.categories, false, false, List.of(), "", "", raw, "Could not parse panelist JSON");
         }
 
-        boolean useful = getBoolean(obj, true, "is_useful", "isUseful", "useful");
         List<String> matchedCategories = normalizeCategoryNames(getStringList(obj, "matched_categories", "matchedCategories", "reasons"));
+        Boolean parsedUseful = getOptionalBoolean(obj, "is_useful", "isUseful", "useful");
+        boolean useful = parsedUseful != null ? parsedUseful : matchedCategories.isEmpty();
         String summary = getString(obj, "summary", "decision_summary", "decisionSummary");
         String feedback = getString(obj, "feedback", "feedback_for_refactor_agent", "feedbackForRefactorAgent", "revision_instruction");
 
@@ -368,8 +370,9 @@ public final class LlmUsefulnessEvaluator {
             return buildMajorityFallbackCuratorResult(raw, panelistResults);
         }
 
-        boolean useful = getBoolean(obj, true, "is_useful", "isUseful", "useful");
         List<String> reasons = normalizeCategoryNames(getStringList(obj, "reasons", "matched_categories", "matchedCategories"));
+        Boolean parsedUseful = getOptionalBoolean(obj, "is_useful", "isUseful", "useful");
+        boolean useful = parsedUseful != null ? parsedUseful : reasons.isEmpty();
         if (reasons.isEmpty() && !useful) {
             LinkedHashSet<String> fallbackReasons = new LinkedHashSet<>();
             if (panelistResults != null) {
@@ -501,16 +504,25 @@ public final class LlmUsefulnessEvaluator {
         return null;
     }
 
-    private static boolean getBoolean(JsonObject obj, boolean fallback, String... keys) {
+    private static Boolean getOptionalBoolean(JsonObject obj, String... keys) {
         for (String key : keys) {
             if (obj.has(key) && obj.get(key) != null && !obj.get(key).isJsonNull()) {
-                try {
-                    return obj.get(key).getAsBoolean();
-                } catch (Throwable ignored) {
+                JsonElement element = obj.get(key);
+                if (!element.isJsonPrimitive()) {
+                    continue;
+                }
+                JsonPrimitive primitive = element.getAsJsonPrimitive();
+                if (primitive.isBoolean()) {
+                    return primitive.getAsBoolean();
+                }
+                if (primitive.isString()) {
+                    String value = primitive.getAsString().trim();
+                    if ("true".equalsIgnoreCase(value)) return true;
+                    if ("false".equalsIgnoreCase(value)) return false;
                 }
             }
         }
-        return fallback;
+        return null;
     }
 
     private static double getDouble(JsonObject obj, double fallback, String... keys) {

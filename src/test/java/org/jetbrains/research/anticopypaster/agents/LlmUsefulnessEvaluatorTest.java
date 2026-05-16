@@ -173,4 +173,133 @@ class LlmUsefulnessEvaluatorTest {
         assertTrue(result.curatorResult.error.contains("majority vote fallback"));
         assertTrue(result.curatorResult.summary.contains("3 useful, 0 not useful"));
     }
+
+    @Test
+    void evaluateInfersPanelistNotUsefulWhenUsefulFieldMissingOrMalformedAndCategoriesPresent() {
+        LlmUsefulnessEvaluator.UsefulnessInput input = new LlmUsefulnessEvaluator.UsefulnessInput(
+                "Helper.java",
+                LlmUsefulnessEvaluator.CloneKind.WHOLE_METHOD,
+                "Clone ID: clone_panelist_inference",
+                "before",
+                "after"
+        );
+
+        LlmUsefulnessEvaluator.EvaluationResult result = LlmUsefulnessEvaluator.evaluate(
+                input,
+                (label, prompt) -> switch (label) {
+                    case "P1" -> """
+                            {
+                              "panelist_id": "P1",
+                              "matched_categories": ["DIRECT_CLONE_REMOVAL_DETECTED"],
+                              "summary": "A clone was removed directly",
+                              "feedback": "Restore the removed clone logic and extract a helper instead."
+                            }
+                            """;
+                    case "P2" -> """
+                            {
+                              "panelist_id": "P2",
+                              "is_useful": {"value": false},
+                              "matched_categories": ["EXTRACT_METHOD_NOT_FOUND"],
+                              "summary": "No extracted helper is visible",
+                              "feedback": "Introduce an extracted helper and replace both clone sites."
+                            }
+                            """;
+                    case "P3" -> """
+                            {
+                              "panelist_id": "P3",
+                              "is_useful": true,
+                              "matched_categories": [],
+                              "summary": "No issue",
+                              "feedback": ""
+                            }
+                            """;
+                    case "CURATOR" -> """
+                            {
+                              "is_useful": true,
+                              "reasons": [],
+                              "summary": "Curator accepted",
+                              "feedback": "",
+                              "confidence": 0.80
+                            }
+                            """;
+                    default -> fail("Unexpected label: " + label);
+                }
+        );
+
+        assertEquals(3, result.panelistResults.size());
+        assertFalse(result.panelistResults.get(0).useful);
+        assertEquals(List.of("DIRECT_CLONE_REMOVAL_DETECTED"), result.panelistResults.get(0).matchedCategories);
+        assertFalse(result.panelistResults.get(1).useful);
+        assertEquals(List.of("EXTRACT_METHOD_NOT_FOUND"), result.panelistResults.get(1).matchedCategories);
+        assertTrue(result.panelistResults.get(2).useful);
+        assertTrue(result.notes.contains("P1=not_useful"));
+        assertTrue(result.notes.contains("P2=not_useful"));
+    }
+
+    @Test
+    void evaluateInfersCuratorNotUsefulWhenUsefulFieldMissingOrMalformedAndReasonsPresent() {
+        LlmUsefulnessEvaluator.UsefulnessInput input = new LlmUsefulnessEvaluator.UsefulnessInput(
+                "Helper.java",
+                LlmUsefulnessEvaluator.CloneKind.FRAGMENT,
+                "Clone ID: clone_curator_inference",
+                "before",
+                "after"
+        );
+
+        LlmUsefulnessEvaluator.EvaluationResult missingFieldResult = LlmUsefulnessEvaluator.evaluate(
+                input,
+                (label, prompt) -> {
+                    if ("CURATOR".equals(label)) {
+                        return """
+                                {
+                                  "reasons": ["DIRECT_CLONE_REMOVAL_DETECTED"],
+                                  "summary": "The target clone was removed directly.",
+                                  "feedback": "Restore the removed clone logic and extract a helper instead.",
+                                  "confidence": 0.76
+                                }
+                                """;
+                    }
+                    return """
+                            {
+                              "panelist_id": "P",
+                              "is_useful": true,
+                              "matched_categories": [],
+                              "summary": "ok",
+                              "feedback": ""
+                            }
+                            """;
+                }
+        );
+
+        LlmUsefulnessEvaluator.EvaluationResult malformedFieldResult = LlmUsefulnessEvaluator.evaluate(
+                input,
+                (label, prompt) -> {
+                    if ("CURATOR".equals(label)) {
+                        return """
+                                {
+                                  "is_useful": ["not", "a", "boolean"],
+                                  "reasons": ["EXTRACT_METHOD_NOT_FOUND"],
+                                  "summary": "No extracted helper is visible.",
+                                  "feedback": "Introduce an extracted helper and replace both clone sites.",
+                                  "confidence": 0.72
+                                }
+                                """;
+                    }
+                    return """
+                            {
+                              "panelist_id": "P",
+                              "is_useful": true,
+                              "matched_categories": [],
+                              "summary": "ok",
+                              "feedback": ""
+                            }
+                            """;
+                }
+        );
+
+        assertFalse(missingFieldResult.useful);
+        assertEquals(List.of("DIRECT_CLONE_REMOVAL_DETECTED"), missingFieldResult.curatorResult.reasons);
+        assertFalse(malformedFieldResult.useful);
+        assertEquals(List.of("EXTRACT_METHOD_NOT_FOUND"), malformedFieldResult.curatorResult.reasons);
+    }
 }
