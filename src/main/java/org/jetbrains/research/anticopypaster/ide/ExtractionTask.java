@@ -13,6 +13,7 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.refactoring.RefactoringActionHandlerFactory;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.App;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.FeaturesEntities.ProgramFeatures;
@@ -53,6 +54,180 @@ public class ExtractionTask {
         this.event = event;
     }
 
+    private static boolean isVoidType(String type) {
+        return "void".equals(type);
+    }
+
+    private static String typeParameterName(int index) {
+        return "T" + (index + 1);
+    }
+
+    private static int indexOfParameterForElement(List<Parameter> parameters, PsiElement element) {
+        for (int i = 0; i < parameters.size(); i++) {
+            if (parameters.get(i).extractedValue() == element) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static PsiVariable owningVariable(PsiTypeElement typeElement) {
+        PsiElement current = typeElement.getParent();
+        while (current != null && !(current instanceof PsiVariable)) {
+            current = current.getParent();
+        }
+        return current instanceof PsiVariable variable ? variable : null;
+    }
+
+    private static int aliasIDForVariableName(Clone clone, String name) {
+        for (int i = clone.aliasMap().size() - 1; i >= 0; i--) {
+            if (Objects.equals(clone.aliasMap().get(i).identifier(), name)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static String typeParameterForVariable(Clone clone, PsiVariable variable) {
+        for (int i = 0; i < clone.typeParams().size(); i++) {
+            PsiVariable owner = owningVariable(clone.typeParams().get(i));
+            if (owner == variable || (owner != null && Objects.equals(owner.getName(), variable.getName()))) {
+                return typeParameterName(i);
+            }
+        }
+        return null;
+    }
+
+    private static String typeParameterForAlias(Clone clone, int aliasID) {
+        if (aliasID < 0 || aliasID >= clone.aliasMap().size()) {
+            return null;
+        }
+        String aliasName = clone.aliasMap().get(aliasID).identifier();
+        for (int i = 0; i < clone.typeParams().size(); i++) {
+            PsiVariable owner = owningVariable(clone.typeParams().get(i));
+            if (owner != null && Objects.equals(owner.getName(), aliasName)) {
+                return typeParameterName(i);
+            }
+        }
+        return null;
+    }
+
+    private static String expectedTypeParameterForValue(Clone clone, PsiElement value) {
+        PsiElement parent = value.getParent();
+        if (parent instanceof PsiLocalVariable variable && variable.getInitializer() == value) {
+            return typeParameterForVariable(clone, variable);
+        }
+        if (value instanceof PsiAssignmentExpression assignment && assignment.getOperationTokenType() != JavaTokenType.EQ) {
+            PsiExpression leftExpression = assignment.getLExpression();
+            if (leftExpression instanceof PsiReferenceExpression reference
+                    && reference.resolve() instanceof PsiVariable variable) {
+                return typeParameterForVariable(clone, variable);
+            }
+        }
+        if (parent instanceof PsiAssignmentExpression assignment && assignment.getRExpression() == value) {
+            PsiExpression leftExpression = assignment.getLExpression();
+            if (leftExpression instanceof PsiReferenceExpression reference
+                    && reference.resolve() instanceof PsiVariable variable) {
+                return typeParameterForVariable(clone, variable);
+            }
+        }
+        return null;
+    }
+
+    private static String generatedParameterType(Clone clone, Parameter parameter) {
+        if (parameter.extractedValue() instanceof PsiReferenceExpression reference
+                && reference.resolve() instanceof PsiVariable variable) {
+            String foreachTypeParameter = typeParameterForForeachIterable(clone, variable);
+            if (foreachTypeParameter != null) {
+                return "java.lang.Iterable<" + foreachTypeParameter + ">";
+            }
+        }
+        String expectedTypeParameter = expectedTypeParameterForValue(clone, parameter.extractedValue());
+        return expectedTypeParameter == null ? parameter.type() : expectedTypeParameter;
+    }
+
+    private static String typeParameterForForeachIterable(Clone clone, PsiVariable variable) {
+        PsiElement current = clone.start();
+        while (current != null) {
+            if (current instanceof PsiForeachStatement foreachStatement) {
+                String typeParameter = typeParameterForForeachIterable(clone, variable, foreachStatement);
+                if (typeParameter != null) {
+                    return typeParameter;
+                }
+            }
+            for (PsiForeachStatement foreachStatement : PsiTreeUtil.findChildrenOfType(current, PsiForeachStatement.class)) {
+                String typeParameter = typeParameterForForeachIterable(clone, variable, foreachStatement);
+                if (typeParameter != null) {
+                    return typeParameter;
+                }
+            }
+            if (current == clone.end()) break;
+            current = current.getNextSibling();
+        }
+        return null;
+    }
+
+    private static String typeParameterForForeachIterable(Clone clone, PsiVariable variable,
+                                                          PsiForeachStatement foreachStatement) {
+        PsiExpression iteratedValue = foreachStatement.getIteratedValue();
+        if (iteratedValue instanceof PsiReferenceExpression reference
+                && reference.resolve() instanceof PsiVariable iteratedVariable
+                && (iteratedVariable == variable || Objects.equals(iteratedVariable.getName(), variable.getName()))) {
+            return typeParameterForVariable(clone, foreachStatement.getIterationParameter());
+        }
+        return null;
+    }
+
+    private static String generatedLiveInVariableType(Clone clone, PsiVariable variable) {
+        String foreachTypeParameter = typeParameterForForeachIterable(clone, variable);
+        if (foreachTypeParameter != null) {
+            return "java.lang.Iterable<" + foreachTypeParameter + ">";
+        }
+        return variable.getType().getPresentableText();
+    }
+
+    private static String generatedLambdaArgType(Clone clone, int aliasID) {
+        String typeParameter = typeParameterForAlias(clone, aliasID);
+        return typeParameter == null ? clone.aliasMap().get(aliasID).type() : typeParameter;
+    }
+
+    private static boolean endsWithReturnValue(Clone clone) {
+        return clone.end() instanceof PsiReturnStatement returnStatement
+                && returnStatement.getReturnValue() != null;
+    }
+
+    private static String generatedTerminalReturnType(Clone clone) {
+        if (!(clone.end() instanceof PsiReturnStatement returnStatement)) {
+            return null;
+        }
+        PsiExpression returnValue = returnStatement.getReturnValue();
+        if (returnValue == null) {
+            return null;
+        }
+        if (returnValue instanceof PsiReferenceExpression reference
+                && reference.resolve() instanceof PsiVariable variable) {
+            String typeParameter = typeParameterForVariable(clone, variable);
+            if (typeParameter != null) {
+                return typeParameter;
+            }
+        }
+        PsiType type = returnValue.getType();
+        return type == null ? null : type.getPresentableText();
+    }
+
+    private static String generatedReturnType(Clone clone) {
+        String terminalReturnType = generatedTerminalReturnType(clone);
+        if (terminalReturnType != null) {
+            return terminalReturnType;
+        }
+        if (clone.liveOutVars().isEmpty()) {
+            return null;
+        }
+        Variable liveOutVar = clone.liveOutVars().get(0);
+        String typeParameter = typeParameterForAlias(clone, aliasIDForVariableName(clone, liveOutVar.identifier()));
+        return typeParameter == null ? liveOutVar.type() : typeParameter;
+    }
+
     /**
      * Recursively builds the extracted method body, replacing parameters in
      * the text as needed.
@@ -62,14 +237,25 @@ public class ExtractionTask {
      * @param normalizedLambdaArgs The set union combined lambda args across all clones
      * @param sb The StringBuilder to append to
      */
-    private void buildMethodBody(PsiElement current, PsiElement last, List<PsiElement> extractedParameters, List<List<Integer>> normalizedLambdaArgs, List<Variable> aliasMap, List<PsiTypeElement> typeParams, StringBuilder sb) {
+    private void buildMethodBody(PsiElement current, PsiElement last, List<Parameter> extractedParameters, List<List<Integer>> normalizedLambdaArgs, List<Variable> aliasMap, List<PsiTypeElement> typeParams, StringBuilder sb) {
         // Iterates through all siblings at this level
         while (current != null) {
-            int idx = extractedParameters.indexOf(current);
+            int idx = indexOfParameterForElement(extractedParameters, current);
             int idx2 = typeParams.indexOf(current);
             if (idx2 != -1) {
                 sb.append("T");
                 sb.append(idx2 + 1);
+            } else if (idx != -1 && current instanceof PsiAssignmentExpression assignment
+                    && assignment.getOperationTokenType() != JavaTokenType.EQ
+                    && !isVoidType(extractedParameters.get(idx).type())) {
+                sb.append(assignment.getLExpression().getText());
+                sb.append(" = p");
+                sb.append(idx + 1);
+                appendFunctionalCall(
+                        sb,
+                        extractedParameters.get(idx),
+                        normalizedLambdaArgs.get(idx).stream().map((j) -> aliasMap.get(j).identifier()).toList()
+                );
             } else if (idx == -1)  {
                 PsiElement firstChild = current.getFirstChild();
                 if (firstChild == null) {
@@ -83,14 +269,18 @@ public class ExtractionTask {
                 sb.append("p");
                 sb.append(idx + 1);
                 List<String> idents = normalizedLambdaArgs.get(idx).stream().map((j) -> aliasMap.get(j).identifier()).toList();
-                if (idents.size() > 0) {
-                    sb.append(".apply(");
-                    sb.append(String.join(", ", idents));
-                    sb.append(')');
-                }
+                appendFunctionalCall(sb, extractedParameters.get(idx), idents);
             }
             if (current == last) break;
             current = current.getNextSibling();
+        }
+    }
+
+    private static void appendFunctionalCall(StringBuilder sb, Parameter parameter, List<String> arguments) {
+        if (!arguments.isEmpty()) {
+            sb.append(isVoidType(parameter.type()) ? ".accept(" : ".apply(");
+            sb.append(String.join(", ", arguments));
+            sb.append(')');
         }
     }
 
@@ -122,24 +312,41 @@ public class ExtractionTask {
         sb.append('(');
         // Build parameter list
         for (int i = 0; i < clone.parameters().size(); i++) {
-            String type = clone.parameters().get(i).type();
-            List<Variable> parameterArgs = normalizedLambdaArgs.get(i).stream().map((j) -> clone.aliasMap().get(j)).toList();
-            if (parameterArgs.isEmpty()) { // Not a lambda argument
+            Parameter parameter = clone.parameters().get(i);
+            String type = generatedParameterType(clone, parameter);
+            List<String> parameterArgTypes = normalizedLambdaArgs.get(i).stream()
+                    .map((j) -> generatedLambdaArgType(clone, j))
+                    .toList();
+            if (parameterArgTypes.isEmpty()) { // Not a lambda argument
                 sb.append(type);
-            } else if (parameterArgs.size() == 1) { // Lambda arg, 1 param
-                sb.append("java.util.function.Function<");
-                sb.append(CloneProcessor.boxedType(parameterArgs.get(0).type()));
-                sb.append(", ");
-                sb.append(CloneProcessor.boxedType(type));
-                sb.append(">");
-            } else if (parameterArgs.size() == 2) { // Lambda arg, 2 params
-                sb.append("java.util.function.BiFunction<");
-                sb.append(CloneProcessor.boxedType(parameterArgs.get(0).type()));
-                sb.append(", ");
-                sb.append(CloneProcessor.boxedType(parameterArgs.get(1).type()));
-                sb.append(", ");
-                sb.append(CloneProcessor.boxedType(type));
-                sb.append(">");
+            } else if (parameterArgTypes.size() == 1) { // Lambda arg, 1 param
+                if (isVoidType(type)) {
+                    sb.append("java.util.function.Consumer<");
+                    sb.append(CloneProcessor.boxedType(parameterArgTypes.get(0)));
+                    sb.append(">");
+                } else {
+                    sb.append("java.util.function.Function<");
+                    sb.append(CloneProcessor.boxedType(parameterArgTypes.get(0)));
+                    sb.append(", ");
+                    sb.append(CloneProcessor.boxedType(type));
+                    sb.append(">");
+                }
+            } else if (parameterArgTypes.size() == 2) { // Lambda arg, 2 params
+                if (isVoidType(type)) {
+                    sb.append("java.util.function.BiConsumer<");
+                    sb.append(CloneProcessor.boxedType(parameterArgTypes.get(0)));
+                    sb.append(", ");
+                    sb.append(CloneProcessor.boxedType(parameterArgTypes.get(1)));
+                    sb.append(">");
+                } else {
+                    sb.append("java.util.function.BiFunction<");
+                    sb.append(CloneProcessor.boxedType(parameterArgTypes.get(0)));
+                    sb.append(", ");
+                    sb.append(CloneProcessor.boxedType(parameterArgTypes.get(1)));
+                    sb.append(", ");
+                    sb.append(CloneProcessor.boxedType(type));
+                    sb.append(">");
+                }
             }
             sb.append(" p");
             sb.append(i + 1);
@@ -149,7 +356,7 @@ public class ExtractionTask {
         List<PsiVariable> liveInVars = clone.liveInVars().stream().sorted(Comparator.comparing(PsiNamedElement::getName)).toList();
         for (int i = 0; i < liveInVars.size(); i++) {
             PsiVariable variable = liveInVars.get(i);
-            sb.append(variable.getType().getPresentableText());
+            sb.append(generatedLiveInVariableType(clone, variable));
             sb.append(" ");
             sb.append(variable.getName());
             if (i != liveInVars.size() - 1)
@@ -160,13 +367,13 @@ public class ExtractionTask {
         buildMethodBody(
                 clone.start(),
                 clone.end(),
-                clone.parameters().stream().map(Parameter::extractedValue).toList(),
+                clone.parameters(),
                 normalizedLambdaArgs,
                 clone.aliasMap(),
                 clone.typeParams(),
                 sb
         );
-        if (returnType != null) {
+        if (returnType != null && !endsWithReturnValue(clone)) {
             sb.append("\n\t\treturn ");
             sb.append(clone.liveOutVars().get(0).identifier());
             sb.append(";");
@@ -185,8 +392,11 @@ public class ExtractionTask {
         PsiElement parent = start.getParent();
         StringBuilder sb = new StringBuilder();
         String resultVarName = null;
+        boolean replaceWithReturn = endsWithReturnValue(clone);
 
-        if (!clone.liveOutVars().isEmpty()) {
+        if (replaceWithReturn) {
+            sb.append("return ");
+        } else if (!clone.liveOutVars().isEmpty()) {
             Variable liveOutVar = clone.liveOutVars().get(0);
             String liveOutType = liveOutVar.type();
             boolean isObjectType = liveOutType.equals(CloneProcessor.boxedType(liveOutType));
@@ -647,7 +857,7 @@ public class ExtractionTask {
             // Combine all lambda args per parameter
             List<Set<Integer>> combinedLambdaArgs = new ArrayList<>();
             for (int i = 0; i < results.get(0).parameters().size(); i++)
-                combinedLambdaArgs.add(new HashSet<>());
+                combinedLambdaArgs.add(new TreeSet<>());
             for (Clone clone : results)
                 for (int i = 0; i < clone.parameters().size(); i++)
                     combinedLambdaArgs.get(i).addAll(clone.parameters().get(i).lambdaArgs());
@@ -655,7 +865,7 @@ public class ExtractionTask {
             for (Set<Integer> lambdaArgs : combinedLambdaArgs) {
                 // Type limitations without extension
                 if (lambdaArgs.size() > 2) return;
-                normalizedLambdaArgs.add(lambdaArgs.stream().toList());
+                normalizedLambdaArgs.add(new ArrayList<>(lambdaArgs));
             }
 
             // Generate method return type
@@ -664,10 +874,11 @@ public class ExtractionTask {
             String returnType = null;
             for (Clone clone : results) {
                 if (!clone.liveOutVars().isEmpty()) {
+                    String cloneReturnType = generatedReturnType(clone);
                     if (returnType == null) {
                         template = clone;
-                        returnType = clone.liveOutVars().get(0).type();
-                    } else if (!returnType.equals(clone.liveOutVars().get(0).type())) return;
+                        returnType = cloneReturnType;
+                    } else if (!returnType.equals(cloneReturnType)) return;
                 }
             }
 

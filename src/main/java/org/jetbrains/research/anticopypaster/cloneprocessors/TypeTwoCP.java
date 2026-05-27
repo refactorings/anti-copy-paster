@@ -42,6 +42,17 @@ public class TypeTwoCP implements CloneProcessor {
     static PsiVariable variableFromIdent(PsiIdentifier ident) {
         return ident.getParent() instanceof PsiReferenceExpression refExp ? variableFromRefExp(refExp) : null;
     }
+
+    private static Set<Integer> aliasIDsFromVariableReferences(PsiElement e, MatchState ms) {
+        LinkedHashSet<Integer> aliasIDs = new LinkedHashSet<>();
+        Collection<PsiReferenceExpression> references = PsiTreeUtil.findChildrenOfType(e, PsiReferenceExpression.class);
+        for (PsiReferenceExpression reference : references) {
+            if (variableFromRefExp(reference) == null) continue;
+            int aliasID = ms.getAliasID(reference.getReferenceName());
+            if (aliasID >= 0) aliasIDs.add(aliasID);
+        }
+        return aliasIDs;
+    }
     
     /**
      * Determines if the provided element can be extracted as a parameter.
@@ -64,8 +75,21 @@ public class TypeTwoCP implements CloneProcessor {
                 return ParamCheckResult.FAILURE;
             return ParamCheckResult.asLambda(
                     polyE.getType().getPresentableText(),
-                    idents.stream().map(ms::getAliasID).collect(Collectors.toSet())
+                    idents.stream().map(ms::getAliasID).collect(Collectors.toCollection(LinkedHashSet::new))
             );
+        } else if (e instanceof PsiAssignmentExpression assignment
+                && assignment.getOperationTokenType() != JavaTokenType.EQ
+                && assignment.getType() != null) {
+            Set<Integer> aliasIDs = aliasIDsFromVariableReferences(assignment, ms);
+            if (!aliasIDs.isEmpty()) {
+                return ParamCheckResult.asLambda(assignment.getType().getPresentableText(), aliasIDs);
+            }
+        } else if (e instanceof PsiMethodCallExpression callExp
+                && callExp.getParent() instanceof PsiExpressionStatement) {
+            Set<Integer> aliasIDs = aliasIDsFromVariableReferences(callExp, ms);
+            if (!aliasIDs.isEmpty()) {
+                return ParamCheckResult.asLambda("void", aliasIDs);
+            }
         } else if (e instanceof PsiLiteralExpression litExp && litExp.getType() != null) {
             return new ParamCheckResult(litExp.getType().getPresentableText());
         } else if (e instanceof PsiReferenceExpression refExp && !refExp.isQualified()
@@ -77,6 +101,9 @@ public class TypeTwoCP implements CloneProcessor {
                     || refExp.getParent() instanceof PsiCallExpression) return ParamCheckResult.FAILURE;
             String paramType = refExp.getType().getPresentableText();
             int aliasID = ms.getAliasID(refExp.getReferenceName());
+            if (aliasID >= 0 && refExp.getParent() instanceof PsiReturnStatement) {
+                return ParamCheckResult.FAILURE;
+            }
             if (aliasID >= 0) {
                 HashSet<Integer> lambdaArgs = new HashSet<>();
                 lambdaArgs.add(aliasID);
@@ -108,7 +135,9 @@ public class TypeTwoCP implements CloneProcessor {
         ParamCheckResult canBeParamA = canBeParam(a, ma);
         ParamCheckResult canBeParamB = canBeParam(b, mb);
 //        System.out.println(a.getText() + '~' + canBeParamA.success + '|' + b.getText() + '~' + canBeParamB.success);
-        if (canBeParamA.success && canBeParamB.success && canBeParamA.liveInDeps.size() == canBeParamB.liveInDeps.size()) {
+        if (canBeParamA.success && canBeParamB.success
+                && "void".equals(canBeParamA.type) == "void".equals(canBeParamB.type)
+                && canBeParamA.liveInDeps.size() == canBeParamB.liveInDeps.size()) {
             ma.addParameter(a, canBeParamA.type, canBeParamA.lambdaArgs, canBeParamA.liveInDeps);
             mb.addParameter(b, canBeParamB.type, canBeParamB.lambdaArgs, canBeParamB.liveInDeps);
             // Type two clone, so we can stop here and evaluate if worth extracting
@@ -136,8 +165,6 @@ public class TypeTwoCP implements CloneProcessor {
         if (a instanceof PsiTypeElement typeA && b instanceof PsiTypeElement typeB) {
             ma.typeParams().add(typeA);
             mb.typeParams().add(typeB);
-            if (!typeA.getText().equals(typeB.getText()))
-                mb.setExtractable(false);
             return true;
         }
         // Process children
