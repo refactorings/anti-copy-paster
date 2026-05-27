@@ -166,14 +166,8 @@ final class WorkflowJavaBuildSupport {
                     Files.walk(base)
                             .filter(p -> p != null && Files.isDirectory(p))
                             .forEach(p -> {
-                                String s = p.toString();
-                                if (s.endsWith(File.separator + "target" + File.separator + "classes")
-                                        || s.endsWith(File.separator + "target" + File.separator + "test-classes")
-                                        || s.endsWith(File.separator + "classes" + File.separator + "production")
-                                        || s.endsWith(File.separator + "classes" + File.separator + "test")
-                                        || s.endsWith(File.separator + "out" + File.separator + "production")
-                                        || s.endsWith(File.separator + "out" + File.separator + "test")) {
-                                    paths.add(s);
+                                if (looksLikeCompiledClassesDir(p)) {
+                                    paths.add(p.toString());
                                 }
                             });
                 }
@@ -247,6 +241,7 @@ final class WorkflowJavaBuildSupport {
                                                     || norm.endsWith("/src")
                                                     || norm.endsWith("/test")
                                                     || norm.endsWith("/tests")
+                                                    || "java".equals(name)
                                                     || "src".equals(name)
                                                     || "test".equals(name)
                                                     || "tests".equals(name);
@@ -1242,6 +1237,25 @@ final class WorkflowJavaBuildSupport {
                 ? ""
                 : ": " + e.getMessage();
         WorkflowUiSupport.logStage("WORKFLOW", "[WORKFLOW] WARN: " + action + " failed" + detail);
+    }
+
+    private static boolean looksLikeCompiledClassesDir(Path dir) {
+        if (dir == null || dir.getFileName() == null) {
+            return false;
+        }
+        String norm = dir.toString().replace('\\', '/');
+        String name = dir.getFileName().toString();
+
+        return norm.endsWith("/target/classes")
+                || norm.endsWith("/target/test-classes")
+                || norm.endsWith("/classes/production")
+                || norm.endsWith("/classes/test")
+                || norm.endsWith("/out/production")
+                || norm.endsWith("/out/test")
+                || norm.endsWith("/build/classes/java/main")
+                || norm.endsWith("/build/classes/java/test")
+                || norm.endsWith("/output/classes")
+                || (norm.contains("/output/") && "classes".equals(name));
     }
 
     private String ensureTargetClassOnClasspath(String targetClass, String classpath, File outRoot) {
