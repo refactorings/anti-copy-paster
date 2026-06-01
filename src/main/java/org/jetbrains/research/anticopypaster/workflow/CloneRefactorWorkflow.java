@@ -424,14 +424,20 @@ public final class CloneRefactorWorkflow {
 
                     det.clones = resolveDetectedCloneRangesWithPsi(project, vf, originalSource, det.clones, viewer);
                     det.clones = mergeOverlappingDetectedClones(originalSource, det.clones, viewer);
-                    det.clones = filterDetectedClonesByMetrics(project, vf, originalSource, det.clones, viewer);
                     if (det.clones == null || det.clones.isEmpty()) {
-                        logStage(viewer, "METRICS", "stopped: no detected clone groups passed the metrics gate");
+                        logStage(viewer, "DETECTION", "stopped: no detected clone groups remained after range resolution/merge");
                         showNotification(project,
                                 "[Clone] Clones were detected in: " + fileName +
-                                        ", but none passed the metrics threshold for refactoring.",
+                                        ", but none could be resolved to selectable ranges.",
                                 NotificationType.INFORMATION);
                         return;
+                    }
+                    java.util.List<detection.DetectedClone> metricPassedClones =
+                            filterDetectedClonesByMetrics(project, vf, originalSource, det.clones, viewer);
+                    if (metricPassedClones == null || metricPassedClones.isEmpty()) {
+                        logStage(viewer, "METRICS", "no detected clone groups passed the metrics gate; continuing to clone selection");
+                    } else if (metricPassedClones.size() != det.clones.size()) {
+                        logStage(viewer, "METRICS", "some clone groups did not pass the metrics gate; keeping all clone groups for selection");
                     }
 
                     try {
