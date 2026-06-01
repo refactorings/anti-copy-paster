@@ -1,6 +1,7 @@
 package org.jetbrains.research.anticopypaster.cloneprocessors;
 
 import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiCodeBlock;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiStatement;
@@ -169,15 +170,7 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
         ProjectSettingsState.getInstance(getProject()).extractionType = ProjectSettingsState.ExtractionType.TYPE_TWO;
         PsiClass psiClass = file.getClasses()[0];
         PsiMethod cloneMethod = psiClass.findMethodsByName("countNumbersClone", false)[0];
-        String pastedBodyText = """
-                long sum = 0L;
-                for (Long item : numbers) {
-                    if (item != null) {
-                        sum += item;
-                    }
-                }
-                return sum;
-                """;
+        String pastedBodyText = methodBodyStatementsText(cloneMethod);
 
         DuplicatesInspection.InspectionResult result =
                 new DuplicatesInspection().resolve(file, cloneMethod, pastedBodyText);
@@ -218,15 +211,7 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
         ProjectSettingsState.getInstance(getProject()).extractionType = ProjectSettingsState.ExtractionType.TYPE_TWO;
         PsiClass psiClass = file.getClasses()[0];
         PsiMethod cloneMethod = psiClass.findMethodsByName("countNumbersClone", false)[0];
-        String pastedBodyText = """
-                long sum = 0L;
-                for (Long item : numbers) {
-                    if (item != null) {
-                        sum += item;
-                    }
-                }
-                return sum;
-                """;
+        String pastedBodyText = methodBodyStatementsText(cloneMethod);
 
         List<Clone> results = new DuplicatesInspection().resolve(file, cloneMethod, pastedBodyText).results();
         normalizeExtractionInputs(results);
@@ -239,9 +224,9 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
                 .findFirst()
                 .orElseThrow();
 
-        Method generatedReturnType = ExtractionTask.class.getDeclaredMethod("generatedReturnType", Clone.class);
-        generatedReturnType.setAccessible(true);
-        String returnType = (String) generatedReturnType.invoke(null, template);
+        Object returnPlan = generatedReturnPlan(results);
+        String returnType = returnPlanReturnType(returnPlan);
+        assertEquals("T1", returnType);
 
         ExtractionTask task = new ExtractionTask(new RefactoringEvent(file, cloneMethod, pastedBodyText, getProject(), null));
         Method buildMethodText = ExtractionTask.class.getDeclaredMethod(
@@ -262,12 +247,65 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
                 false
         );
 
-        assertTrue(methodText.contains("private <T1, T2> T1 extractedMethod"));
+        assertTrue(methodText, methodText.contains("private <T1, T2> T1 extractedMethod(T1 p1, java.lang.Iterable<T2> p2, java.util.function.BiFunction<T1, T2, T1> p3)"));
         assertTrue(methodText.contains("java.lang.Iterable<T2>"));
         assertTrue(methodText.contains("java.util.function.BiFunction<T1, T2, T1>"));
         assertTrue(methodText.contains("total = p"));
         assertTrue(methodText.contains(".apply(total, value);"));
+        assertTrue(methodText.contains("if (value != null)"));
         assertTrue(methodText.contains("return total;"));
+        assertFalse(methodText.contains("void extractedMethod"));
+        assertFalse(methodText.contains("Function<T2, Boolean>"));
+        assertFalse(methodText.contains("Function<T2, T1>"));
+        assertFalse(methodText.contains("Function<T1, Integer>"));
+        assertFalse(methodText.contains("total +="));
+
+        Method buildMethodCallText = ExtractionTask.class.getDeclaredMethod(
+                "buildMethodCallText",
+                Clone.class,
+                List.class,
+                String.class
+        );
+        buildMethodCallText.setAccessible(true);
+        Clone originalClone = cloneInMethod(results, "countNumbers");
+        Clone pastedClone = cloneInMethod(results, "countNumbersClone");
+        String originalCall = (String) buildMethodCallText.invoke(task, originalClone, normalizedLambdaArgs, "extractedMethod");
+        String pastedCall = (String) buildMethodCallText.invoke(task, pastedClone, normalizedLambdaArgs, "extractedMethod");
+
+        assertEquals("return extractedMethod(0, values, (total, value) -> total += value);\n", originalCall);
+        assertEquals("return extractedMethod(0L, numbers, (sum, item) -> sum += item);\n", pastedCall);
+    }
+
+    private static Object generatedReturnPlan(List<Clone> results) throws Exception {
+        Method generatedReturnPlan = ExtractionTask.class.getDeclaredMethod("generatedReturnPlan", List.class);
+        generatedReturnPlan.setAccessible(true);
+        return generatedReturnPlan.invoke(null, results);
+    }
+
+    private static String returnPlanReturnType(Object returnPlan) throws Exception {
+        Method returnType = returnPlan.getClass().getDeclaredMethod("returnType");
+        returnType.setAccessible(true);
+        return (String) returnType.invoke(returnPlan);
+    }
+
+    private static Clone cloneInMethod(List<Clone> results, String methodName) {
+        return results.stream()
+                .filter(clone -> {
+                    PsiMethod method = PsiTreeUtil.getParentOfType(clone.start(), PsiMethod.class);
+                    return method != null && methodName.equals(method.getName());
+                })
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static String methodBodyStatementsText(PsiMethod method) {
+        PsiCodeBlock body = Objects.requireNonNull(method.getBody());
+        PsiStatement[] statements = body.getStatements();
+        PsiStatement first = statements[0];
+        PsiStatement last = statements[statements.length - 1];
+        int startOffset = first.getStartOffsetInParent();
+        int endOffset = last.getStartOffsetInParent() + last.getTextLength();
+        return body.getText().substring(startOffset, endOffset);
     }
 
     private static void normalizeExtractionInputs(List<Clone> results) {

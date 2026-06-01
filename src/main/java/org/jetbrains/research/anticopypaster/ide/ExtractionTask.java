@@ -12,7 +12,6 @@ import com.intellij.openapi.ui.MessageDialogBuilder;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
-import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.refactoring.RefactoringActionHandlerFactory;
 import org.jetbrains.research.anticopypaster.JPredict.src.main.java.JavaExtractor.App;
@@ -228,6 +227,29 @@ public class ExtractionTask {
         return typeParameter == null ? liveOutVar.type() : typeParameter;
     }
 
+    private record ReturnPlan(Clone template, String returnType) {
+    }
+
+    private static ReturnPlan generatedReturnPlan(List<Clone> results) {
+        Clone template = results.get(0);
+        String returnType = null;
+        for (Clone clone : results) {
+            String cloneReturnType = generatedReturnType(clone);
+            if (cloneReturnType == null) {
+                continue;
+            }
+            if (returnType == null) {
+                template = clone;
+                returnType = cloneReturnType;
+            } else if (!returnType.equals(cloneReturnType)) {
+                return null;
+            } else if (!endsWithReturnValue(template) && endsWithReturnValue(clone)) {
+                template = clone;
+            }
+        }
+        return new ReturnPlan(template, returnType);
+    }
+
     /**
      * Recursively builds the extracted method body, replacing parameters in
      * the text as needed.
@@ -386,10 +408,7 @@ public class ExtractionTask {
         return expression.replaceAll("(?<![a-zA-Z0-9_$])" + identifier + "(?![a-zA-Z0-9_$])", identifier + "Arg");
     }
 
-    private void generateMethodCall(Clone clone, PsiElementFactory factory, List<List<Integer>> normalizedLambdaArgs, String methodName) {
-        PsiElement start = clone.start();
-        PsiElement end = clone.end();
-        PsiElement parent = start.getParent();
+    private String buildMethodCallText(Clone clone, List<List<Integer>> normalizedLambdaArgs, String methodName) {
         StringBuilder sb = new StringBuilder();
         String resultVarName = null;
         boolean replaceWithReturn = endsWithReturnValue(clone);
@@ -467,8 +486,15 @@ public class ExtractionTask {
                 sb.append(", ");
         }
         sb.append(");\n");
+        return sb.toString();
+    }
 
-        PsiElement caller = factory.createStatementFromText(sb.toString(), parent);
+    private void generateMethodCall(Clone clone, PsiElementFactory factory, List<List<Integer>> normalizedLambdaArgs, String methodName) {
+        PsiElement start = clone.start();
+        PsiElement end = clone.end();
+        PsiElement parent = start.getParent();
+        String callText = buildMethodCallText(clone, normalizedLambdaArgs, methodName);
+        PsiElement caller = factory.createStatementFromText(callText, parent);
         parent.addAfter(caller, end);
         parent.deleteChildRange(start, end);
     }
@@ -869,18 +895,10 @@ public class ExtractionTask {
             }
 
             // Generate method return type
-            Clone template = results.get(0);
-
-            String returnType = null;
-            for (Clone clone : results) {
-                if (!clone.liveOutVars().isEmpty()) {
-                    String cloneReturnType = generatedReturnType(clone);
-                    if (returnType == null) {
-                        template = clone;
-                        returnType = cloneReturnType;
-                    } else if (!returnType.equals(cloneReturnType)) return;
-                }
-            }
+            ReturnPlan returnPlan = generatedReturnPlan(results);
+            if (returnPlan == null) return;
+            Clone template = returnPlan.template();
+            String returnType = returnPlan.returnType();
 
             boolean extractToStatic = containingMethod.hasModifierProperty(PsiModifier.STATIC);
             String methodName;
@@ -1073,9 +1091,6 @@ public class ExtractionTask {
                 buildMethodText(template, returnType, normalizedLambdaArgs, methodName, extractToStatic),
                 containingClass
         );
-
-        JavaCodeStyleManager styleManagerForLambdas = JavaCodeStyleManager.getInstance(project);
-        styleManagerForLambdas.shortenClassReferences(extractedMethodElement);
 
         ApplicationManager.getApplication().runWriteAction(() -> {
             CommandProcessor.getInstance().executeCommand(

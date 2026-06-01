@@ -53,6 +53,31 @@ public class TypeTwoCP implements CloneProcessor {
         }
         return aliasIDs;
     }
+
+    private static boolean isNullLiteral(PsiExpression expression) {
+        return expression instanceof PsiLiteralExpression literal && literal.getValue() == null;
+    }
+
+    private static boolean isAliasNullCheck(PsiPolyadicExpression expression, MatchState ms) {
+        PsiExpression[] operands = expression.getOperands();
+        if (operands.length != 2) {
+            return false;
+        }
+        var operation = expression.getOperationTokenType();
+        if (operation != JavaTokenType.EQEQ && operation != JavaTokenType.NE) {
+            return false;
+        }
+        PsiExpression checkedValue = null;
+        if (isNullLiteral(operands[0])) {
+            checkedValue = operands[1];
+        } else if (isNullLiteral(operands[1])) {
+            checkedValue = operands[0];
+        }
+        if (!(checkedValue instanceof PsiReferenceExpression reference)) {
+            return false;
+        }
+        return ms.getAliasID(reference.getReferenceName()) >= 0;
+    }
     
     /**
      * Determines if the provided element can be extracted as a parameter.
@@ -62,6 +87,9 @@ public class TypeTwoCP implements CloneProcessor {
      */
     static ParamCheckResult canBeParam(PsiElement e, MatchState ms) {
         if (e instanceof PsiPolyadicExpression polyE && polyE.getType() != null) {
+            if (isAliasNullCheck(polyE, ms)) {
+                return ParamCheckResult.FAILURE;
+            }
             Collection<PsiIdentifier> idents = PsiTreeUtil.findChildrenOfType(polyE, PsiIdentifier.class);
             // All variables are liveIn, no lambda needed just embed the expression in the call
             if (idents.stream().map(ms::getAliasID).allMatch(id -> id == -1)) {
@@ -102,6 +130,11 @@ public class TypeTwoCP implements CloneProcessor {
             String paramType = refExp.getType().getPresentableText();
             int aliasID = ms.getAliasID(refExp.getReferenceName());
             if (aliasID >= 0 && refExp.getParent() instanceof PsiReturnStatement) {
+                return ParamCheckResult.FAILURE;
+            }
+            if (aliasID >= 0
+                    && refExp.getParent() instanceof PsiPolyadicExpression polyadicExpression
+                    && isAliasNullCheck(polyadicExpression, ms)) {
                 return ParamCheckResult.FAILURE;
             }
             if (aliasID >= 0) {
