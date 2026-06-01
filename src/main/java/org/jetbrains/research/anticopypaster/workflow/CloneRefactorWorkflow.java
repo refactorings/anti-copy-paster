@@ -95,10 +95,14 @@ import org.jetbrains.research.anticopypaster.llm.LlmClient;
 import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
 import org.jetbrains.research.anticopypaster.llm.LlmConfigurationNotifier;
 import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
+import org.jetbrains.research.anticopypaster.metrics.MetricCalculator;
+import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
+import org.jetbrains.research.anticopypaster.models.UserSettingsModel;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
+import org.jetbrains.research.anticopypaster.utils.MetricsGatherer;
 
 public final class CloneRefactorWorkflow {
     private static final String REFACTOR_RAG_DB_RESOURCE = "refactor_database.csv";
@@ -420,6 +424,15 @@ public final class CloneRefactorWorkflow {
 
                     det.clones = resolveDetectedCloneRangesWithPsi(project, vf, originalSource, det.clones, viewer);
                     det.clones = mergeOverlappingDetectedClones(originalSource, det.clones, viewer);
+                    det.clones = filterDetectedClonesByMetrics(project, vf, originalSource, det.clones, viewer);
+                    if (det.clones == null || det.clones.isEmpty()) {
+                        logStage(viewer, "METRICS", "stopped: no detected clone groups passed the metrics gate");
+                        showNotification(project,
+                                "[Clone] Clones were detected in: " + fileName +
+                                        ", but none passed the metrics threshold for refactoring.",
+                                NotificationType.INFORMATION);
+                        return;
+                    }
 
                     try {
                         if (det != null) {
@@ -1713,6 +1726,169 @@ The fragment usefulness analyzer failed before compilation.%s
         public String toString() {
             return label;
         }
+    }
+
+    private static final class CloneMetricsDecision {
+        final boolean passed;
+        final float bestPrediction;
+        final String details;
+
+        CloneMetricsDecision(boolean passed, float bestPrediction, String details) {
+            this.passed = passed;
+            this.bestPrediction = bestPrediction;
+            this.details = details == null ? "" : details;
+        }
+    }
+
+    private static java.util.List<detection.DetectedClone> filterDetectedClonesByMetrics(Project project,
+                                                                                         VirtualFile vf,
+                                                                                         String fileSource,
+                                                                                         java.util.List<detection.DetectedClone> clones,
+                                                                                         Consumer<String> viewer) {
+        if (clones == null || clones.isEmpty()) return java.util.Collections.emptyList();
+        if (project == null || project.isDisposed() || vf == null) return java.util.Collections.emptyList();
+
+        UserSettingsModel metricsModel;
+        float threshold = 0.3f;
+        try {
+            ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
+            if (settings != null) {
+                threshold = settings.modelSensitivity;
+            }
+            if (!Float.isFinite(threshold)) {
+                threshold = 0.3f;
+            }
+            metricsModel = new UserSettingsModel(new MetricsGatherer(project), project);
+        } catch (Throwable t) {
+            logStage(viewer, "METRICS", "metrics gate unavailable: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+            return java.util.Collections.emptyList();
+        }
+
+        java.util.ArrayList<detection.DetectedClone> passed = new java.util.ArrayList<>();
+        for (detection.DetectedClone clone : clones) {
+            if (clone == null) continue;
+
+            CloneMetricsDecision decision = evaluateCloneWithMetrics(
+                    project,
+                    vf,
+                    fileSource,
+                    clone,
+                    metricsModel,
+                    threshold
+            );
+
+            String cloneId = (clone.id == null || clone.id.isBlank()) ? "<unknown>" : clone.id;
+            String rangeSummary = summarizeCloneRanges(clone.ranges);
+            if (decision.passed) {
+                passed.add(clone);
+                logStage(viewer, "METRICS", "accepted clone " + cloneId +
+                        " [" + rangeSummary + "]: prediction=" + formatMetricScore(decision.bestPrediction) +
+                        ", threshold=" + formatMetricScore(threshold) +
+                        (decision.details.isBlank() ? "" : ", " + decision.details));
+            } else {
+                logStage(viewer, "METRICS", "filtered clone " + cloneId +
+                        " [" + rangeSummary + "]: bestPrediction=" + formatMetricScore(decision.bestPrediction) +
+                        ", threshold=" + formatMetricScore(threshold) +
+                        (decision.details.isBlank() ? "" : ", " + decision.details));
+            }
+        }
+
+        if (passed.size() != clones.size()) {
+            logStage(viewer, "METRICS", "metrics-filtered clone groups: " + clones.size() + " -> " + passed.size());
+        } else {
+            logStage(viewer, "METRICS", "all clone groups passed metrics gate: " + passed.size());
+        }
+        return passed;
+    }
+
+    private static CloneMetricsDecision evaluateCloneWithMetrics(Project project,
+                                                                 VirtualFile vf,
+                                                                 String fileSource,
+                                                                 detection.DetectedClone clone,
+                                                                 UserSettingsModel metricsModel,
+                                                                 float threshold) {
+        if (clone == null || metricsModel == null) {
+            return new CloneMetricsDecision(false, 0f, "metrics model unavailable");
+        }
+
+        java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, fileSource);
+        int rangeCount = clone.ranges == null ? 0 : clone.ranges.size();
+        int occurrenceCount = Math.max(rangeCount, cloneCodes.size());
+        if (occurrenceCount <= 0) {
+            return new CloneMetricsDecision(false, 0f, "no clone occurrences available");
+        }
+
+        boolean evaluated = false;
+        float bestPrediction = Float.NEGATIVE_INFINITY;
+        String bestDetails = "";
+
+        for (int i = 0; i < occurrenceCount; i++) {
+            detection.CloneRange range = (clone.ranges == null || i >= clone.ranges.size()) ? null : clone.ranges.get(i);
+            String code = i < cloneCodes.size() ? cloneCodes.get(i) : "";
+            FeaturesVector featuresVector = calculateCloneOccurrenceFeatures(project, vf, fileSource, range, code);
+            if (featuresVector == null) continue;
+
+            evaluated = true;
+            float prediction;
+            try {
+                prediction = metricsModel.predict(featuresVector);
+            } catch (Throwable t) {
+                continue;
+            }
+
+            String occurrenceDetails = "occurrence=" + (i + 1) +
+                    (range == null ? "" : " lines=" + range.startLine + "-" + range.endLine);
+            if (prediction > bestPrediction) {
+                bestPrediction = prediction;
+                bestDetails = occurrenceDetails;
+            }
+            if (prediction > threshold) {
+                return new CloneMetricsDecision(true, prediction, occurrenceDetails);
+            }
+        }
+
+        if (!evaluated) {
+            return new CloneMetricsDecision(false, 0f, "no evaluable occurrence metrics");
+        }
+        return new CloneMetricsDecision(false, bestPrediction, bestDetails);
+    }
+
+    private static FeaturesVector calculateCloneOccurrenceFeatures(Project project,
+                                                                   VirtualFile vf,
+                                                                   String fileSource,
+                                                                   detection.CloneRange range,
+                                                                   String code) {
+        AtomicReference<FeaturesVector> out = new AtomicReference<>();
+        try {
+            ApplicationManager.getApplication().runReadAction(() -> {
+                try {
+                    String snippet = firstNonBlank(code, sliceSourceByCloneRange(fileSource, range));
+                    if (snippet.isBlank()) return;
+
+                    PsiMethod method = findMethodContainingCloneRange(project, vf, range);
+                    if (method == null) {
+                        method = findMethodForCloneSnippet(project, vf, fileSource, snippet, range);
+                    }
+                    if (method == null) return;
+
+                    int[] methodLines = elementLineRange(project, vf, method);
+                    if (methodLines == null && range != null) {
+                        methodLines = new int[]{range.startLine, range.endLine};
+                    }
+                    if (methodLines == null) return;
+
+                    out.set(new MetricCalculator(method, snippet, methodLines[0], methodLines[1]).getFeaturesVector());
+                } catch (Throwable ignored) {
+                }
+            });
+        } catch (Throwable ignored) {
+        }
+        return out.get();
+    }
+
+    private static String formatMetricScore(float value) {
+        if (!Float.isFinite(value)) return String.valueOf(value);
+        return String.format(Locale.ROOT, "%.3f", value);
     }
 
     private static detection.DetectedClone chooseCloneToRefactor(Project project,
