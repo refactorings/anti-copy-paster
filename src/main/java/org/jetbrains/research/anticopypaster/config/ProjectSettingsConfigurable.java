@@ -80,10 +80,11 @@ public class ProjectSettingsConfigurable implements Configurable {
 
     @Override
     public void apply() throws ConfigurationException {
-        String apiKeyPrefixValidationError = settingsComponent.getApiKeyPrefixValidationError();
-        if (apiKeyPrefixValidationError != null) {
-            throw new ConfigurationException(apiKeyPrefixValidationError);
-        }
+        // API key prefix validation is intentionally disabled.
+//        String apiKeyPrefixValidationError = settingsComponent.getApiKeyPrefixValidationError();
+//        if (apiKeyPrefixValidationError != null) {
+//            throw new ConfigurationException(apiKeyPrefixValidationError);
+//        }
 
         if ("Azure".equalsIgnoreCase(settingsComponent.getLlmProvider())) {
             if (settingsComponent.getApiBase() == null || settingsComponent.getApiBase().trim().isEmpty()) {
