@@ -124,8 +124,14 @@ public class RefactoringNotificationTask extends TimerTask {
 
                     float threshold = modelSensitivity; // divide it by 100 since the prediction is a decimal < 1
                     float prediction = this.model.predict(featuresVector);
-                    if ((event.isForceExtraction() || prediction > threshold) &&
-                            canBeExtracted(event)) {
+
+                    boolean metricsPassed = event.isForceExtraction() || prediction > threshold;
+                    if (!metricsPassed) {
+                        notifyMetricsRejected(event.getProject(), prediction, threshold);
+                        return;
+                    }
+
+                    if (canBeExtracted(event)) {
                         notify(event.getProject(),
                                 AntiCopyPasterBundle.message(
                                         "extract.method.refactoring.is.available"),
@@ -196,6 +202,17 @@ public class RefactoringNotificationTask extends TimerTask {
         notification.addAction(NotificationAction.createSimple(
                 AntiCopyPasterBundle.message("anticopypaster.recommendation.notification.action"),
                 callback));
+        notification.notify(project);
+        AntiCopyPasterUsageStatistics.getInstance(project).notificationShown();
+    }
+
+    private void notifyMetricsRejected(Project project, float prediction, float threshold) {
+        String content = String.format(Locale.ROOT,
+                "Duplicated code was detected, but its metrics did not pass the refactoring threshold. " +
+                        "No Extract Method suggestion will be shown. (score=%.3f, threshold=%.3f)",
+                prediction,
+                threshold);
+        final Notification notification = notificationGroup.createNotification(content, NotificationType.INFORMATION);
         notification.notify(project);
         AntiCopyPasterUsageStatistics.getInstance(project).notificationShown();
     }
