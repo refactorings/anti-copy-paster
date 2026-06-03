@@ -480,6 +480,10 @@ public final class CloneRefactorWorkflow {
                                 showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethod,
                                         NotificationType.WARNING);
+                                RefactoringSuggestionPanel.cancelPendingDecision(
+                                        project,
+                                        "Workflow stopped because a cloned method was modified: " + changedMethod
+                                );
                                 cancelWorkflow(viewer);
                             }
                         }
@@ -521,6 +525,7 @@ public final class CloneRefactorWorkflow {
                 /* ---------- Retry Loop ---------- */
                 for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                         if (isCancelled()) {
+                            RefactoringSuggestionPanel.cancelPendingDecision(project, "Workflow cancelled by user.");
                             showNotification(project, "[Clone] Cancelled by user.", NotificationType.WARNING);
                             return;
                         }
@@ -531,6 +536,10 @@ public final class CloneRefactorWorkflow {
                             showNotification(project,
                                     "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodAtAttemptStart,
                                     NotificationType.WARNING);
+                            RefactoringSuggestionPanel.cancelPendingDecision(
+                                    project,
+                                    "Workflow stopped because a cloned method was modified: " + changedMethodAtAttemptStart
+                            );
                             cancelWorkflow(viewer);
                             return;
                         }
@@ -643,6 +652,20 @@ public final class CloneRefactorWorkflow {
                             } catch (Throwable t) {
                                 logStage(viewer, "REFACTOR_CODE", "failed to save proposed source: " + t.getMessage());
                             }
+
+                            RefactoringSuggestionDialog.SuggestionInfo previewSuggestionInfo =
+                                    buildRefactoringSuggestionInfoSafely(
+                                            project,
+                                            vf,
+                                            fileName,
+                                            currentSource,
+                                            proposedSource,
+                                            clone,
+                                            watchedCloneMethods,
+                                            pastedSnippet,
+                                            false
+                                    );
+                            RefactoringSuggestionPanel.showPreview(project, previewSuggestionInfo);
                         } finally {
                             logWorkflowStageEnd(viewer);
                         }
@@ -1069,6 +1092,10 @@ The fragment usefulness analyzer failed before compilation.%s
 
                         if (!isUseful) {
                             // Do not compile/test/apply; retry with feedback.
+                            RefactoringSuggestionPanel.markVerificationFailed(
+                                    project,
+                                    "Usefulness check rejected this proposal. Regenerating from feedback if attempts remain."
+                            );
                             javaBuildSupport.clearPatchedClassesDir();
                             continue;
                         }
@@ -1081,6 +1108,10 @@ The fragment usefulness analyzer failed before compilation.%s
                             showNotification(project,
                                     "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeCompile,
                                     NotificationType.WARNING);
+                            RefactoringSuggestionPanel.cancelPendingDecision(
+                                    project,
+                                    "Workflow stopped because a cloned method was modified before compile: " + changedMethodBeforeCompile
+                            );
                             cancelWorkflow(viewer);
                             return;
                         }
@@ -1162,6 +1193,10 @@ The fragment usefulness analyzer failed before compilation.%s
                                 feedback = cr == null ? "Compilation failed." : cr.summary;
                                 useFeedbackOnlyPrompt = false;
                                 logStage(viewer, "COMPILE", "failed: " + feedback);
+                                RefactoringSuggestionPanel.markVerificationFailed(
+                                        project,
+                                        "Compilation failed. Regenerating from compiler feedback if attempts remain."
+                                );
                                 showNotification(project, "[Clone] Compilation failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
                                 continue;
                             }
@@ -1220,6 +1255,10 @@ The fragment usefulness analyzer failed before compilation.%s
                             if (targetFqn == null || targetFqn.isBlank()) {
                                 feedback = "Test skipped: target class FQN could not be resolved.";
                                 useFeedbackOnlyPrompt = false;
+                                RefactoringSuggestionPanel.markVerificationFailed(
+                                        project,
+                                        "Testing could not start because the target class was not resolved."
+                                );
                                 showNotification(project, "[Clone] Test skipped (attempt " + attempt + ") for: " + fileName + " (cannot resolve class FQN)", NotificationType.WARNING);
                                 continue;
                             }
@@ -1238,6 +1277,10 @@ The fragment usefulness analyzer failed before compilation.%s
                                 showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeTest,
                                         NotificationType.WARNING);
+                                RefactoringSuggestionPanel.cancelPendingDecision(
+                                        project,
+                                        "Workflow stopped because a cloned method was modified before tests: " + changedMethodBeforeTest
+                                );
                                 cancelWorkflow(viewer);
                                 return;
                             }
@@ -1266,6 +1309,10 @@ The fragment usefulness analyzer failed before compilation.%s
                                 useFeedbackOnlyPrompt = false;
 
                                 logStage(viewer, "TEST", "failed");
+                                RefactoringSuggestionPanel.markVerificationFailed(
+                                        project,
+                                        "Tests failed. Regenerating from test feedback if attempts remain."
+                                );
                                 showNotification(project, "[Clone] Tests failed (attempt " + attempt + ") for: " + fileName, NotificationType.WARNING);
                             }
                         } finally {
@@ -1279,6 +1326,10 @@ The fragment usefulness analyzer failed before compilation.%s
                                 showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeApply,
                                         NotificationType.WARNING);
+                                RefactoringSuggestionPanel.cancelPendingDecision(
+                                        project,
+                                        "Workflow stopped because a cloned method was modified before apply: " + changedMethodBeforeApply
+                                );
                                 cancelWorkflow(viewer);
                                 return;
                             }
@@ -1331,15 +1382,24 @@ The fragment usefulness analyzer failed before compilation.%s
                 }
 
                 logStage(viewer, "WORKFLOW", "FAILED after " + maxAttempts + " retries");
+                RefactoringSuggestionPanel.markVerificationFailed(
+                        project,
+                        "Workflow failed after " + maxAttempts + " attempts. See the logs below for details."
+                );
                 showNotification(project, "[Clone] Workflow failed after " + maxAttempts + " retries for: " + vf.getName(), NotificationType.ERROR);
 
             } catch (Exception e) {
                 if (isCancelled() || Thread.currentThread().isInterrupted()
                         || (e.getMessage() != null && e.getMessage().contains("CANCELLED"))) {
+                    RefactoringSuggestionPanel.cancelPendingDecision(project, "Workflow cancelled by user.");
                     showNotification(project, "Operation cancelled by user.", NotificationType.WARNING);
                     return;
                 }
                 e.printStackTrace();
+                RefactoringSuggestionPanel.markVerificationFailed(
+                        project,
+                        "Workflow crashed before verification completed: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())
+                );
                 showNotification(project, "[Clone] Workflow crashed: " + e.getMessage(), NotificationType.ERROR);
             } finally {
                 if (trackedDocument != null && cloneMethodChangeListener != null) {
@@ -2414,8 +2474,58 @@ The fragment usefulness analyzer failed before compilation.%s
         }
 
         RefactoringSuggestionDialog.SuggestionInfo info =
-                buildRefactoringSuggestionInfo(project, vf, fileName, before, after, clone, snapshots, pastedSnippet);
-        return RefactoringSuggestionDialog.show(project, info);
+                buildRefactoringSuggestionInfoSafely(project, vf, fileName, before, after, clone, snapshots, pastedSnippet, true);
+        return RefactoringSuggestionPanel.awaitDecision(project, info);
+    }
+
+    private static RefactoringSuggestionDialog.SuggestionInfo buildRefactoringSuggestionInfoSafely(Project project,
+                                                                                                    VirtualFile vf,
+                                                                                                    String fileName,
+                                                                                                    String before,
+                                                                                                    String after,
+                                                                                                    detection.DetectedClone clone,
+                                                                                                    java.util.List<CloneMethodSnapshot> snapshots,
+                                                                                                    String pastedSnippet,
+                                                                                                    boolean verified) {
+        try {
+            return buildRefactoringSuggestionInfo(project, vf, fileName, before, after, clone, snapshots, pastedSnippet, verified);
+        } catch (Throwable t) {
+            java.util.LinkedHashMap<String, String> metadataRows = new java.util.LinkedHashMap<>();
+            metadataRows.put("Suggested Refactor", "Extract Method");
+            metadataRows.put(
+                    "Verification",
+                    verified
+                            ? "Usefulness check, isolated compilation, and tests passed."
+                            : "Usefulness check, isolated compilation, and tests are running."
+            );
+            metadataRows.put("Panel Context", "Fallback view because panel metadata could not be built.");
+            if (t.getMessage() != null && !t.getMessage().isBlank()) {
+                metadataRows.put("Panel Error", previewOneLine(t.getMessage(), 300));
+            }
+
+            return new RefactoringSuggestionDialog.SuggestionInfo(
+                    fileName,
+                    vf,
+                    "Clone",
+                    "detected duplicated code",
+                    "an existing method",
+                    "",
+                    "AntiCopyPaster found duplicated code and generated a refactoring proposal.",
+                    "This suggestion extracts shared logic and replaces clone locations with calls to the extracted method.",
+                    verified
+                            ? "The proposed source compiled and passed tests."
+                            : "AntiCopyPaster is verifying this proposal. Apply is enabled only after verification passes.",
+                    before == null ? "" : before,
+                    after == null ? "" : after,
+                    buildLocationLabel(fileName, -1, ""),
+                    -1,
+                    buildLocationLabel(fileName, -1, ""),
+                    -1,
+                    verified ? "Verified" : "Verifying",
+                    "Extract Method",
+                    metadataRows
+            );
+        }
     }
 
     private static RefactoringSuggestionDialog.SuggestionInfo buildRefactoringSuggestionInfo(Project project,
@@ -2426,6 +2536,18 @@ The fragment usefulness analyzer failed before compilation.%s
                                                                                              detection.DetectedClone clone,
                                                                                              java.util.List<CloneMethodSnapshot> snapshots,
                                                                                              String pastedSnippet) {
+        return buildRefactoringSuggestionInfo(project, vf, fileName, before, after, clone, snapshots, pastedSnippet, true);
+    }
+
+    private static RefactoringSuggestionDialog.SuggestionInfo buildRefactoringSuggestionInfo(Project project,
+                                                                                             VirtualFile vf,
+                                                                                             String fileName,
+                                                                                             String before,
+                                                                                             String after,
+                                                                                             detection.DetectedClone clone,
+                                                                                             java.util.List<CloneMethodSnapshot> snapshots,
+                                                                                             String pastedSnippet,
+                                                                                             boolean verified) {
         SuggestionRanges ranges = chooseSuggestionRanges(clone, before, pastedSnippet);
 
         String cloneType = inferCloneType(clone, before);
@@ -2456,8 +2578,11 @@ The fragment usefulness analyzer failed before compilation.%s
         String refactoringExplanation = "This suggestion extracts the common logic into "
                 + helperMethodText
                 + " and replaces the original clone locations with calls to the extracted method.";
-        String usefulnessExplanation = "AntiCopyPaster recommends it because the usefulness checks found shared delegation, "
-                + "and the proposed source compiled and passed tests before this panel opened.";
+        String usefulnessExplanation = verified
+                ? "AntiCopyPaster recommends it because the usefulness checks found shared delegation, "
+                + "and the proposed source compiled and passed tests."
+                : "AntiCopyPaster is verifying this proposal with usefulness checks, isolated compilation, and tests. "
+                + "Apply is enabled only after verification passes.";
 
         String beforeDiffText = buildFocusedFeedbackRefactoredCode(project, fileName, before, before, snapshots);
         String afterDiffText = buildFocusedFeedbackRefactoredCode(project, fileName, before, after, snapshots);
@@ -2484,7 +2609,12 @@ The fragment usefulness analyzer failed before compilation.%s
         if (clone != null && clone.reason != null && !clone.reason.isBlank()) {
             metadataRows.put("Detection Reason", previewOneLine(clone.reason, 600));
         }
-        metadataRows.put("Verification", "Usefulness check, isolated compilation, and tests passed.");
+        metadataRows.put(
+                "Verification",
+                verified
+                        ? "Usefulness check, isolated compilation, and tests passed."
+                        : "Usefulness check, isolated compilation, and tests are running."
+        );
 
         String diffTitle = firstHelperMethodName.isBlank()
                 ? "Extract Method"
@@ -2506,7 +2636,7 @@ The fragment usefulness analyzer failed before compilation.%s
                 sourceLine,
                 pastedLocationLabel,
                 pastedLine,
-                "Verified",
+                verified ? "Verified" : "Verifying",
                 diffTitle,
                 metadataRows
         );
