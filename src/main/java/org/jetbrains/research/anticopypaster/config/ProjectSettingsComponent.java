@@ -1591,6 +1591,8 @@ public class ProjectSettingsComponent {
      * Warns the user if the entered API key's prefix does not match the selected provider.
      */
     void validateApiKeyPrefix() {
+        // API key prefix validation is temporarily disabled.
+        /*
         String error = getApiKeyPrefixValidationError();
         if (error != null) {
             JOptionPane.showMessageDialog(
@@ -1600,10 +1602,15 @@ public class ProjectSettingsComponent {
                     JOptionPane.WARNING_MESSAGE
             );
         }
+        */
     }
 
     public String getApiKeyPrefixValidationError() {
+        // API key prefix validation is temporarily disabled.
+        /*
         return ApiKeyPrefixValidator.validate(getLlmProvider(), getAiderApiKey());
+        */
+        return null;
     }
 
     /**
