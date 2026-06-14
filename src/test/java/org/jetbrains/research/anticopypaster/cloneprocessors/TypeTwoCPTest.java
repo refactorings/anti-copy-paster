@@ -1,9 +1,14 @@
 package org.jetbrains.research.anticopypaster.cloneprocessors;
 
+import com.intellij.psi.PsiAssignmentExpression;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
 import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiReferenceExpression;
+import com.intellij.psi.PsiReturnStatement;
 import com.intellij.psi.PsiStatement;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
@@ -43,6 +48,53 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
         if (Files.notExists(marker)) {
             Files.createFile(marker);
         }
+    }
+
+    public void testCompoundAssignmentParameterUsesLhsDeclaredType() throws Exception {
+        PsiJavaFile file = (PsiJavaFile) myFixture.addFileToProject("DemoCompoundAssignmentType.java", """
+                class DemoCompoundAssignmentType {
+                    int count(long delta) {
+                        int sum = 0;
+                        sum += delta;
+                        return sum;
+                    }
+                }
+                """);
+
+        PsiAssignmentExpression assignment = PsiTreeUtil.findChildOfType(file, PsiAssignmentExpression.class);
+        assertNotNull(assignment);
+        MatchState state = new MatchState();
+        state.aliasMap().add(new Variable("sum", "int"));
+
+        Object result = canBeParam(assignment, state);
+
+        assertTrue(paramCheckSuccess(result));
+        assertEquals("int", paramCheckType(result));
+        assertFalse(paramCheckLambdaArgs(result).isEmpty());
+    }
+
+    public void testReturnAliasCanBePlainValueParameter() throws Exception {
+        PsiJavaFile file = (PsiJavaFile) myFixture.addFileToProject("DemoReturnAliasParameter.java", """
+                class DemoReturnAliasParameter {
+                    int count() {
+                        int sum = 0;
+                        return sum;
+                    }
+                }
+                """);
+
+        PsiReturnStatement returnStatement = PsiTreeUtil.findChildOfType(file, PsiReturnStatement.class);
+        assertNotNull(returnStatement);
+        PsiExpression returnValue = returnStatement.getReturnValue();
+        assertTrue(returnValue instanceof PsiReferenceExpression);
+        MatchState state = new MatchState();
+        state.aliasMap().add(new Variable("sum", "int"));
+
+        Object result = canBeParam(returnValue, state);
+
+        assertTrue(paramCheckSuccess(result));
+        assertEquals("int", paramCheckType(result));
+        assertTrue(paramCheckLambdaArgs(result).isEmpty());
     }
 
     public void testType2CCloneStaysExtractableAndUsesVoidCallParameter() {
@@ -274,6 +326,30 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
 
         assertEquals("return extractedMethod(0, values, (total, value) -> total += value);\n", originalCall);
         assertEquals("return extractedMethod(0L, numbers, (sum, item) -> sum += item);\n", pastedCall);
+    }
+
+    private static Object canBeParam(PsiElement element, MatchState state) throws Exception {
+        Method canBeParam = TypeTwoCP.class.getDeclaredMethod("canBeParam", PsiElement.class, MatchState.class);
+        canBeParam.setAccessible(true);
+        return canBeParam.invoke(null, element, state);
+    }
+
+    private static boolean paramCheckSuccess(Object result) throws Exception {
+        return (boolean) paramCheckAccessor(result, "success");
+    }
+
+    private static String paramCheckType(Object result) throws Exception {
+        return (String) paramCheckAccessor(result, "type");
+    }
+
+    private static Set<?> paramCheckLambdaArgs(Object result) throws Exception {
+        return (Set<?>) paramCheckAccessor(result, "lambdaArgs");
+    }
+
+    private static Object paramCheckAccessor(Object result, String accessorName) throws Exception {
+        Method accessor = result.getClass().getDeclaredMethod(accessorName);
+        accessor.setAccessible(true);
+        return accessor.invoke(result);
     }
 
     private static Object generatedReturnPlan(List<Clone> results) throws Exception {

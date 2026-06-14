@@ -153,11 +153,12 @@ public class ExtractionTask {
                 if (typeParameter != null) {
                     return typeParameter;
                 }
-            }
-            for (PsiForeachStatement foreachStatement : PsiTreeUtil.findChildrenOfType(current, PsiForeachStatement.class)) {
-                String typeParameter = typeParameterForForeachIterable(clone, variable, foreachStatement);
-                if (typeParameter != null) {
-                    return typeParameter;
+            } else {
+                for (PsiForeachStatement foreachStatement : PsiTreeUtil.findChildrenOfType(current, PsiForeachStatement.class)) {
+                    String typeParameter = typeParameterForForeachIterable(clone, variable, foreachStatement);
+                    if (typeParameter != null) {
+                        return typeParameter;
+                    }
                 }
             }
             if (current == clone.end()) break;
@@ -268,8 +269,7 @@ public class ExtractionTask {
                 sb.append("T");
                 sb.append(idx2 + 1);
             } else if (idx != -1 && current instanceof PsiAssignmentExpression assignment
-                    && assignment.getOperationTokenType() != JavaTokenType.EQ
-                    && !isVoidType(extractedParameters.get(idx).type())) {
+                    && assignment.getOperationTokenType() != JavaTokenType.EQ) {
                 sb.append(assignment.getLExpression().getText());
                 sb.append(" = p");
                 sb.append(idx + 1);

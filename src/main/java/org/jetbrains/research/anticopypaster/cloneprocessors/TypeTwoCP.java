@@ -110,7 +110,14 @@ public class TypeTwoCP implements CloneProcessor {
                 && assignment.getType() != null) {
             Set<Integer> aliasIDs = aliasIDsFromVariableReferences(assignment, ms);
             if (!aliasIDs.isEmpty()) {
-                return ParamCheckResult.asLambda(assignment.getType().getPresentableText(), aliasIDs);
+                PsiExpression lhs = assignment.getLExpression();
+                if (lhs instanceof PsiReferenceExpression lhsRef
+                        && lhsRef.resolve() instanceof PsiVariable lhsVar) {
+                    return ParamCheckResult.asLambda(lhsVar.getType().getPresentableText(), aliasIDs);
+                }
+                if (lhs.getType() != null) {
+                    return ParamCheckResult.asLambda(lhs.getType().getPresentableText(), aliasIDs);
+                }
             }
         } else if (e instanceof PsiMethodCallExpression callExp
                 && callExp.getParent() instanceof PsiExpressionStatement) {
@@ -130,6 +137,9 @@ public class TypeTwoCP implements CloneProcessor {
             String paramType = refExp.getType().getPresentableText();
             int aliasID = ms.getAliasID(refExp.getReferenceName());
             if (aliasID >= 0 && refExp.getParent() instanceof PsiReturnStatement) {
+                if (!CloneProcessor.isInScope(refExp.getReferenceName(), ms.scope())) {
+                    return new ParamCheckResult(paramType);
+                }
                 return ParamCheckResult.FAILURE;
             }
             if (aliasID >= 0
