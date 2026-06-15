@@ -1,30 +1,25 @@
 package org.jetbrains.research.anticopypaster.ide;
 
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
-import com.intellij.openapi.vfs.LocalFileSystem;
-import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.JavaRecursiveElementVisitor;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiMethod;
-import com.intellij.testFramework.LightPlatformTestCase;
-import org.jdom.JDOMException;
+import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import org.jetbrains.annotations.NotNull;
-import java.io.IOException;
 
 
-public class RefactoringEventTest extends LightPlatformTestCase {
+public class RefactoringEventTest extends LightJavaCodeInsightFixtureTestCase {
+    @Override
+    protected String getTestDataPath() {
+        return "src/test/resources/testdata";
+    }
 
     /**
      * Successful clone detection of basic Type 1 clones
      * TypeOneBasicExample.java contains 5 methods, 4 of which are Type 1 clones of each other.
      * testCode is the base code, and is copied exactly in TypeOneBasicExample.java's method sumProd()
      * Expected outcome is result
-     * @throws IOException on failure to open project
-     * @throws JDOMException on failure to open project
      */
-    public void testResolveMethodType1() throws IOException, JDOMException {
+    public void testResolveMethodType1() {
                 String testCode = """
                             float sum=0.0; //C1
                             float prod =1.0;
@@ -34,21 +29,10 @@ public class RefactoringEventTest extends LightPlatformTestCase {
                                 foo(sum, prod); }
                             };
                         """;
-                String targetMethodName = "duplicate1c"; //chosen arbitrarily. Any of the 4 clone methods works.
+        String targetMethodName = "duplicate1c"; //chosen arbitrarily. Any of the 4 clone methods works.
         DuplicatesInspection testDuplicates = new DuplicatesInspection();
 
-        ProjectManager myProjectManager = ProjectManager.getInstance();
-        assert myProjectManager != null;
-
-        Project myProject = myProjectManager.loadAndOpenProject("./anti-copy-paster");
-        assert myProject != null;
-
-        PsiManager psiManager = PsiManager.getInstance(myProject);
-
-        VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath("./src/test/resources/testdata/TypeOneBasicExample.java");
-        assert virtualFile != null;
-
-        PsiFile file = psiManager.findFile(virtualFile);
+        PsiFile file = myFixture.configureByFile("TypeOneBasicExample.java");
         assert file != null;
 
         //Obtains the PSI for targetMethodName
@@ -125,10 +109,8 @@ public class RefactoringEventTest extends LightPlatformTestCase {
      * testCode is the base code, and is copied exactly in TypeTwoBasicExample.java's method sumProd()
      * Expected outcome is result contains 5 Clone objects
      * These Clones should be the methods sumProd, duplicate2a, duplicate2b, duplicate2c, and duplicate2d
-     * @throws IOException on failure to open project
-     * @throws JDOMException on failure to open project
      */
-    public void testResolveMethodType2() throws IOException, JDOMException {
+    public void testResolveMethodType2() {
         String testCode = """
                             float sum=0.0; //C1
                             float prod =1.0;
@@ -141,18 +123,7 @@ public class RefactoringEventTest extends LightPlatformTestCase {
         String targetMethodName = "duplicate2c"; //chosen arbitrarily between the 5 clone methods.
         DuplicatesInspection testDuplicates = new DuplicatesInspection();
 
-        ProjectManager myProjectManager = ProjectManager.getInstance();
-        assert myProjectManager != null;
-
-        Project myProject = myProjectManager.loadAndOpenProject("./anti-copy-paster");
-        assert myProject != null;
-
-        PsiManager psiManager = PsiManager.getInstance(myProject);
-
-        VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath("./src/test/resources/testdata/TypeTwoBasicExample.java");
-        assert virtualFile != null;
-
-        PsiFile file = psiManager.findFile(virtualFile);
+        PsiFile file = myFixture.configureByFile("TypeTwoBasicExample.java");
         assert file != null;
 
         //Obtains the PSI for targetMethodName
@@ -238,10 +209,8 @@ public class RefactoringEventTest extends LightPlatformTestCase {
      * Does not detect any clones
      * Calculator.java does not contain testCode in any capacity
      * Expected outcome is result contains 1 Clone object which contains the method arbitrarily chosen as targetMethod
-     * @throws IOException on failure to open project
-     * @throws JDOMException on failure to open project
      */
-    public void testResolveMethodNoClones() throws IOException, JDOMException {
+    public void testResolveMethodNoClones() {
         String testCode = """
                      float sum=0.0; //C1
                             float prod =1.0;
@@ -254,18 +223,7 @@ public class RefactoringEventTest extends LightPlatformTestCase {
         String targetMethodName = "add"; //chosen arbitrarily. Any method in Calculator.java works.
         DuplicatesInspection testDuplicates = new DuplicatesInspection();
 
-        ProjectManager myProjectManager = ProjectManager.getInstance();
-        assert myProjectManager != null;
-
-        Project myProject = myProjectManager.loadAndOpenProject("./anti-copy-paster");
-        assert myProject != null;
-
-        PsiManager psiManager = PsiManager.getInstance(myProject);
-
-        VirtualFile virtualFile = LocalFileSystem.getInstance().findFileByPath("./src/test/resources/testdata/NoCloneExample.java");
-        assert virtualFile != null;
-
-        PsiFile file = psiManager.findFile(virtualFile);
+        PsiFile file = myFixture.configureByFile("NoCloneExample.java");
         assert file != null;
 
         //Obtains the PSI for targetMethodName

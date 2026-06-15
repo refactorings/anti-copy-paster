@@ -33,7 +33,7 @@ public class MetricsGathererTest extends LightJavaCodeInsightFixtureTestCase {
         super.setUp();
         while (!getProject().isInitialized());
         if(!addedTestClass) {
-            myFixture.copyDirectoryToProject("", "");
+            myFixture.copyFileToProject("Calculator.java", "Calculator.java");
             addedTestClass = true;
         }
     }
