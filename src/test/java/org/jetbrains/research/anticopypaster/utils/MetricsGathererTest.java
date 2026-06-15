@@ -2,7 +2,8 @@ package org.jetbrains.research.anticopypaster.utils;
 
 import com.intellij.testFramework.fixtures.*;
 import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
-import org.junit.jupiter.api.*;
+import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
 
 /**
  * Test class for the MetricsGatherer. Extends the LightJavaCodeInsightFixtureTestCase,
@@ -43,6 +44,7 @@ public class MetricsGathererTest extends LightJavaCodeInsightFixtureTestCase {
      * Calculator.java and 2 in CalculatorTest.java. Only the 6 from
      * Calculator.java should be gotten.
      */
+    @Test
     public void testMetricsListSize() {
         MetricsGatherer metricsGatherer = new MetricsGatherer(getProject());
         System.out.println("Message = Metrics List Has 6 Methods");
@@ -53,6 +55,7 @@ public class MetricsGathererTest extends LightJavaCodeInsightFixtureTestCase {
      * Test to ensure that the arraylist for the MethodMetrics is instantiated
      * properly and that the MetricsGatherer doesn't crash.
      */
+    @Test
     public void testMetricsListNotNull() {
         MetricsGatherer metricsGatherer = new MetricsGatherer(getProject());
         System.out.println("Message = MetricsList Not Null");
@@ -64,6 +67,7 @@ public class MetricsGathererTest extends LightJavaCodeInsightFixtureTestCase {
      * MetricsGatherer. This is tested by seeing if any of the metrics gotten
      * have a 1 line method. The only 1 line methods exist in CalculatorTest.java
      */
+    @Test
     public void testMetricsInListNoTestMethods() {
         MetricsGatherer metricsGatherer = new MetricsGatherer(getProject());
         System.out.println("Message = No Single Line Methods Gotten");

@@ -16,6 +16,7 @@ import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.ide.DuplicatesInspection;
 import org.jetbrains.research.anticopypaster.ide.ExtractionTask;
 import org.jetbrains.research.anticopypaster.ide.RefactoringEvent;
+import org.junit.Test;
 
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -50,6 +51,7 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
         }
     }
 
+    @Test
     public void testCompoundAssignmentParameterUsesLhsDeclaredType() throws Exception {
         PsiJavaFile file = (PsiJavaFile) myFixture.addFileToProject("DemoCompoundAssignmentType.java", """
                 class DemoCompoundAssignmentType {
@@ -73,6 +75,7 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
         assertFalse(paramCheckLambdaArgs(result).isEmpty());
     }
 
+    @Test
     public void testReturnAliasCanBePlainValueParameter() throws Exception {
         PsiJavaFile file = (PsiJavaFile) myFixture.addFileToProject("DemoReturnAliasParameter.java", """
                 class DemoReturnAliasParameter {
@@ -97,6 +100,7 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
         assertTrue(paramCheckLambdaArgs(result).isEmpty());
     }
 
+    @Test
     public void testType2CCloneStaysExtractableAndUsesVoidCallParameter() {
         PsiJavaFile file = (PsiJavaFile) myFixture.addFileToProject("DemoType2C.java", """
                 class DemoType2C {
@@ -148,6 +152,7 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
         assertTrue(secondClone.parameters().stream().anyMatch(parameter -> "void".equals(parameter.type())));
     }
 
+    @Test
     public void testType2CCloneWithForeachAndCompoundAssignment() {
         PsiJavaFile file = (PsiJavaFile) myFixture.addFileToProject("DemoForeachType2C.java", """
                 import java.util.ArrayList;
@@ -192,6 +197,7 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
         }));
     }
 
+    @Test
     public void testDuplicatesInspectionFindsForeachType2CClone() {
         PsiJavaFile file = (PsiJavaFile) myFixture.addFileToProject("DemoInspectionForeachType2C.java", """
                 import java.util.ArrayList;
@@ -233,6 +239,7 @@ public class TypeTwoCPTest extends LightJavaCodeInsightFixtureTestCase {
         }));
     }
 
+    @Test
     public void testExtractionTextForForeachType2CReturnBodyUsesGenericReturn() throws Exception {
         PsiJavaFile file = (PsiJavaFile) myFixture.addFileToProject("DemoExtractionForeachType2C.java", """
                 import java.util.ArrayList;

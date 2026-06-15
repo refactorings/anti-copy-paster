@@ -5,6 +5,7 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import org.jetbrains.annotations.NotNull;
+import org.junit.Test;
 
 
 public class RefactoringEventTest extends LightJavaCodeInsightFixtureTestCase {
@@ -19,6 +20,7 @@ public class RefactoringEventTest extends LightJavaCodeInsightFixtureTestCase {
      * testCode is the base code, and is copied exactly in TypeOneBasicExample.java's method sumProd()
      * Expected outcome is result
      */
+    @Test
     public void testResolveMethodType1() {
                 String testCode = """
                             float sum=0.0; //C1
@@ -110,6 +112,7 @@ public class RefactoringEventTest extends LightJavaCodeInsightFixtureTestCase {
      * Expected outcome is result contains 5 Clone objects
      * These Clones should be the methods sumProd, duplicate2a, duplicate2b, duplicate2c, and duplicate2d
      */
+    @Test
     public void testResolveMethodType2() {
         String testCode = """
                             float sum=0.0; //C1
@@ -210,6 +213,7 @@ public class RefactoringEventTest extends LightJavaCodeInsightFixtureTestCase {
      * Calculator.java does not contain testCode in any capacity
      * Expected outcome is result contains 1 Clone object which contains the method arbitrarily chosen as targetMethod
      */
+    @Test
     public void testResolveMethodNoClones() {
         String testCode = """
                      float sum=0.0; //C1
