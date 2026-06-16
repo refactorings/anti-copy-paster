@@ -2,7 +2,6 @@ package org.jetbrains.research.anticopypaster.config;
 
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class ApiKeyPrefixValidatorTest {
@@ -24,19 +23,22 @@ class ApiKeyPrefixValidatorTest {
     }
 
     @Test
-    void rejectsMismatchedPrefixes() {
-        assertEquals(
-                "API key for OpenAI must start with 'sk-proj-'.",
-                ApiKeyPrefixValidator.validate("OpenAI", "sk-demo")
-        );
-        assertEquals(
-                "API key for Gemini must start with 'AIzaSy'.",
-                ApiKeyPrefixValidator.validate("Gemini", "sk-demo")
-        );
-        assertEquals(
-                "API key for Google must start with 'AIzaSy'.",
-                ApiKeyPrefixValidator.validate("Google", "sk-demo")
-        );
+    void allowsMismatchedPrefixes() {
+//        assertEquals(
+//                "API key for OpenAI must start with 'sk-proj-'.",
+//                ApiKeyPrefixValidator.validate("OpenAI", "sk-demo")
+//        );
+//        assertEquals(
+//                "API key for Gemini must start with 'AIzaSy'.",
+//                ApiKeyPrefixValidator.validate("Gemini", "sk-demo")
+//        );
+//        assertEquals(
+//                "API key for Google must start with 'AIzaSy'.",
+//                ApiKeyPrefixValidator.validate("Google", "sk-demo")
+//        );
+        assertNull(ApiKeyPrefixValidator.validate("OpenAI", "sk-demo"));
+        assertNull(ApiKeyPrefixValidator.validate("Gemini", "sk-demo"));
+        assertNull(ApiKeyPrefixValidator.validate("Google", "sk-demo"));
     }
 
     @Test

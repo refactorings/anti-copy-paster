@@ -2,11 +2,13 @@ package org.jetbrains.research.anticopypaster.agents;
 
 import com.intellij.psi.PsiFile;
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
+import org.junit.Test;
 
 import java.util.List;
 
 public class PsiFallbackCloneDetectorTest extends LightJavaCodeInsightFixtureTestCase {
 
+    @Test
     public void testDetectsType2ClonesWithRenamedIdentifiersAndLiterals() {
         String source = """
                 class Demo {
@@ -39,6 +41,7 @@ public class PsiFallbackCloneDetectorTest extends LightJavaCodeInsightFixtureTes
         assertTrue(candidates.stream().anyMatch(candidate -> candidate.cloneCode.contains("int count = 3")));
     }
 
+    @Test
     public void testDetectsType3ClonesWithInsertedStatement() {
         String source = """
                 class Demo {

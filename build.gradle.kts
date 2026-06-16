@@ -1,23 +1,45 @@
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask
+
 plugins {
     java
-    id("org.jetbrains.intellij") version "1.15.0"
-    id("com.adarshr.test-logger") version "3.2.0"
+    id("org.jetbrains.intellij.platform") version "2.16.0"
+    id("com.adarshr.test-logger") version "4.0.0"
 }
 
 group = "org.jetbrains.research.anticopypaster"
-version = "2025.1-3.2" //version of the plugin, not the platform
+version = "2026.1-3.3" //version of the plugin, not the platform
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 repositories {
     maven("https://plugins.gradle.org/m2/")
     maven("https://packages.jetbrains.team/maven/p/big-code/bigcode")
     mavenCentral()
+    intellijPlatform {
+        defaultRepositories()
+    }
 }
 
 dependencies {
+    intellijPlatform {
+        intellijIdea(properties("platformVersion"))
+        bundledPlugins(
+            properties("platformBundledPlugins")
+                .split(',')
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+        )
+        testFramework(TestFrameworkType.Platform)
+        testFramework(TestFrameworkType.Plugin.Java)
+    }
+
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.apache.commons:commons-lang3:3.12.0")
     implementation("org.pmml4s:pmml4s_3:1.0.1")
@@ -39,11 +61,12 @@ dependencies {
 
     // Test dependencies
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.9.3")
+    testImplementation("junit:junit:4.13.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.9.3")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.9.3")
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine:5.9.3")
-    testImplementation("org.mockito:mockito-core:5.4.0")
-    testImplementation("org.mockito:mockito-junit-jupiter:5.4.0")
+    testImplementation("org.mockito:mockito-core:5.18.0")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.18.0")
 }
 
 sourceSets {
@@ -74,48 +97,39 @@ tasks.withType<Jar>().configureEach {
 }
 
 fun properties(key: String) = project.findProperty(key).toString()
-fun config(name: String) = project.findProperty(name).toString()
-val ideaVersion = config("ideaVersion")
-intellij {
-    version.set(properties("platformVersion"))
-    type.set(properties("platformType"))
-    downloadSources.set(properties("platformDownloadSources").toBoolean())
-    updateSinceUntilBuild.set(false) //set false to support different versions of the platform depending on the settings in plugin.xml
-    val basePlugins = properties("platformPlugins")
-        .split(',')
-        .map(String::trim)
-        .filter(String::isNotEmpty)
 
-    plugins.set((basePlugins + listOf("terminal", "junit")).distinct())
+intellijPlatform {
+    buildSearchableOptions.set(false)
+    projectName.set("AntiCopyPaster")
+    sandboxContainer.set(layout.buildDirectory.dir("idea-sandbox"))
+
+    pluginConfiguration {
+        ideaVersion {
+            sinceBuild.set(properties("pluginSinceBuild"))
+            untilBuild.set(provider { null })
+        }
+    }
+
+    publishing {
+        token.set(providers.gradleProperty("publishToken").orElse(providers.environmentVariable("PUBLISH_TOKEN")))
+    }
 }
 
 tasks {
-    withType<org.jetbrains.intellij.tasks.BuildSearchableOptionsTask>()
-        .forEach { it.enabled = false }
-    runIde {
-        maxHeapSize = "1g"
-    }
     //test task
     test {
         useJUnitPlatform()
+        jvmArgs("-Dnet.bytebuddy.experimental=true")
     }
-    val copyStubs = register<Copy>("copyStubs") {
-        dependsOn("prepareSandbox")
+
+    withType<PrepareSandboxTask>().configureEach {
         from(projectDir) {
-            include("code2vec/")
+            include("code2vec/**")
+            into(pluginName)
         }
-        into("${intellij.sandboxDir.get()}/plugins/AntiCopyPaster")
     }
-    buildSearchableOptions {
-        dependsOn(copyStubs)
-    }
-    buildPlugin {
-        dependsOn(copyStubs)
-    }
-    runIde {
-        dependsOn(copyStubs)
-    }
-    publishPlugin {
-        token = config("publishToken")
+
+    named<JavaExec>("runIde") {
+        maxHeapSize = "1g"
     }
 }
