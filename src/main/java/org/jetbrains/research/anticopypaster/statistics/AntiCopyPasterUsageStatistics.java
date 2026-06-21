@@ -66,6 +66,14 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
         usageState.refactoringCancelled();
     }
 
+    public void refactoringEdited() {
+        usageState.refactoringEdited();
+    }
+
+    public void refactoringHelpOpened() {
+        usageState.refactoringHelpOpened();
+    }
+
     public static class PluginState {
         public int notificationCount = 0;
         public int extractMethodAppliedCount = 0;
@@ -74,6 +82,8 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
         public int pasteCount = 0;
         public Integer applyCount;
         public Integer cancelCount;
+        public Integer editCount;
+        public Integer helpCount;
         public long lastTransmissionTime = 0;
 
         public void notification() {
@@ -104,6 +114,14 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
             cancelCount = getCancelCount() + 1;
         }
 
+        public void refactoringEdited() {
+            editCount = getEditCount() + 1;
+        }
+
+        public void refactoringHelpOpened() {
+            helpCount = getHelpCount() + 1;
+        }
+
         public int getApplyCount() {
             return applyCount == null ? 0 : applyCount;
         }
@@ -112,9 +130,19 @@ public final class AntiCopyPasterUsageStatistics implements PersistentStateCompo
             return cancelCount == null ? 0 : cancelCount;
         }
 
+        public int getEditCount() {
+            return editCount == null ? 0 : editCount;
+        }
+
+        public int getHelpCount() {
+            return helpCount == null ? 0 : helpCount;
+        }
+
         public void normalize() {
             applyCount = getApplyCount();
             cancelCount = getCancelCount();
+            editCount = getEditCount();
+            helpCount = getHelpCount();
         }
 
         public void saveToMongoDB(Project project) {

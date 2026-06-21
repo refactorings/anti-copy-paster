@@ -43,9 +43,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.diff.DiffContentFactory;
-import com.intellij.diff.DiffManager;
-import com.intellij.diff.requests.SimpleDiffRequest;
 
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
@@ -85,12 +82,7 @@ import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.diff.DiffRequestPanel;
-import com.intellij.openapi.Disposable;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
-import javax.swing.*;
 import org.jetbrains.research.anticopypaster.llm.LlmClient;
 import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
 import org.jetbrains.research.anticopypaster.llm.LlmConfigurationNotifier;
@@ -424,20 +416,14 @@ public final class CloneRefactorWorkflow {
 
                     det.clones = resolveDetectedCloneRangesWithPsi(project, vf, originalSource, det.clones, viewer);
                     det.clones = mergeOverlappingDetectedClones(originalSource, det.clones, viewer);
+                    det.clones = filterDetectedClonesByMetrics(project, vf, originalSource, det.clones, viewer);
                     if (det.clones == null || det.clones.isEmpty()) {
-                        logStage(viewer, "DETECTION", "stopped: no detected clone groups remained after range resolution/merge");
+                        logStage(viewer, "METRICS", "stopped: no detected clone groups passed the metrics gate");
                         showNotification(project,
                                 "[Clone] Clones were detected in: " + fileName +
-                                        ", but none could be resolved to selectable ranges.",
+                                        ", but none passed the metrics threshold for refactoring.",
                                 NotificationType.INFORMATION);
                         return;
-                    }
-                    java.util.List<detection.DetectedClone> metricPassedClones =
-                            filterDetectedClonesByMetrics(project, vf, originalSource, det.clones, viewer);
-                    if (metricPassedClones == null || metricPassedClones.isEmpty()) {
-                        logStage(viewer, "METRICS", "no detected clone groups passed the metrics gate; continuing to clone selection");
-                    } else if (metricPassedClones.size() != det.clones.size()) {
-                        logStage(viewer, "METRICS", "some clone groups did not pass the metrics gate; keeping all clone groups for selection");
                     }
 
                     try {
@@ -507,6 +493,10 @@ public final class CloneRefactorWorkflow {
                                 showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethod,
                                         NotificationType.WARNING);
+                                RefactoringSuggestionPanel.cancelPendingDecision(
+                                        project,
+                                        "Workflow stopped because a cloned method was modified: " + changedMethod
+                                );
                                 cancelWorkflow(viewer);
                             }
                         }
@@ -548,6 +538,7 @@ public final class CloneRefactorWorkflow {
                 /* ---------- Retry Loop ---------- */
                 for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                         if (isCancelled()) {
+                            RefactoringSuggestionPanel.cancelPendingDecision(project, "Workflow cancelled by user.");
                             showNotification(project, "[Clone] Cancelled by user.", NotificationType.WARNING);
                             return;
                         }
@@ -558,6 +549,10 @@ public final class CloneRefactorWorkflow {
                             showNotification(project,
                                     "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodAtAttemptStart,
                                     NotificationType.WARNING);
+                            RefactoringSuggestionPanel.cancelPendingDecision(
+                                    project,
+                                    "Workflow stopped because a cloned method was modified: " + changedMethodAtAttemptStart
+                            );
                             cancelWorkflow(viewer);
                             return;
                         }
@@ -670,6 +665,20 @@ public final class CloneRefactorWorkflow {
                             } catch (Throwable t) {
                                 logStage(viewer, "REFACTOR_CODE", "failed to save proposed source: " + t.getMessage());
                             }
+
+                            RefactoringSuggestionDialog.SuggestionInfo previewSuggestionInfo =
+                                    buildRefactoringSuggestionInfoSafely(
+                                            project,
+                                            vf,
+                                            fileName,
+                                            currentSource,
+                                            proposedSource,
+                                            clone,
+                                            watchedCloneMethods,
+                                            pastedSnippet,
+                                            false
+                                    );
+                            RefactoringSuggestionPanel.showPreview(project, previewSuggestionInfo);
                         } finally {
                             logWorkflowStageEnd(viewer);
                         }
@@ -1096,6 +1105,10 @@ The fragment usefulness analyzer failed before compilation.%s
 
                         if (!isUseful) {
                             // Do not compile/test/apply; retry with feedback.
+                            RefactoringSuggestionPanel.markVerificationFailed(
+                                    project,
+                                    "Usefulness check rejected this proposal. Regenerating from feedback if attempts remain."
+                            );
                             javaBuildSupport.clearPatchedClassesDir();
                             continue;
                         }
@@ -1108,6 +1121,10 @@ The fragment usefulness analyzer failed before compilation.%s
                             showNotification(project,
                                     "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeCompile,
                                     NotificationType.WARNING);
+                            RefactoringSuggestionPanel.cancelPendingDecision(
+                                    project,
+                                    "Workflow stopped because a cloned method was modified before compile: " + changedMethodBeforeCompile
+                            );
                             cancelWorkflow(viewer);
                             return;
                         }
@@ -1189,6 +1206,10 @@ The fragment usefulness analyzer failed before compilation.%s
                                 feedback = cr == null ? "Compilation failed." : cr.summary;
                                 useFeedbackOnlyPrompt = false;
                                 logStage(viewer, "COMPILE", "failed: " + feedback);
+                                RefactoringSuggestionPanel.markVerificationFailed(
+                                        project,
+                                        "Compilation failed. Regenerating from compiler feedback if attempts remain."
+                                );
                                 showNotification(project, "[Clone] Compilation failed (attempt " + attempt + ") for: " + fileName + "\n" + feedback, NotificationType.ERROR);
                                 continue;
                             }
@@ -1247,6 +1268,10 @@ The fragment usefulness analyzer failed before compilation.%s
                             if (targetFqn == null || targetFqn.isBlank()) {
                                 feedback = "Test skipped: target class FQN could not be resolved.";
                                 useFeedbackOnlyPrompt = false;
+                                RefactoringSuggestionPanel.markVerificationFailed(
+                                        project,
+                                        "Testing could not start because the target class was not resolved."
+                                );
                                 showNotification(project, "[Clone] Test skipped (attempt " + attempt + ") for: " + fileName + " (cannot resolve class FQN)", NotificationType.WARNING);
                                 continue;
                             }
@@ -1265,6 +1290,10 @@ The fragment usefulness analyzer failed before compilation.%s
                                 showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeTest,
                                         NotificationType.WARNING);
+                                RefactoringSuggestionPanel.cancelPendingDecision(
+                                        project,
+                                        "Workflow stopped because a cloned method was modified before tests: " + changedMethodBeforeTest
+                                );
                                 cancelWorkflow(viewer);
                                 return;
                             }
@@ -1293,6 +1322,10 @@ The fragment usefulness analyzer failed before compilation.%s
                                 useFeedbackOnlyPrompt = false;
 
                                 logStage(viewer, "TEST", "failed");
+                                RefactoringSuggestionPanel.markVerificationFailed(
+                                        project,
+                                        "Tests failed. Regenerating from test feedback if attempts remain."
+                                );
                                 showNotification(project, "[Clone] Tests failed (attempt " + attempt + ") for: " + fileName, NotificationType.WARNING);
                             }
                         } finally {
@@ -1306,18 +1339,49 @@ The fragment usefulness analyzer failed before compilation.%s
                                 showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethodBeforeApply,
                                         NotificationType.WARNING);
+                                RefactoringSuggestionPanel.cancelPendingDecision(
+                                        project,
+                                        "Workflow stopped because a cloned method was modified before apply: " + changedMethodBeforeApply
+                                );
                                 cancelWorkflow(viewer);
                                 return;
                             }
                             // Now that compile+test passed, ask user whether to apply the refactor to the real file.
-                            boolean applyNow = showDiffAndConfirmApply(project, fileName, currentSource, proposedSource);
-                            if (applyNow) {
+                            RefactoringSuggestionDialog.Decision userDecision = showRefactoringSuggestionDialog(
+                                    project,
+                                    vf,
+                                    fileName,
+                                    currentSource,
+                                    proposedSource,
+                                    clone,
+                                    watchedCloneMethods,
+                                    pastedSnippet
+                            );
+                            if (userDecision.choice == RefactoringSuggestionDialog.Choice.APPLY) {
+                                AntiCopyPasterUsageStatistics.getInstance(project).refactoringApplied();
                                 CloneUsageStatistics.getInstance(project).refactoringAccepted();
                                 currentSource = proposedSource;
                                 Files.writeString(ioFile.toPath(), currentSource, StandardCharsets.UTF_8);
                                 logStage(viewer, "REFACTOR", "applied after verification");
                                 showNotification(project, "[Clone] Tests passed. Refactor applied for: " + fileName, NotificationType.INFORMATION);
+                            } else if (userDecision.choice == RefactoringSuggestionDialog.Choice.EDIT) {
+                                logStage(viewer, "REFACTOR", "user requested edit/regeneration: " + previewOneLine(userDecision.editInstructions, 320));
+                                feedback = buildUserEditFeedback(userDecision.editInstructions, currentSource, proposedSource, watchedCloneMethods, project, fileName);
+                                useFeedbackOnlyPrompt = false;
+                                javaBuildSupport.clearPatchedClassesDir();
+                                if (attempt >= maxAttempts) {
+                                    logStage(viewer, "REFACTOR", "edit requested after final attempt; no retry budget remains");
+                                    showNotification(project,
+                                            "[Clone] Edit requested, but no retry attempts remain. Increase max attempts to regenerate this suggestion.",
+                                            NotificationType.WARNING);
+                                    return;
+                                }
+                                showNotification(project,
+                                        "[Clone] Regenerating refactor from your edit instructions for: " + fileName,
+                                        NotificationType.INFORMATION);
+                                continue;
                             } else {
+                                AntiCopyPasterUsageStatistics.getInstance(project).refactoringCancelled();
                                 CloneUsageStatistics.getInstance(project).refactoringCancelled();
                                 logStage(viewer, "REFACTOR", "verified but not applied (user cancelled)");
                                 showNotification(project, "[Clone] Tests passed but changes were not applied (user cancelled): " + fileName, NotificationType.WARNING);
@@ -1331,15 +1395,24 @@ The fragment usefulness analyzer failed before compilation.%s
                 }
 
                 logStage(viewer, "WORKFLOW", "FAILED after " + maxAttempts + " retries");
+                RefactoringSuggestionPanel.markVerificationFailed(
+                        project,
+                        "Workflow failed after " + maxAttempts + " attempts. See the logs below for details."
+                );
                 showNotification(project, "[Clone] Workflow failed after " + maxAttempts + " retries for: " + vf.getName(), NotificationType.ERROR);
 
             } catch (Exception e) {
                 if (isCancelled() || Thread.currentThread().isInterrupted()
                         || (e.getMessage() != null && e.getMessage().contains("CANCELLED"))) {
+                    RefactoringSuggestionPanel.cancelPendingDecision(project, "Workflow cancelled by user.");
                     showNotification(project, "Operation cancelled by user.", NotificationType.WARNING);
                     return;
                 }
                 e.printStackTrace();
+                RefactoringSuggestionPanel.markVerificationFailed(
+                        project,
+                        "Workflow crashed before verification completed: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())
+                );
                 showNotification(project, "[Clone] Workflow crashed: " + e.getMessage(), NotificationType.ERROR);
             } finally {
                 if (trackedDocument != null && cloneMethodChangeListener != null) {
@@ -2564,65 +2637,416 @@ The fragment usefulness analyzer failed before compilation.%s
         }
     }
 
-    /**
-     * Show a diff in a modal dialog that has Apply/Cancel buttons.
-     * Clicking Apply returns true; Cancel returns false.
-     */
-    private static boolean showDiffAndConfirmApply(Project project, String fileName, String before, String after) {
-        if (project == null || project.isDisposed()) return false;
-        final java.util.concurrent.atomic.AtomicBoolean decision = new java.util.concurrent.atomic.AtomicBoolean(false);
-
-        Runnable ui = () -> {
-            Disposable disp = Disposer.newDisposable("DiffPreview");
-            try {
-                DiffContentFactory f = DiffContentFactory.getInstance();
-                var left = f.create(before == null ? "" : before);
-                var right = f.create(after == null ? "" : after);
-
-                String title = "Refactor Preview";
-                String leftTitle = "Current";
-                String rightTitle = "Proposed";
-                SimpleDiffRequest req = new SimpleDiffRequest(title, left, right, leftTitle, rightTitle);
-
-                DiffRequestPanel panel = DiffManager.getInstance().createRequestPanel(project, disp, null);
-                panel.setRequest(req);
-
-                DialogWrapper dialog = new DialogWrapper(project, true) {
-                    {
-                        setTitle(title);
-                        setOKButtonText("Apply");
-                        setCancelButtonText("Cancel");
-                        init();
-                    }
-
-                    @Override
-                    protected JComponent createCenterPanel() {
-                        return panel.getComponent();
-                    }
-                };
-
-                boolean ok = dialog.showAndGet(); // OK => Apply
-                decision.set(ok);
-                if (ok) {
-                    AntiCopyPasterUsageStatistics.getInstance(project).refactoringApplied();
-                } else {
-                    AntiCopyPasterUsageStatistics.getInstance(project).refactoringCancelled();
-                }
-
-            } catch (Throwable t) {
-                decision.set(false);
-            } finally {
-                Disposer.dispose(disp);
-            }
-        };
-
-        if (ApplicationManager.getApplication().isDispatchThread()) {
-            ui.run();
-        } else {
-            ApplicationManager.getApplication().invokeAndWait(ui);
+    private static RefactoringSuggestionDialog.Decision showRefactoringSuggestionDialog(Project project,
+                                                                                       VirtualFile vf,
+                                                                                       String fileName,
+                                                                                       String before,
+                                                                                       String after,
+                                                                                       detection.DetectedClone clone,
+                                                                                       java.util.List<CloneMethodSnapshot> snapshots,
+                                                                                       String pastedSnippet) {
+        if (project == null || project.isDisposed()) {
+            return RefactoringSuggestionDialog.Decision.cancel();
         }
 
-        return decision.get();
+        RefactoringSuggestionDialog.SuggestionInfo info =
+                buildRefactoringSuggestionInfoSafely(project, vf, fileName, before, after, clone, snapshots, pastedSnippet, true);
+        return RefactoringSuggestionPanel.awaitDecision(project, info);
+    }
+
+    private static RefactoringSuggestionDialog.SuggestionInfo buildRefactoringSuggestionInfoSafely(Project project,
+                                                                                                    VirtualFile vf,
+                                                                                                    String fileName,
+                                                                                                    String before,
+                                                                                                    String after,
+                                                                                                    detection.DetectedClone clone,
+                                                                                                    java.util.List<CloneMethodSnapshot> snapshots,
+                                                                                                    String pastedSnippet,
+                                                                                                    boolean verified) {
+        try {
+            return buildRefactoringSuggestionInfo(project, vf, fileName, before, after, clone, snapshots, pastedSnippet, verified);
+        } catch (Throwable t) {
+            java.util.LinkedHashMap<String, String> metadataRows = new java.util.LinkedHashMap<>();
+            metadataRows.put("Suggested Refactor", "Extract Method");
+            metadataRows.put(
+                    "Verification",
+                    verified
+                            ? "Usefulness check, isolated compilation, and tests passed."
+                            : "Usefulness check, isolated compilation, and tests are running."
+            );
+            metadataRows.put("Panel Context", "Fallback view because panel metadata could not be built.");
+            if (t.getMessage() != null && !t.getMessage().isBlank()) {
+                metadataRows.put("Panel Error", previewOneLine(t.getMessage(), 300));
+            }
+
+            return new RefactoringSuggestionDialog.SuggestionInfo(
+                    fileName,
+                    vf,
+                    "Clone",
+                    "detected duplicated code",
+                    "an existing method",
+                    "",
+                    "AntiCopyPaster found duplicated code and generated a refactoring proposal.",
+                    "This suggestion extracts shared logic and replaces clone locations with calls to the extracted method.",
+                    verified
+                            ? "The proposed source compiled and passed tests."
+                            : "AntiCopyPaster is verifying this proposal. Apply is enabled only after verification passes.",
+                    before == null ? "" : before,
+                    after == null ? "" : after,
+                    buildLocationLabel(fileName, -1, ""),
+                    -1,
+                    buildLocationLabel(fileName, -1, ""),
+                    -1,
+                    verified ? "Verified" : "Verifying",
+                    "Extract Method",
+                    metadataRows
+            );
+        }
+    }
+
+    private static RefactoringSuggestionDialog.SuggestionInfo buildRefactoringSuggestionInfo(Project project,
+                                                                                             VirtualFile vf,
+                                                                                             String fileName,
+                                                                                             String before,
+                                                                                             String after,
+                                                                                             detection.DetectedClone clone,
+                                                                                             java.util.List<CloneMethodSnapshot> snapshots,
+                                                                                             String pastedSnippet) {
+        return buildRefactoringSuggestionInfo(project, vf, fileName, before, after, clone, snapshots, pastedSnippet, true);
+    }
+
+    private static RefactoringSuggestionDialog.SuggestionInfo buildRefactoringSuggestionInfo(Project project,
+                                                                                             VirtualFile vf,
+                                                                                             String fileName,
+                                                                                             String before,
+                                                                                             String after,
+                                                                                             detection.DetectedClone clone,
+                                                                                             java.util.List<CloneMethodSnapshot> snapshots,
+                                                                                             String pastedSnippet,
+                                                                                             boolean verified) {
+        SuggestionRanges ranges = chooseSuggestionRanges(clone, before, pastedSnippet);
+
+        String cloneType = inferCloneType(clone, before);
+        String cloneTypeDefinition = cloneTypeDefinition(cloneType);
+
+        String sourceMethodDisplayName = findMethodDisplayNameForRange(project, vf, ranges.sourceRange);
+        String pastedMethodDisplayName = findMethodDisplayNameForRange(project, vf, ranges.pastedRange);
+        String detectedMethodDisplayName = sourceMethodDisplayName.isBlank()
+                ? "an existing method"
+                : "`" + sourceMethodDisplayName + "`";
+
+        int sourceLine = ranges.sourceRange == null ? -1 : ranges.sourceRange.startLine;
+        int pastedLine = ranges.pastedRange == null ? -1 : ranges.pastedRange.startLine;
+        String sourceLocationLabel = buildLocationLabel(fileName, sourceLine, sourceMethodDisplayName);
+        String pastedLocationLabel = buildLocationLabel(fileName, pastedLine, pastedMethodDisplayName);
+
+        java.util.List<String> helperMethodNames =
+                findExtractedHelperMethodNames(project, fileName, before, after, snapshots);
+        String helperMethodText = formatHelperMethodNames(helperMethodNames);
+        String firstHelperMethodName = helperMethodNames.isEmpty() ? "" : helperMethodNames.get(0);
+
+        String detectionExplanation = buildDetectionExplanation(
+                cloneType,
+                detectedMethodDisplayName,
+                sourceLine,
+                pastedLine
+        );
+        String refactoringExplanation = "This suggestion extracts the common logic into "
+                + helperMethodText
+                + " and replaces the original clone locations with calls to the extracted method.";
+        String usefulnessExplanation = verified
+                ? "AntiCopyPaster recommends it because the usefulness checks found shared delegation, "
+                + "and the proposed source compiled and passed tests."
+                : "AntiCopyPaster is verifying this proposal with usefulness checks, isolated compilation, and tests. "
+                + "Apply is enabled only after verification passes.";
+
+        String beforeDiffText = buildFocusedFeedbackRefactoredCode(project, fileName, before, before, snapshots);
+        String afterDiffText = buildFocusedFeedbackRefactoredCode(project, fileName, before, after, snapshots);
+        if (beforeDiffText == null || beforeDiffText.isBlank()) beforeDiffText = before == null ? "" : before;
+        if (afterDiffText == null || afterDiffText.isBlank()) afterDiffText = after == null ? "" : after;
+
+        java.util.LinkedHashMap<String, String> metadataRows = new java.util.LinkedHashMap<>();
+        if (clone != null && clone.id != null && !clone.id.isBlank()) {
+            metadataRows.put("Clone ID", clone.id);
+        }
+        String methodSummary = summarizeCloneMethods(snapshots);
+        if (methodSummary != null && !methodSummary.isBlank()) {
+            metadataRows.put("Target Methods", methodSummary);
+        }
+        if (clone != null && clone.refactorType != null && !clone.refactorType.isBlank()) {
+            metadataRows.put("Suggested Refactor", clone.refactorType);
+        } else {
+            metadataRows.put("Suggested Refactor", "Extract Method");
+        }
+        String rangeSummary = summarizeCloneRanges(clone == null ? null : clone.ranges);
+        if (rangeSummary != null && !rangeSummary.isBlank()) {
+            metadataRows.put("Selected Ranges", rangeSummary);
+        }
+        if (clone != null && clone.reason != null && !clone.reason.isBlank()) {
+            metadataRows.put("Detection Reason", previewOneLine(clone.reason, 600));
+        }
+        metadataRows.put(
+                "Verification",
+                verified
+                        ? "Usefulness check, isolated compilation, and tests passed."
+                        : "Usefulness check, isolated compilation, and tests are running."
+        );
+
+        String diffTitle = firstHelperMethodName.isBlank()
+                ? "Extract Method"
+                : "Extract Method `" + firstHelperMethodName + "`";
+
+        return new RefactoringSuggestionDialog.SuggestionInfo(
+                fileName,
+                vf,
+                cloneType,
+                cloneTypeDefinition,
+                detectedMethodDisplayName,
+                firstHelperMethodName,
+                detectionExplanation,
+                refactoringExplanation,
+                usefulnessExplanation,
+                beforeDiffText,
+                afterDiffText,
+                sourceLocationLabel,
+                sourceLine,
+                pastedLocationLabel,
+                pastedLine,
+                verified ? "Verified" : "Verifying",
+                diffTitle,
+                metadataRows
+        );
+    }
+
+    private static String buildUserEditFeedback(String userInstructions,
+                                                String beforeSource,
+                                                String proposedSource,
+                                                java.util.List<CloneMethodSnapshot> snapshots,
+                                                Project project,
+                                                String fileName) {
+        String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+                project,
+                fileName,
+                beforeSource,
+                proposedSource,
+                snapshots
+        );
+        if (focusedProposedCode == null || focusedProposedCode.isBlank()) {
+            focusedProposedCode = proposedSource == null ? "" : proposedSource;
+        }
+
+        return """
+The user reviewed the refactoring suggestion panel and asked to edit/regenerate the proposal.
+
+[USER_EDIT_INSTRUCTIONS]
+%s
+
+[CURRENT_REFACTORING_PROPOSAL]
+```java
+%s
+```
+
+[REVISION_INSTRUCTION]
+Revise the Extract Method refactoring according to the user's instructions. Preserve behavior, keep all target clone methods, and make the duplicated logic share one extracted implementation.
+""".formatted(userInstructions == null ? "" : userInstructions.strip(), focusedProposedCode);
+    }
+
+    private static String buildDetectionExplanation(String cloneType,
+                                                    String existingMethodDisplayName,
+                                                    int sourceLine,
+                                                    int pastedLine) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("AntiCopyPaster found that the code you just pasted is a ");
+        sb.append((cloneType == null || cloneType.isBlank()) ? "clone" : cloneType);
+        sb.append(" of ");
+        sb.append((existingMethodDisplayName == null || existingMethodDisplayName.isBlank())
+                ? "an existing method"
+                : "the existing method " + existingMethodDisplayName);
+        if (sourceLine > 0) {
+            sb.append(" on line ").append(sourceLine);
+        }
+        sb.append(".");
+        if (pastedLine > 0) {
+            sb.append(" The pasted clone starts on line ").append(pastedLine).append(".");
+        }
+        return sb.toString();
+    }
+
+    private static java.util.List<String> findExtractedHelperMethodNames(Project project,
+                                                                         String fileName,
+                                                                         String beforeSource,
+                                                                         String afterSource,
+                                                                         java.util.List<CloneMethodSnapshot> snapshots) {
+        java.util.ArrayList<String> names = new java.util.ArrayList<>();
+        try {
+            if (project == null || project.isDisposed() || afterSource == null || afterSource.isBlank()) return names;
+
+            PsiJavaFile beforePsi = parseInMemoryJavaFile(project, fileName, beforeSource == null ? "" : beforeSource);
+            PsiJavaFile afterPsi = parseInMemoryJavaFile(project, fileName, afterSource);
+            java.util.LinkedHashMap<String, PsiMethod> beforeMethods =
+                    beforePsi == null ? new java.util.LinkedHashMap<>() : collectAllMethodsByUsefulnessKey(beforePsi);
+            java.util.LinkedHashMap<String, PsiMethod> afterMethods = collectAllMethodsByUsefulnessKey(afterPsi);
+
+            java.util.LinkedHashSet<String> addedKeys = new java.util.LinkedHashSet<>(afterMethods.keySet());
+            addedKeys.removeAll(beforeMethods.keySet());
+            if (addedKeys.isEmpty()) return names;
+
+            java.util.LinkedHashSet<String> targetKeys = collectTargetMethodUsefulnessKeys(snapshots);
+            java.util.LinkedHashSet<String> helperKeys = collectRelevantHelperMethodKeys(afterMethods, targetKeys, addedKeys);
+            if (helperKeys.isEmpty()) {
+                helperKeys.addAll(addedKeys);
+            }
+
+            for (String key : helperKeys) {
+                String name = extractMethodNameFromUsefulnessKey(key);
+                if (name == null || name.isBlank()) name = key;
+                if (!names.contains(name)) names.add(name);
+            }
+        } catch (Throwable ignored) {
+        }
+        return names;
+    }
+
+    private static String formatHelperMethodNames(java.util.List<String> helperMethodNames) {
+        if (helperMethodNames == null || helperMethodNames.isEmpty()) {
+            return "a new helper method";
+        }
+
+        java.util.ArrayList<String> names = new java.util.ArrayList<>();
+        for (String name : helperMethodNames) {
+            if (name == null || name.isBlank()) continue;
+            names.add("`" + name + "`");
+        }
+        if (names.isEmpty()) {
+            return "a new helper method";
+        }
+        if (names.size() == 1) {
+            return "a new method named " + names.get(0);
+        }
+        return "new methods named " + String.join(", ", names);
+    }
+
+    private static String buildLocationLabel(String fileName, int line, String methodDisplayName) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(fileName == null || fileName.isBlank() ? "<unknown file>" : fileName);
+        if (line > 0) {
+            sb.append(":").append(line);
+        }
+        if (methodDisplayName != null && !methodDisplayName.isBlank()) {
+            sb.append(" (").append(methodDisplayName).append(")");
+        }
+        return sb.toString();
+    }
+
+    private static String findMethodDisplayNameForRange(Project project,
+                                                        VirtualFile vf,
+                                                        detection.CloneRange range) {
+        if (range == null) return "";
+        PsiMethod method = findMethodContainingLine(project, vf, range.startLine);
+        if (method == null) method = findMethodContainingLine(project, vf, range.endLine);
+        return method == null ? "" : buildMethodDisplayName(method);
+    }
+
+    private static String inferCloneType(detection.DetectedClone clone, String sourceText) {
+        String explicit = inferExplicitCloneType(clone);
+        if (!explicit.isBlank()) {
+            return explicit;
+        }
+
+        java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, sourceText);
+        if (cloneCodes.size() >= 2) {
+            String first = normalizeForTypeOneComparison(cloneCodes.get(0));
+            String second = normalizeForTypeOneComparison(cloneCodes.get(1));
+            if (!first.isBlank() && first.equals(second)) {
+                return "Type-1";
+            }
+        }
+        return "Type-2";
+    }
+
+    private static String inferExplicitCloneType(detection.DetectedClone clone) {
+        String text = "";
+        if (clone != null) {
+            text = (clone.id == null ? "" : clone.id) + "\n"
+                    + (clone.refactorType == null ? "" : clone.refactorType) + "\n"
+                    + (clone.reason == null ? "" : clone.reason);
+        }
+        if (text.isBlank()) return "";
+
+        Matcher matcher = Pattern.compile("(?i)\\btype\\s*[-_ ]?([1-4])\\b").matcher(text);
+        if (matcher.find()) {
+            return "Type-" + matcher.group(1);
+        }
+        return "";
+    }
+
+    private static String cloneTypeDefinition(String cloneType) {
+        String normalized = cloneType == null ? "" : cloneType.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "type-1" -> "same code except for whitespace or comments";
+            case "type-2" -> "same structure with renamed identifiers, literals, or types";
+            case "type-3" -> "similar code with added, changed, or removed statements";
+            case "type-4" -> "semantically similar code with different structure";
+            default -> "detected duplicated code";
+        };
+    }
+
+    private static String normalizeForTypeOneComparison(String code) {
+        if (code == null || code.isBlank()) return "";
+        String s = code.replace("\r\n", "\n").replace('\r', '\n');
+        s = s.replaceAll("//.*?(?=\n|$)", "");
+        s = s.replaceAll("(?s)/\\*.*?\\*/", "");
+        s = s.replaceAll("\\s+", " ").trim();
+        return s;
+    }
+
+    private static SuggestionRanges chooseSuggestionRanges(detection.DetectedClone clone,
+                                                          String sourceText,
+                                                          String pastedSnippet) {
+        if (clone == null || clone.ranges == null || clone.ranges.isEmpty()) {
+            return new SuggestionRanges(null, null);
+        }
+
+        detection.CloneRange pastedRange = null;
+        int[] pastedLines = findSnippetLineRangeInText(sourceText, pastedSnippet);
+        if (pastedLines != null) {
+            for (detection.CloneRange range : clone.ranges) {
+                if (rangeOverlaps(range, pastedLines[0], pastedLines[1])) {
+                    pastedRange = range;
+                    break;
+                }
+            }
+        }
+        if (pastedRange == null) {
+            pastedRange = clone.ranges.get(0);
+        }
+
+        detection.CloneRange sourceRange = null;
+        for (detection.CloneRange range : clone.ranges) {
+            if (range == null || range == pastedRange) continue;
+            sourceRange = range;
+            break;
+        }
+        if (sourceRange == null) {
+            sourceRange = pastedRange;
+        }
+
+        return new SuggestionRanges(sourceRange, pastedRange);
+    }
+
+    private static boolean rangeOverlaps(detection.CloneRange range, int startLine, int endLine) {
+        if (range == null || startLine <= 0 || endLine <= 0) return false;
+        return range.startLine <= endLine && range.endLine >= startLine;
+    }
+
+    private static final class SuggestionRanges {
+        final detection.CloneRange sourceRange;
+        final detection.CloneRange pastedRange;
+
+        SuggestionRanges(detection.CloneRange sourceRange, detection.CloneRange pastedRange) {
+            this.sourceRange = sourceRange;
+            this.pastedRange = pastedRange;
+        }
     }
 
     private static String buildFocusedFeedbackRefactoredCode(Project project,
