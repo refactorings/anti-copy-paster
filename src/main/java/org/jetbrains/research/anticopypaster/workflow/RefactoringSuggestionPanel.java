@@ -691,7 +691,8 @@ final class RefactoringSuggestionPanel {
                 -1,
                 "",
                 "",
-                new LinkedHashMap<>()
+                new LinkedHashMap<>(),
+                false
         );
     }
 
