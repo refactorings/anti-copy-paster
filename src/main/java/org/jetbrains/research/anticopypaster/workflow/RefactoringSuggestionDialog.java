@@ -74,11 +74,11 @@ final class RefactoringSuggestionDialog {
         }
 
         static Decision apply() {
-            return new Decision(Choice.APPLY, "");
+            return new Decision(Choice.APPLY, "", "");
         }
 
         static Decision edit(String editInstructions) {
-            return new Decision(Choice.EDIT, editInstructions);
+            return new Decision(Choice.EDIT, editInstructions, "");
         }
 
         static Decision editCode(String editedCode) {
@@ -87,7 +87,7 @@ final class RefactoringSuggestionDialog {
 
 
         static Decision cancel() {
-            return new Decision(Choice.CANCEL, "");
+            return new Decision(Choice.CANCEL, "", "");
         }
     }
 
@@ -562,4 +562,3 @@ final class RefactoringSuggestionDialog {
         return text == null ? "" : text;
     }
 }
-RefactoringSuggestionDialog.java
