@@ -1921,13 +1921,13 @@ The fragment usefulness analyzer failed before compilation.%s
         for (int i = 0; i < options.size(); i++) {
             CloneSelectionOption option = options.get(i);
             previewCloneRangeInEditor(project, vf, getRepresentativeRange(option.clone));
-            int choice = showSequentialChoiceDialog(
+            int choice = RefactoringSuggestionPanel.showCloneOccurrence(
                     project,
-                    "Refactor Clone Candidate",
-                    buildSequentialClonePrompt(option, i + 1, options.size()),
-                    "Refactor This Clone",
-                    (i + 1) < options.size() ? "Next Clone" : "Skip",
-                    "Cancel"
+                    i + 1,
+                    options.size(),
+                    option.label,
+                    option.clone.ranges.get(0).startLine,
+                    option.clone.ranges.get(0).endLine
             );
             if (choice == Messages.CANCEL) {
                 logStage(viewer, "DETECTION", "clone selection cancelled");
@@ -1965,13 +1965,13 @@ The fragment usefulness analyzer failed before compilation.%s
         for (int i = 0; i < options.size(); i++) {
             CloneRangeSelectionOption option = options.get(i);
             previewCloneRangeInEditor(project, vf, option.range);
-            int choice = showSequentialChoiceDialog(
+            int choice = RefactoringSuggestionPanel.showCloneOccurrence(
                     project,
-                    "Select Clone Occurrence",
-                    buildSequentialRangePrompt(option, i + 1, options.size(), selected.size()),
-                    "Include",
-                    "Exclude",
-                    "Cancel"
+                    i + 1,
+                    options.size(),
+                    option.label,
+                    option.range.startLine,
+                    option.range.endLine
             );
             if (choice == Messages.CANCEL) {
                 logStage(viewer, "DETECTION", "clone range selection cancelled");

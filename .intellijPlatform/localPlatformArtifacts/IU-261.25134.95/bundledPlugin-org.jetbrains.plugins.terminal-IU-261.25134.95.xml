@@ -4,13 +4,13 @@
     <conf name="default" visibility="public" />
   </configurations>
   <publications>
-    <artifact name="terminal" ext="jar" conf="default" url="plugins/terminal/lib" />
     <artifact name="completion-ranking-sh" ext="jar" conf="default" url="plugins/terminal/lib" />
     <artifact name="terminal-completion-db-with-extensions" ext="jar" conf="default" url="plugins/terminal/lib" />
     <artifact name="terminal-completion-spec" ext="jar" conf="default" url="plugins/terminal/lib" />
+    <artifact name="terminal" ext="jar" conf="default" url="plugins/terminal/lib" />
+    <artifact name="intellij.terminal.cloud" ext="jar" conf="default" url="plugins/terminal/lib/modules" />
     <artifact name="intellij.terminal.frontend" ext="jar" conf="default" url="plugins/terminal/lib/modules" />
     <artifact name="intellij.terminal.frontend.split" ext="jar" conf="default" url="plugins/terminal/lib/modules" />
-    <artifact name="intellij.terminal.cloud" ext="jar" conf="default" url="plugins/terminal/lib/modules" />
   </publications>
   <dependencies />
 </ivy-module>
