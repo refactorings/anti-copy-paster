@@ -592,6 +592,7 @@ final class RefactoringSuggestionPanel {
             buttons.add(helpButton);
             buttons.add(applyButton);
             buttons.add(regenerateButton);
+            buttons.add(editCodeButton);
             buttons.add(cancelButton);
             panel.add(buttons, BorderLayout.EAST);
             return panel;
