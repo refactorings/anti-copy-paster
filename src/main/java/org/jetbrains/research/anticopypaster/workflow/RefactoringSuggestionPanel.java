@@ -4,7 +4,9 @@ import com.intellij.diff.DiffContentFactory;
 import com.intellij.diff.DiffManager;
 import com.intellij.diff.DiffRequestPanel;
 import com.intellij.diff.requests.SimpleDiffRequest;
+import com.intellij.icons.AllIcons;
 import com.intellij.ide.BrowserUtil;
+//import com.intellij.ide.startup.importSettings.chooser.ui.RoundedBorder;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -19,30 +21,15 @@ import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowAnchor;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.Icon;
-import javax.swing.JButton;
-import javax.swing.JComponent;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JSeparator;
-import javax.swing.JTextArea;
-import java.awt.BorderLayout;
-import java.awt.Cursor;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
+import javax.swing.*;
+import java.awt.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,7 +38,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 final class RefactoringSuggestionPanel {
-    private static final String TOOL_WINDOW_ID = "AntiCopyPaster";
+    private static final String TOOL_WINDOW_ID = "AntiCopyPaster"; //should be CLONE
     private static final String CONTENT_TITLE = "Refactoring Suggestion";
     private static final String HELP_URL =
             "https://github.com/JetBrains-Research/anti-copy-paster#refactoring-suggestion-panel";
@@ -299,7 +286,7 @@ final class RefactoringSuggestionPanel {
             panel.setBorder(JBUI.Borders.empty(16, 18, 16, 18));
 
             JPanel header = new JPanel(new BorderLayout(8, 0));
-            JLabel title = new JLabel("[AntiCopyPaster] Refactoring Suggestion");
+            JLabel title = new JLabel("[AntiCopyPaster] Refactoring Suggestion"); //should be CLONE
             title.setFont(title.getFont().deriveFont(Font.BOLD, title.getFont().getSize2D() + 2.0f));
             header.add(new JLabel(loadHeaderIcon()), BorderLayout.WEST);
             header.add(title, BorderLayout.CENTER);
@@ -338,11 +325,11 @@ final class RefactoringSuggestionPanel {
                     ? emptyInfo()
                     : info;
 
-            diffDisposable = Disposer.newDisposable("AntiCopyPasterPersistentSuggestionDiff");
-            DiffRequestPanel diffPanel = createDiffPanel(project, diffDisposable, safeInfo);
+            diffDisposable = Disposer.newDisposable("AntiCopyPasterPersistentSuggestionDiff"); //JULIANA
+            DiffRequestPanel diffPanel = createDiffPanel(project, diffDisposable, safeInfo); //JULIANA
 
             add(createTopPanel(safeInfo), BorderLayout.NORTH);
-            add(diffPanel.getComponent(), BorderLayout.CENTER);
+            add(createComparisonPanel(safeInfo), BorderLayout.CENTER); //add(diffPanel.getComponent(), BorderLayout.CENTER);
             add(createBottomPanel(safeInfo), BorderLayout.SOUTH);
             setDecisionButtonsEnabled(decisionEnabled);
             if (statusLabel != null && statusText != null && !statusText.isBlank()) {
@@ -398,7 +385,7 @@ final class RefactoringSuggestionPanel {
             panel.setBorder(JBUI.Borders.empty(10, 12, 8, 12));
 
             JPanel header = new JPanel(new BorderLayout(8, 0));
-            JLabel title = new JLabel("[AntiCopyPaster] Refactoring Suggestion");
+            JLabel title = new JLabel("[AntiCopyPaster] Refactoring Suggestion"); //should be CLONE
             title.setFont(title.getFont().deriveFont(Font.BOLD, title.getFont().getSize2D() + 2.0f));
             header.add(new JLabel(loadHeaderIcon()), BorderLayout.WEST);
             header.add(title, BorderLayout.CENTER);
@@ -653,7 +640,7 @@ final class RefactoringSuggestionPanel {
         }
     }
 
-    private static DiffRequestPanel createDiffPanel(Project project,
+    private static DiffRequestPanel createDiffPanel(Project project,     //JULIANA
                                                     Disposable disposable,
                                                     RefactoringSuggestionDialog.SuggestionInfo info) {
         DiffContentFactory factory = DiffContentFactory.getInstance();
@@ -664,12 +651,107 @@ final class RefactoringSuggestionPanel {
                 title,
                 left,
                 right,
-                "Before: Original Code",
-                "After: Proposed Refactoring"
+                "Original Duplicate Code",
+                "Extracted (Proposed Refactoring)"
         );
         DiffRequestPanel panel = DiffManager.getInstance().createRequestPanel(project, disposable, null);
         panel.setRequest(request);
+
         return panel;
+    }
+
+    private static JComponent createCard(JLabel header, String code, Color color) {
+            JPanel card = new RoundedPanel(12); //new JPanel(new BorderLayout());
+            card.setLayout(new BorderLayout());
+            card.setBorder(JBUI.Borders.empty(12));
+
+            //JLabel header = new JLabel(title); SILENCED
+            header.setBorder(JBUI.Borders.empty(12));
+            //header.add(loadHeaderIcon(JBUI)); attempt to add the little icon
+
+            JTextArea textArea = new JTextArea(code);
+            textArea.setEditable(false);
+
+            card.add(header, BorderLayout.NORTH);
+            //card.add(editor.getComponent(), BorderLayout.CENTER); fix this in order to replace current editor region
+            card.add(new JScrollPane(textArea), BorderLayout.CENTER);
+            card.setBackground(color);
+
+            return card;
+
+    }
+
+    private static JComponent createComparisonPanel(RefactoringSuggestionDialog.SuggestionInfo info){
+        JPanel comparisonPanel = new JPanel(new GridLayout(1, 2, 8, 0));
+        comparisonPanel.setBorder(JBUI.Borders.empty(12));
+        comparisonPanel.setLayout(new BoxLayout(comparisonPanel, BoxLayout.Y_AXIS)); //vertical flow
+
+        JPanel diffPanelHeader = new JPanel (new GridLayout(1, 2, 8, 0));
+        JLabel headerLabel = new JLabel("Diff Preview", AllIcons.General.Warning, JBLabel.LEFT);
+        diffPanelHeader.setBorder(JBUI.Borders.empty(12));
+        diffPanelHeader.add(headerLabel);
+        comparisonPanel.add(diffPanelHeader);
+
+
+        JSeparator separator = new JSeparator(SwingConstants.HORIZONTAL);
+        comparisonPanel.add(separator);
+
+        JPanel cardsPanel = new JPanel(new GridLayout(1, 2, 8, 0));
+        cardsPanel.setBorder(JBUI.Borders.empty(12));
+        cardsPanel.setLayout(new BoxLayout(cardsPanel, BoxLayout.X_AXIS)); //horizontal flow
+
+        //red intellij
+        Color red = JBColor.RED;
+        Color green = JBColor.GREEN;
+
+        cardsPanel.add(
+                createCard(
+                        new JLabel("Original Duplicate Code", AllIcons.General.BalloonWarning, JBLabel.LEFT),
+                        info.beforeDiffText,
+                        new Color(64, 41, 41) //switch to JBUI Colors
+                ));
+
+        cardsPanel.add(
+                createCard(
+                        new JLabel("Extracted (Proposed Refactoring)",  AllIcons.General.GreenCheckmark, JBLabel.LEFT),
+                        info.afterDiffText,
+                        new Color(37, 54, 49) //switch to JBUI colors
+                ));
+
+        comparisonPanel.add(cardsPanel);
+
+        return comparisonPanel;
+
+    }
+
+    static class RoundedPanel extends JPanel {
+
+        private final int radius;
+
+        public RoundedPanel(int radius) {
+            this.radius = radius;
+            setOpaque(false);
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+
+            g2.setColor(getBackground());
+
+            g2.fillRoundRect(
+                    0,
+                    0,
+                    getWidth(),
+                    getHeight(),
+                    radius,
+                    radius
+            );
+
+            g2.dispose();
+
+            super.paintComponent(g);
+        }
     }
 
     private static RefactoringSuggestionDialog.SuggestionInfo emptyInfo() {
