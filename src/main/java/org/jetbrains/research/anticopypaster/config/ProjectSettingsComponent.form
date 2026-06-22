@@ -1417,7 +1417,7 @@
             <properties/>
             <border type="bevel-lowered"/>
             <children>
-              <grid id="68b2b" binding="filesPanel" layout-manager="GridLayoutManager" row-count="1" column-count="4" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
+              <grid id="68b2b" binding="filesPanel" layout-manager="GridLayoutManager" row-count="1" column-count="5" same-size-horizontally="false" same-size-vertically="false" hgap="-1" vgap="-1">
                 <margin top="0" left="0" bottom="0" right="0"/>
                 <constraints>
                   <grid row="0" column="0" row-span="1" col-span="1" vsize-policy="3" hsize-policy="3" anchor="0" fill="3" indent="0" use-parent-layout="false"/>
@@ -1455,6 +1455,15 @@
                     </constraints>
                     <properties>
                       <text value="Multiple Files"/>
+                    </properties>
+                  </component>
+                  <component id="cf001" class="javax.swing.JRadioButton" binding="crossFilesButton">
+                    <constraints>
+                      <grid row="0" column="4" row-span="1" col-span="1" vsize-policy="0" hsize-policy="3" anchor="8" fill="0" indent="0" use-parent-layout="false"/>
+                    </constraints>
+                    <properties>
+                      <text value="Cross Files"/>
+                      <toolTipText value="Detect clones across the selected files and refactor them together"/>
                     </properties>
                   </component>
                 </children>
@@ -1541,6 +1550,7 @@
       <member id="2176e"/>
       <member id="7bb2e"/>
       <member id="1a379"/>
+      <member id="cf001"/>
     </group>
   </buttonGroups>
 </form>

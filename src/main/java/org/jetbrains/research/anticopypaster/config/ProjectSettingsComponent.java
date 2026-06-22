@@ -120,6 +120,7 @@ public class ProjectSettingsComponent {
     private JRadioButton currentFileButton;
     private JRadioButton allFilesButton;
     private JRadioButton multipleFilesButton;
+    private JRadioButton crossFilesButton;
     private ActionListener analysisSelectionButtonListener;
     private JLabel filesToAnalyzeLabel;
     private JLabel filesDirLabel;
@@ -320,7 +321,9 @@ public class ProjectSettingsComponent {
                 iterationHelp = aiderIterationHelp;
             }
         }
-        filesPath.setToolTipText("Specify the path to the directory with the files you would like to search for clones in.");
+        filesPath.setToolTipText("Specify a directory to manually choose files from.");
+        multipleFilesButton.setToolTipText("Use a manually selected set of files from a directory.");
+        crossFilesButton.setToolTipText("Optionally choose files manually; if none are selected, use open Java files or Java files next to the current file.");
 
         // Add warning icon and tooltip for empty API key
         Icon warningIcon = AllIcons.General.Error;
@@ -418,6 +421,8 @@ public class ProjectSettingsComponent {
         filesPanel.add(allFilesButton, filesPanelRadioButtonsGbc);
         filesPanelRadioButtonsGbc.gridx = 3;
         filesPanel.add(multipleFilesButton, filesPanelRadioButtonsGbc);
+        filesPanelRadioButtonsGbc.gridx = 4;
+        filesPanel.add(crossFilesButton, filesPanelRadioButtonsGbc);
 
         // Add filesPath field with constraints to multFilesPathGbc
         GridBagConstraints multFilesPathGbc = new GridBagConstraints();
@@ -463,24 +468,24 @@ public class ProjectSettingsComponent {
         emptyDirPathWarningGbc.insets = new Insets(0, 5, 0, 0);
         multFilesPanel.add(emptyDirPathWarningLabel, emptyDirPathWarningGbc);
 
-        // Create an ActionListener for the currentFileButton, allFilesButton, and multipleFilesButton
-        // (If user selects the "Multiple Files" option, make extra fields visible)
+        // Create an ActionListener for the currentFileButton, allFilesButton, multipleFilesButton, and crossFilesButton
+        // (If user selects a scope with manual file selection, make extra fields visible)
         // (If user selects either of the other buttons, resort to default visibility)
         analysisSelectionButtonListener = e -> {
             JRadioButton selectedButton = (JRadioButton) e.getSource();
-            if((selectedButton.getText()).equals("Current File") ||
-                    (selectedButton.getText()).equals("All Files in Current Directory")) {
+            if (usesDirectoryFilePicker(selectedButton.getText())) {
+                multFilesPanel.setVisible(true);
+            } else {
                 multFilesPanel.setVisible(false);
                 filesCheckboxesScrollPane.setVisible(false);
-            } else if(selectedButton.getText().equals("Multiple Files")) {
-                multFilesPanel.setVisible(true);
             }
         };
 
-        // Watch for actions in relation to currentFileButton, allFilesButton, and multipleFilesButton
+        // Watch for actions in relation to currentFileButton, allFilesButton, multipleFilesButton, and crossFilesButton
         currentFileButton.addActionListener(analysisSelectionButtonListener);
         allFilesButton.addActionListener(analysisSelectionButtonListener);
         multipleFilesButton.addActionListener(analysisSelectionButtonListener);
+        crossFilesButton.addActionListener(analysisSelectionButtonListener);
 
         // Watch for action in relation to Find Files button (if user clicks the Find Files button)
         findFilesInDirButton.addActionListener(e -> {
@@ -1406,6 +1411,14 @@ public class ProjectSettingsComponent {
      * Selects an analysis scope radio button by its display text and updates visibility accordingly.
      */
     public void setSelectedAnalysisButton(String analysisButtonText) {
+        if (analysisButtonText == null || analysisButtonText.isBlank()) {
+            currentFileButton.setSelected(true);
+            multFilesPanel.setVisible(false);
+            filesCheckboxesScrollPane.setVisible(false);
+            return;
+        }
+
+        boolean showDirectoryPicker = false;
         switch (analysisButtonText) {
             case "Current File":
                 currentFileButton.setSelected(true);
@@ -1415,9 +1428,18 @@ public class ProjectSettingsComponent {
                 break;
             case "Multiple Files":
                 multipleFilesButton.setSelected(true);
-                multFilesPanel.setVisible(true);
+                showDirectoryPicker = true;
+                break;
+            case "Cross Files":
+                crossFilesButton.setSelected(true);
+                showDirectoryPicker = true;
                 break;
         }
+        multFilesPanel.setVisible(showDirectoryPicker);
+    }
+
+    private static boolean usesDirectoryFilePicker(String analysisButtonText) {
+        return "Multiple Files".equals(analysisButtonText) || "Cross Files".equals(analysisButtonText);
     }
 
     /**

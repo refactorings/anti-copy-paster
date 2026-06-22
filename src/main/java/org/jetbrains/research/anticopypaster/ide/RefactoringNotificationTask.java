@@ -122,7 +122,8 @@ public class RefactoringNotificationTask extends TimerTask {
                     getOrInitModel();
                     modelSensitivity = ProjectSettingsState.getInstance(project).modelSensitivity;
 
-                    float threshold = modelSensitivity; // divide it by 100 since the prediction is a decimal < 1
+                    // The UI slider is inverted: moving it toward "More sensitive" lowers this confidence cutoff.
+                    float threshold = modelSensitivity;
                     float prediction = this.model.predict(featuresVector);
 
                     boolean metricsPassed = event.isForceExtraction() || prediction > threshold;
@@ -208,10 +209,12 @@ public class RefactoringNotificationTask extends TimerTask {
 
     private void notifyMetricsRejected(Project project, float prediction, float threshold) {
         String content = String.format(Locale.ROOT,
-                "Duplicated code was detected, but its metrics did not pass the refactoring threshold. " +
-                        "No Extract Method suggestion will be shown. (score=%.3f, threshold=%.3f)",
-                prediction,
-                threshold);
+                "AntiCopyPaster found duplicated code, but the model confidence is below the required level, " +
+                        "so no Extract Method suggestion was shown. " +
+                        "Metrics score: %.0f%%, threshold sets: %.0f%%. " +
+                        "To see more suggestions, move Model Sensitivity toward More sensitive in Settings > AntiCopyPaster.",
+                prediction * 100.0f,
+                threshold * 100.0f);
         final Notification notification = notificationGroup.createNotification(content, NotificationType.INFORMATION);
         notification.notify(project);
         AntiCopyPasterUsageStatistics.getInstance(project).notificationShown();

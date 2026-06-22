@@ -357,7 +357,7 @@ public final class LlmUsefulnessEvaluator {
 
         List<String> matchedCategories = normalizeCategoryNames(getStringList(obj, "matched_categories", "matchedCategories", "reasons"));
         Boolean parsedUseful = getOptionalBoolean(obj, "is_useful", "isUseful", "useful");
-        boolean useful = parsedUseful != null ? parsedUseful : matchedCategories.isEmpty();
+        boolean useful = matchedCategories.isEmpty() || (parsedUseful != null && parsedUseful);
         String summary = getString(obj, "summary", "decision_summary", "decisionSummary");
         String feedback = getString(obj, "feedback", "feedback_for_refactor_agent", "feedbackForRefactorAgent", "revision_instruction");
 
@@ -381,6 +381,9 @@ public final class LlmUsefulnessEvaluator {
                 }
             }
             reasons = new ArrayList<>(fallbackReasons);
+        }
+        if (reasons.isEmpty()) {
+            useful = true;
         }
         String summary = getString(obj, "summary", "decision_summary", "decisionSummary");
         String feedback = getString(obj, "feedback", "feedback_for_refactor_agent", "feedbackForRefactorAgent", "revision_instruction");
@@ -579,7 +582,7 @@ public final class LlmUsefulnessEvaluator {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         for (String raw : rawCategories) {
             String normalized = normalizeCategoryName(raw);
-            if (!normalized.isBlank()) out.add(normalized);
+            if (!normalized.isBlank() && ALL_CATEGORY_NAMES.contains(normalized)) out.add(normalized);
         }
         return new ArrayList<>(out);
     }

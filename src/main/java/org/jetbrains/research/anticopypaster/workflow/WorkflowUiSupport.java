@@ -1,21 +1,30 @@
 package org.jetbrains.research.anticopypaster.workflow;
 
+import com.intellij.diff.DiffContentFactory;
+import com.intellij.diff.DiffManager;
+import com.intellij.diff.DiffRequestPanel;
+import com.intellij.diff.requests.SimpleDiffRequest;
 import com.intellij.execution.filters.TextConsoleBuilderFactory;
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.DialogWrapper;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.wm.RegisterToolWindowTask;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
+import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
+import javax.swing.*;
 import java.io.BufferedWriter;
 import java.io.Closeable;
 import java.io.File;
@@ -249,6 +258,67 @@ final class WorkflowUiSupport {
         }
         Notification n = new Notification("AntiCopyPaster", "Clone Refactoring", content, type);
         Notifications.Bus.notify(n, project);
+    }
+
+    /**
+     * Show a diff in a modal dialog that has Apply/Cancel buttons.
+     * Clicking Apply returns true; Cancel returns false.
+     */
+    static boolean showDiffAndConfirmApply(Project project, String fileName, String before, String after) {
+        if (project == null || project.isDisposed()) return false;
+        final java.util.concurrent.atomic.AtomicBoolean decision = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        Runnable ui = () -> {
+            Disposable disp = Disposer.newDisposable("DiffPreview");
+            try {
+                DiffContentFactory f = DiffContentFactory.getInstance();
+                var left = f.create(before == null ? "" : before);
+                var right = f.create(after == null ? "" : after);
+
+                String title = "Refactor Preview";
+                String leftTitle = "Current";
+                String rightTitle = "Proposed";
+                SimpleDiffRequest req = new SimpleDiffRequest(title, left, right, leftTitle, rightTitle);
+
+                DiffRequestPanel panel = DiffManager.getInstance().createRequestPanel(project, disp, null);
+                panel.setRequest(req);
+
+                DialogWrapper dialog = new DialogWrapper(project, true) {
+                    {
+                        setTitle(title);
+                        setOKButtonText("Apply");
+                        setCancelButtonText("Cancel");
+                        init();
+                    }
+
+                    @Override
+                    protected JComponent createCenterPanel() {
+                        return panel.getComponent();
+                    }
+                };
+
+                boolean ok = dialog.showAndGet();
+                decision.set(ok);
+                if (ok) {
+                    AntiCopyPasterUsageStatistics.getInstance(project).refactoringApplied();
+                } else {
+                    AntiCopyPasterUsageStatistics.getInstance(project).refactoringCancelled();
+                }
+
+            } catch (Throwable t) {
+                decision.set(false);
+            } finally {
+                Disposer.dispose(disp);
+            }
+        };
+
+        if (ApplicationManager.getApplication().isDispatchThread()) {
+            ui.run();
+        } else {
+            ApplicationManager.getApplication().invokeAndWait(ui);
+        }
+
+        return decision.get();
     }
 
     private static String addStageSpacing(String line, java.util.concurrent.atomic.AtomicReference<String> lastStage) {
