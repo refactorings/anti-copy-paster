@@ -10,6 +10,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.IconLoader;
@@ -23,6 +24,7 @@ import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 import javax.swing.Box;
@@ -277,6 +279,7 @@ final class RefactoringSuggestionPanel {
         private JButton applyButton;
         private JButton regenerateButton;
         private JButton cancelButton;
+        private JButton editCodeButton;
 
         private SuggestionToolPanel(Project project) {
             super(new BorderLayout());
@@ -292,6 +295,7 @@ final class RefactoringSuggestionPanel {
             applyButton = null;
             regenerateButton = null;
             cancelButton = null;
+            editCodeButton = null;
             removeAll();
 
             JPanel panel = new JPanel();
@@ -403,6 +407,14 @@ final class RefactoringSuggestionPanel {
             header.add(new JLabel(loadHeaderIcon()), BorderLayout.WEST);
             header.add(title, BorderLayout.CENTER);
             panel.add(header);
+
+            if (info.refactoringFailed) {
+                JLabel warning = new JLabel(
+                        "Refactoring Failed."
+                );
+                panel.add(warning);
+                panel.add(Box.createVerticalStrut(8));
+            }
 
             panel.add(Box.createVerticalStrut(8));
             panel.add(new JSeparator());
@@ -567,11 +579,13 @@ final class RefactoringSuggestionPanel {
 
             applyButton = new JButton("Apply");
             regenerateButton = new JButton("Regenerate");
+            editCodeButton = new JButton("Edit Code");
             cancelButton = new JButton("Cancel");
 
             applyButton.addActionListener(e ->
                     complete(RefactoringSuggestionDialog.Decision.apply(), "Apply selected. Workflow is applying the change."));
             regenerateButton.addActionListener(e -> regenerateFromInstructions());
+            editCodeButton.addActionListener(e -> openCodeEditor());
             cancelButton.addActionListener(e ->
                     complete(RefactoringSuggestionDialog.Decision.cancel(), "Cancelled. The suggestion remains visible for review."));
 
@@ -581,6 +595,19 @@ final class RefactoringSuggestionPanel {
             buttons.add(cancelButton);
             panel.add(buttons, BorderLayout.EAST);
             return panel;
+        }
+
+        // Opens the new code editor from the edit code button
+        private void openCodeEditor() {
+            if (currentInfo == null) return;
+            String initialCode = currentInfo.afterDiffText;
+            String edited = showCodeEditDialog(project, initialCode);
+            if (edited != null && !edited.isBlank()) {
+                complete(
+                        RefactoringSuggestionDialog.Decision.editCode(edited),
+                        "Edited code accepted."
+                );
+            }
         }
 
         private void regenerateFromInstructions() {
@@ -614,8 +641,17 @@ final class RefactoringSuggestionPanel {
         }
 
         private void setDecisionButtonsEnabled(boolean enabled) {
-            if (applyButton != null) applyButton.setEnabled(enabled);
+            if (applyButton != null) {
+                boolean applyEnabled = enabled && (currentInfo == null || !currentInfo.refactoringFailed);
+                applyButton.setEnabled(applyEnabled);
+                if (!applyEnabled && currentInfo != null && currentInfo.refactoringFailed) {
+                    applyButton.setToolTipText("Apply is disabled because the refactoring failed...");
+                } else {
+                    applyButton.setToolTipText(null);
+                }
+            }
             if (regenerateButton != null) regenerateButton.setEnabled(enabled);
+            if (editCodeButton != null) editCodeButton.setEnabled(enabled);
             if (cancelButton != null) cancelButton.setEnabled(enabled);
             if (editInstructionsArea != null) editInstructionsArea.setEnabled(enabled);
         }
@@ -652,6 +688,45 @@ final class RefactoringSuggestionPanel {
             }
         }
     }
+
+
+    // Opens a dialog with an editable text area, which defaults to being filled with the proposed code
+    private static String showCodeEditDialog(Project project, String initialCode) {
+        JTextArea area = new JTextArea(20, 90);
+        area.setLineWrap(false);
+        area.setFont(UIUtil.getLabelFont().deriveFont(Font.PLAIN, 13f));
+        area.setText(initialCode == null ? "" : initialCode);
+
+        DialogWrapper dialog = new DialogWrapper(project, true) {
+            {
+                setTitle("Edit Proposed Code");
+                setOKButtonText("Use This Code");
+                setCancelButtonText("Back");
+                init();
+            }
+
+            @Override
+            protected @Nullable JComponent createCenterPanel() {
+                JPanel panel = new JPanel(new BorderLayout());
+                panel.setBorder(JBUI.Borders.empty(8));
+
+                JTextArea prompt = nonEditableTextArea(
+                        "Make any changes to the refactored code below, then click \"Use This Code\" " +
+                                "to apply your edited version instead of the original suggestion."
+                );
+                panel.add(prompt, BorderLayout.NORTH);
+
+                JScrollPane scrollPane = new JScrollPane(area);
+                scrollPane.setPreferredSize(new Dimension(820, 420));
+                panel.add(scrollPane, BorderLayout.CENTER);
+                return panel;
+            }
+        };
+
+        boolean ok = dialog.showAndGet();
+        return ok ? area.getText() : "";
+    }
+
 
     private static DiffRequestPanel createDiffPanel(Project project,
                                                     Disposable disposable,
