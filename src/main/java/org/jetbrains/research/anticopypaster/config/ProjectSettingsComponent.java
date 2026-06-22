@@ -5,7 +5,9 @@ import javax.swing.*;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.components.JBScrollPane;
+import com.intellij.util.ui.JBUI;
 
 import org.jetbrains.research.anticopypaster.config.advanced.AdvancedProjectSettingsDialogWrapper;
 import org.jetbrains.research.anticopypaster.config.credentials.CredentialsDialogWrapper;
@@ -53,6 +55,7 @@ public class ProjectSettingsComponent {
     private JSlider modelSensitivitySlider;
     private JLabel modelSensitivityHelp;
     private JLabel upToLabel;
+    private JPanel generalPreferencesPanel;
     private JPanel manualHeuristicsPanel;
     private JPanel aiSettingsPanel;
     private JPanel multiAgentSettingsPanel;
@@ -194,6 +197,13 @@ public class ProjectSettingsComponent {
 
         @Override
         public boolean getScrollableTracksViewportWidth() {
+            // Track the viewport only when the viewport is at least as wide as the content's
+            // preferred width. When the dialog is narrower, report false so the horizontal
+            // scrollbar engages instead of clipping the right side of the content.
+            Container parent = getParent();
+            if (parent instanceof JViewport viewport) {
+                return viewport.getWidth() >= getPreferredSize().width;
+            }
             return true;
         }
 
@@ -691,8 +701,50 @@ public class ProjectSettingsComponent {
         lastMainModel = modelComboBox.getSelectedItem();
         lastNameModel = nameModel.getSelectedItem();
 
+        // Apply consistent, boxed section styling for a cleaner settings layout
+        applySectionStyling();
+
         // Mark initialization complete; subsequent visibility updates may close Aider windows
         suppressAutoCloseOnInit = false;
+    }
+
+    /**
+     * Gives every top-level settings section a consistent, themed titled-border "box" with
+     * internal padding and spacing between sections. This is purely cosmetic: it only adjusts
+     * borders/insets and does not touch any component bindings, listeners, or behavior.
+     */
+    private void applySectionStyling() {
+        if (mainPanel != null) {
+            // Outer margin so the boxes don't hug the dialog edges. Kept small horizontally
+            // to avoid forcing the (already wide) content rows past the dialog edge.
+            mainPanel.setBorder(JBUI.Borders.empty(6, 6, 6, 6));
+        }
+
+        styleSection(generalPreferencesPanel, "General Preferences");
+        styleSection(manualHeuristicsPanel, "Manual Heuristics");
+        styleSection(aiSettingsPanel, "AI Model Settings");
+        styleSection(multiAgentSettingsPanel, "Multi-agent Settings");
+        styleSection(aiderSettingsPanel, "Clone Settings");
+        styleSection(fileSelectionPanel, "Files to Analyze");
+    }
+
+    /**
+     * Wraps a section panel in a themed titled border with comfortable inner padding and
+     * a small gap below it, so stacked sections read as distinct, evenly spaced cards.
+     */
+    private void styleSection(JComponent section, String title) {
+        if (section == null) {
+            return;
+        }
+        section.setBorder(BorderFactory.createCompoundBorder(
+                // Spacing between this section and the next.
+                JBUI.Borders.emptyBottom(10),
+                BorderFactory.createCompoundBorder(
+                        IdeBorderFactory.createTitledBorder(title),
+                        // Breathing room inside the box, around the controls.
+                        JBUI.Borders.empty(6, 8, 8, 8)
+                )
+        ));
     }
 
     /**
@@ -725,7 +777,7 @@ public class ProjectSettingsComponent {
 
         scrollpanel.setEnabled(true);
         scrollpanel.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
-        scrollpanel.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollpanel.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         scrollpanel.setWheelScrollingEnabled(true);
         scrollpanel.setPreferredSize(new Dimension(1100, 900));
         scrollpanel.setMinimumSize(new Dimension(760, 640));
@@ -919,7 +971,7 @@ public class ProjectSettingsComponent {
             rootSettingsScrollPane = new JBScrollPane(
                     viewportWidthPanel,
                     ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-                    ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+                    ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
             );
             rootSettingsScrollPane.setWheelScrollingEnabled(true);
             rootSettingsScrollPane.getVerticalScrollBar().setUnitIncrement(16);
