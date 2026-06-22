@@ -159,7 +159,7 @@ final class RefactoringSuggestionDialog {
     }
 
     private static Decision showOnEdt(Project project, SuggestionInfo info) {
-        Disposable diffDisposable = Disposer.newDisposable("AntiCopyPasterSuggestionDiff");
+        Disposable diffDisposable = Disposer.newDisposable("CLONESuggestionDiff");
         try {
             DiffRequestPanel diffPanel = createDiffPanel(project, diffDisposable, info);
             SuggestionDialog dialog = new SuggestionDialog(project, info, diffPanel);
@@ -212,7 +212,7 @@ final class RefactoringSuggestionDialog {
 
         DialogWrapper dialog = new DialogWrapper(project, true) {
             {
-                setTitle("Edit Refactoring Instructions");
+                setTitle("Edit instructions for regeneration");
                 setOKButtonText("Regenerate");
                 setCancelButtonText("Cancel");
                 init();
@@ -225,7 +225,7 @@ final class RefactoringSuggestionDialog {
 
                 JTextArea prompt = nonEditableTextArea(
                         "Describe what should change in the refactoring suggestion. " +
-                                "AntiCopyPaster will send this feedback to the refactoring agent and regenerate the proposal."
+                                "CLONE will send this feedback to the refactoring agent and regenerate the proposal."
                 );
                 panel.add(prompt, BorderLayout.NORTH);
 
@@ -250,7 +250,7 @@ final class RefactoringSuggestionDialog {
             this.project = project;
             this.info = info;
             this.diffPanel = diffPanel;
-            setTitle("[AntiCopyPaster] Refactoring Suggestion");
+            setTitle("[CLONE] Refactoring Suggestion");
             setOKButtonText("Apply");
             setCancelButtonText("Cancel");
             init();
@@ -275,7 +275,7 @@ final class RefactoringSuggestionDialog {
             panel.setBorder(JBUI.Borders.empty(10, 12, 8, 12));
 
             JPanel header = new JPanel(new BorderLayout(8, 0));
-            JLabel title = new JLabel("[AntiCopyPaster] Refactoring Suggestion");
+            JLabel title = new JLabel("[CLONE] Refactoring Suggestion");
             title.setFont(title.getFont().deriveFont(Font.BOLD, title.getFont().getSize2D() + 2.0f));
             header.add(new JLabel(loadHeaderIcon()), BorderLayout.WEST);
             header.add(title, BorderLayout.CENTER);
@@ -401,7 +401,7 @@ final class RefactoringSuggestionDialog {
         protected Action[] createActions() {
             return new Action[]{
                     getOKAction(),
-                    new AbstractAction("Edit...") {
+                    new AbstractAction("Regenerate") {
                         @Override
                         public void actionPerformed(ActionEvent e) {
                             close(EDIT_EXIT_CODE);
@@ -423,7 +423,7 @@ final class RefactoringSuggestionDialog {
                                 Messages.showInfoMessage(
                                         project,
                                         "See README.md, section \"Refactoring Suggestion Panel\".",
-                                        "AntiCopyPaster Help"
+                                        "CLONE Help"
                                 );
                             }
                         }
