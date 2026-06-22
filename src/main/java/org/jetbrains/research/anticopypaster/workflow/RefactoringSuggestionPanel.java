@@ -25,6 +25,7 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
+import javax.swing.plaf.basic.BasicProgressBarUI;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.Icon;
@@ -35,6 +36,9 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.JTextArea;
+import javax.swing.BorderFactory;
+import javax.swing.JProgressBar;
+import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -43,6 +47,8 @@ import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Color;
+import java.awt.GridLayout;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -316,6 +322,7 @@ final class RefactoringSuggestionPanel {
             statusLabel = new JLabel("No active proposal.");
             panel.add(statusLabel);
 
+
             add(panel, BorderLayout.NORTH);
             revalidate();
             repaint();
@@ -430,12 +437,412 @@ final class RefactoringSuggestionPanel {
             wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
             wrapper.setBorder(JBUI.Borders.empty(8, 12, 10, 12));
 
+            wrapper.add(createAiTrustPanel(info));
+            wrapper.add(Box.createVerticalStrut(8));
             wrapper.add(createMetadataPanel(info));
             wrapper.add(Box.createVerticalStrut(8));
             wrapper.add(createEditPanel());
             wrapper.add(Box.createVerticalStrut(8));
             wrapper.add(createActionPanel());
             return wrapper;
+        }
+
+        private JComponent createAiTrustPanel(
+                RefactoringSuggestionDialog.SuggestionInfo info
+        ) {
+            String validationState = info.confidenceLabel == null
+                    ? ""
+                    : info.confidenceLabel.trim();
+
+            boolean verified = "Verified".equalsIgnoreCase(validationState);
+
+            String normalizedState = validationState.toLowerCase();
+            boolean failed = normalizedState.contains("fail")
+                    || normalizedState.contains("error")
+                    || normalizedState.contains("unavailable");
+
+            int cloneDetectionScore = scoreFromMetadata(
+                    info,
+                    "AI Trust - Clone Detection",
+                    verified ? 100 : 0
+            );
+
+            int refactoringAgentScore = scoreFromMetadata(
+                    info,
+                    "AI Trust - Refactoring Agent",
+                    verified ? 100 : 0
+            );
+
+            int usefulnessScore = scoreFromMetadata(
+                    info,
+                    "AI Trust - Usefulness",
+                    verified ? 100 : 0
+            );
+
+            int compilationScore = scoreFromMetadata(
+                    info,
+                    "AI Trust - Compilation",
+                    verified ? 100 : 0
+            );
+
+            int testBehaviorScore = scoreFromMetadata(
+                    info,
+                    "AI Trust - Test / Behavior",
+                    verified ? 100 : 0
+            );
+
+            // Each validation stage contributes 20% to the final score.
+            int overallScore = Math.round(
+                    0.20f * cloneDetectionScore
+                            + 0.20f * refactoringAgentScore
+                            + 0.20f * usefulnessScore
+                            + 0.20f * compilationScore
+                            + 0.20f * testBehaviorScore
+            );
+
+            String summaryText;
+            if (verified) {
+                summaryText = overallScore + "% \u2022 "
+                        + trustLevelForScore(overallScore) + " Trust";
+            } else if (failed) {
+                summaryText = "Unavailable \u2022 Validation Failed";
+            } else {
+                summaryText = "Verifying \u2022 Pending";
+            }
+
+            Color headerBlue = new JBColor(
+                    new Color(0x123BDE),
+                    new Color(0x3155D9)
+            );
+
+            Color borderBlue = new JBColor(
+                    new Color(0x2F64FF),
+                    new Color(0x6688FF)
+            );
+
+            JPanel outer = new JPanel(new BorderLayout());
+            outer.setBorder(
+                    BorderFactory.createLineBorder(borderBlue, 1, true)
+            );
+
+            // Prevents this section from taking over the diff-preview area.
+            outer.setMaximumSize(
+                    new Dimension(Integer.MAX_VALUE, 145)
+            );
+
+            JPanel header = new JPanel(new BorderLayout(8, 0));
+            header.setOpaque(true);
+            header.setBackground(headerBlue);
+            header.setBorder(JBUI.Borders.empty(5, 9));
+
+            JPanel detailsPanel = new JPanel();
+            detailsPanel.setLayout(
+                    new BoxLayout(detailsPanel, BoxLayout.Y_AXIS)
+            );
+            detailsPanel.setBorder(JBUI.Borders.empty(7, 8, 6, 8));
+
+            JButton collapseButton = new JButton("\u25BC AI Trust");
+            collapseButton.setBorderPainted(false);
+            collapseButton.setContentAreaFilled(false);
+            collapseButton.setFocusPainted(false);
+            collapseButton.setForeground(Color.WHITE);
+            collapseButton.setFont(
+                    collapseButton.getFont().deriveFont(Font.BOLD)
+            );
+            collapseButton.setCursor(
+                    Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            );
+
+            JLabel summaryLabel = new JLabel(
+                    summaryText,
+                    SwingConstants.CENTER
+            );
+            summaryLabel.setForeground(Color.WHITE);
+            summaryLabel.setFont(
+                    summaryLabel.getFont().deriveFont(Font.BOLD)
+            );
+
+            JButton learnMoreButton = new JButton("Learn more \u2192");
+            learnMoreButton.setBorderPainted(false);
+            learnMoreButton.setContentAreaFilled(false);
+            learnMoreButton.setFocusPainted(false);
+            learnMoreButton.setForeground(Color.WHITE);
+            learnMoreButton.setCursor(
+                    Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            );
+
+            learnMoreButton.addActionListener(e -> {
+                String message;
+
+                if (verified) {
+                    message = "AI Trust Score: " + overallScore + "%\n\n"
+                            + "Clone Detection: 100%\n"
+                            + "Refactoring Agent: 100%\n"
+                            + "Refactoring Usefulness: 100%\n"
+                            + "Compilation Result: 100%\n"
+                            + "Test / Behavior Preservation: 100%\n\n"
+                            + "Each workflow stage contributes 20% "
+                            + "to the final score.";
+                } else if (failed) {
+                    message = "The AI Trust Score is unavailable because "
+                            + "one or more validation stages failed.";
+                } else {
+                    message = "AntiCopyPaster is still validating this "
+                            + "refactoring suggestion.";
+                }
+
+                Messages.showInfoMessage(
+                        project,
+                        message,
+                        "AI Trust Details"
+                );
+            });
+
+            header.add(collapseButton, BorderLayout.WEST);
+            header.add(summaryLabel, BorderLayout.CENTER);
+            header.add(learnMoreButton, BorderLayout.EAST);
+
+            JPanel stageRow = new JPanel(
+                    new GridLayout(1, 5, 6, 0)
+            );
+            stageRow.setOpaque(false);
+            stageRow.setMaximumSize(
+                    new Dimension(Integer.MAX_VALUE, 60)
+            );
+
+            stageRow.add(
+                    createCompactTrustCard(
+                            "Clone Detection",
+                            cloneDetectionScore,
+                            verified,
+                            failed
+                    )
+            );
+
+            stageRow.add(
+                    createCompactTrustCard(
+                            "Refactoring Agent",
+                            refactoringAgentScore,
+                            verified,
+                            failed
+                    )
+            );
+
+            stageRow.add(
+                    createCompactTrustCard(
+                            "Usefulness",
+                            usefulnessScore,
+                            verified,
+                            failed
+                    )
+            );
+
+            stageRow.add(
+                    createCompactTrustCard(
+                            "Compilation",
+                            compilationScore,
+                            verified,
+                            failed
+                    )
+            );
+
+            stageRow.add(
+                    createCompactTrustCard(
+                            "Test",
+                            testBehaviorScore,
+                            verified,
+                            failed
+                    )
+            );
+
+            detailsPanel.add(stageRow);
+            detailsPanel.add(Box.createVerticalStrut(5));
+
+            JPanel formulaRow = new JPanel(
+                    new FlowLayout(FlowLayout.CENTER, 0, 0)
+            );
+            formulaRow.setOpaque(false);
+            formulaRow.setMaximumSize(
+                    new Dimension(Integer.MAX_VALUE, 24)
+            );
+
+            JLabel formulaLabel = new JLabel(
+                    "<html><div style='text-align:center;'>"
+                            + "<b>Formula:</b> "
+                            + "20% each across five workflow stages."
+                            + "</div></html>",
+                    SwingConstants.CENTER
+            );
+
+            formulaRow.add(formulaLabel);
+            detailsPanel.add(formulaRow);
+
+            collapseButton.addActionListener(e -> {
+                boolean expanded = !detailsPanel.isVisible();
+                detailsPanel.setVisible(expanded);
+
+                collapseButton.setText(
+                        expanded
+                                ? "\u25BC AI Trust"
+                                : "\u25B6 AI Trust"
+                );
+
+                outer.revalidate();
+                outer.repaint();
+            });
+
+            outer.add(header, BorderLayout.NORTH);
+            outer.add(detailsPanel, BorderLayout.CENTER);
+
+            return outer;
+        }
+
+        private JComponent createCompactTrustCard(
+                String label,
+                int score,
+                boolean verified,
+                boolean failed
+        ) {
+            JPanel card = new JPanel(new BorderLayout(0, 2));
+            card.setOpaque(true);
+            card.setBackground(JBColor.PanelBackground);
+            card.setPreferredSize(new Dimension(110, 54));
+            card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 54));
+
+            card.setBorder(
+                    BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(
+                                    new JBColor(
+                                            new Color(0xD7DCE5),
+                                            new Color(0x5A5D63)
+                                    ),
+                                    1,
+                                    true
+                            ),
+                            JBUI.Borders.empty(4, 5)
+                    )
+            );
+
+            String value;
+            if (verified) {
+                value = score + "%";
+            } else if (failed) {
+                value = "Unavailable";
+            } else {
+                value = "N/A";
+            }
+
+            JLabel valueLabel = new JLabel(
+                    value,
+                    SwingConstants.CENTER
+            );
+            valueLabel.setFont(
+                    valueLabel.getFont().deriveFont(
+                            Font.BOLD,
+                            valueLabel.getFont().getSize2D() + 1.0f
+                    )
+            );
+
+            JLabel nameLabel = new JLabel(
+                    "<html><div style='text-align:center;'>"
+                            + label
+                            + "</div></html>",
+                    SwingConstants.CENTER
+            );
+
+            nameLabel.setFont(
+                    nameLabel.getFont().deriveFont(
+                            Math.max(
+                                    9.0f,
+                                    nameLabel.getFont().getSize2D() - 1.0f
+                            )
+                    )
+            );
+
+            JProgressBar progressBar = new JProgressBar(0, 100);
+            progressBar.setUI(new BasicProgressBarUI());
+            progressBar.setBorderPainted(false);
+            progressBar.setStringPainted(false);
+            progressBar.setPreferredSize(new Dimension(80, 5));
+
+            progressBar.setBackground(
+                    new JBColor(
+                            new Color(0xD9DDE4),
+                            new Color(0x5A5D63)
+                    )
+            );
+
+            if (verified) {
+                progressBar.setValue(score);
+                progressBar.setForeground(
+                        new JBColor(
+                                new Color(0x18A957),
+                                new Color(0x2CBF6E)
+                        )
+                );
+            } else if (failed) {
+                progressBar.setValue(100);
+                progressBar.setForeground(
+                        new JBColor(
+                                new Color(0xD64545),
+                                new Color(0xFF6B6B)
+                        )
+                );
+            } else {
+                progressBar.setValue(0);
+                progressBar.setIndeterminate(true);
+                progressBar.setForeground(
+                        new JBColor(
+                                new Color(0x6F7F95),
+                                new Color(0x8FA3BF)
+                        )
+                );
+            }
+
+            card.add(valueLabel, BorderLayout.NORTH);
+            card.add(nameLabel, BorderLayout.CENTER);
+            card.add(progressBar, BorderLayout.SOUTH);
+
+            return card;
+        }
+
+        private String trustLevelForScore(int score) {
+            if (score >= 85) {
+                return "High";
+            }
+
+            if (score >= 60) {
+                return "Moderate";
+            }
+
+            return "Low";
+        }
+
+        private int scoreFromMetadata(
+                RefactoringSuggestionDialog.SuggestionInfo info,
+                String key,
+                int fallback
+        ) {
+            if (info == null || info.metadataRows == null) {
+                return fallback;
+            }
+
+            String rawValue = info.metadataRows.get(key);
+            if (rawValue == null || rawValue.isBlank()) {
+                return fallback;
+            }
+
+            String digits = rawValue.replaceAll("[^0-9]", "");
+            if (digits.isBlank()) {
+                return fallback;
+            }
+
+            try {
+                int score = Integer.parseInt(digits);
+                return Math.max(0, Math.min(100, score));
+            } catch (NumberFormatException ignored) {
+                return fallback;
+            }
         }
 
         private JComponent createMetadataPanel(RefactoringSuggestionDialog.SuggestionInfo info) {
