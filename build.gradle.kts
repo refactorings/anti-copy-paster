@@ -76,7 +76,7 @@ sourceSets {
             exclude("**/*.index")
             exclude("**/*.meta")
             exclude("**/*.data*")
-            exclude("**/saved_model*/**")
+            exclude("**/saved_model*.index")
             exclude("code2vec/**")
             exclude("java14m/**")
             exclude("**/java14m/**")
@@ -125,6 +125,10 @@ tasks {
     withType<PrepareSandboxTask>().configureEach {
         from(projectDir) {
             include("code2vec/**")
+            into(pluginName)
+        }
+        from(projectDir) {
+            include("TrainedModel/**")
             into(pluginName)
         }
     }

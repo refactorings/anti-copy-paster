@@ -815,7 +815,7 @@ final class RefactoringSuggestionPanel {
 
             // "Occurrence N: MethodName [Lines: #-#]"
             JLabel detailLabel = new JLabel(
-                    "Occurrence " + occurrenceIndex + ": " + methodName
+                    methodName
                             + " [Lines: " + lineStart + "-" + lineEnd + "]"
             );
             detailLabel.setBorder(JBUI.Borders.emptyLeft(8));
