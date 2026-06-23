@@ -1302,6 +1302,7 @@ final class WorkflowJavaBuildSupport {
             final File finalEvo = evosuiteJar;
 
             ApplicationManager.getApplication().invokeLater(() -> {
+                if (project.isDisposed()) return;
                 try {
                     ApplicationManager.getApplication().runWriteAction(() -> {
                         try {
@@ -1422,7 +1423,7 @@ final class WorkflowJavaBuildSupport {
                 } catch (Exception e) {
                     logBestEffortFailure("schedule test library configuration", e);
                 }
-            }, ModalityState.any());
+            }, ModalityState.nonModal());
         } catch (Exception e) {
             logBestEffortFailure("configure test library", e);
         }
