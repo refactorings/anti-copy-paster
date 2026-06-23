@@ -45,6 +45,8 @@ import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOf
  */
 public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     private static final long INTERNAL_COPY_VALIDITY_MS = 30_000L;
+    private static final String SCOPE_CURRENT_DIRECTORY = "All Files in Current Directory";
+    private static final String SCOPE_CURRENT_DIRECTORY_CROSS_FILES = "Cross Files in Current Directory";
     private static final String SCOPE_MULTIPLE_FILES = "Multiple Files";
     private static final String SCOPE_CROSS_FILES = "Cross Files";
 
@@ -170,9 +172,9 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 }
             }
 
-            if (isCrossFileScope(selectedAnalysisButton) && cloneMode != ProjectSettingsState.CloneMode.MULTI_AGENT) {
+            if (isCrossFileWorkflowScope(selectedAnalysisButton) && cloneMode != ProjectSettingsState.CloneMode.MULTI_AGENT) {
                 ApplicationManager.getApplication().invokeLater(() ->
-                        notify(project, "Cross Files analysis requires Clone_multiagent. Please select Clone_multiagent as the model to refactor selected files together."));
+                        notify(project, "Cross-file analysis requires Clone_multiagent. Please select Clone_multiagent as the model to refactor selected files together."));
                 return text;
             }
 
@@ -230,7 +232,8 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     /**
      * Collect target files according to the selected analysis scope.
      * Mirrors the three scopes used by both Aider and Copilot:
-     * "Current File", "All Files in Current Directory", "Multiple Files", "Cross Files".
+     * "Current File", "All Files in Current Directory", "Cross Files in Current Directory",
+     * "Multiple Files", "Cross Files".
      */
     private static List<VirtualFile> collectTargetFiles(Project project,
                                                        @Nullable PsiFile currentPsiFile,
@@ -246,7 +249,8 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             return result;
         }
 
-        if ("All Files in Current Directory".equals(selectedAnalysisButton)) {
+        if (SCOPE_CURRENT_DIRECTORY.equals(selectedAnalysisButton)
+                || SCOPE_CURRENT_DIRECTORY_CROSS_FILES.equals(selectedAnalysisButton)) {
             if (currentPsiFile != null && currentPsiFile.getVirtualFile() != null) {
                 VirtualFile parentDir = currentPsiFile.getVirtualFile().getParent();
                 if (parentDir != null) {
@@ -485,7 +489,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                                 }
                             }
                         } else {
-                            if (isCrossFileScope(selectedAnalysisButton)) {
+                            if (shouldRunAsCrossFileWorkflow(selectedAnalysisButton, cloneMode)) {
                                 org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.runCrossFiles(
                                         project,
                                         targets,
@@ -534,5 +538,17 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
 
     private static boolean isCrossFileScope(String selectedAnalysisButton) {
         return SCOPE_CROSS_FILES.equals(selectedAnalysisButton);
+    }
+
+    private static boolean isCrossFileWorkflowScope(String selectedAnalysisButton) {
+        return isCrossFileScope(selectedAnalysisButton) || SCOPE_CURRENT_DIRECTORY_CROSS_FILES.equals(selectedAnalysisButton);
+    }
+
+    private static boolean shouldRunAsCrossFileWorkflow(String selectedAnalysisButton,
+                                                       ProjectSettingsState.CloneMode cloneMode) {
+        if (cloneMode != ProjectSettingsState.CloneMode.MULTI_AGENT) {
+            return false;
+        }
+        return isCrossFileWorkflowScope(selectedAnalysisButton);
     }
 }

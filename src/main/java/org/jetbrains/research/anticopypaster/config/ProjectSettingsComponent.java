@@ -122,6 +122,7 @@ public class ProjectSettingsComponent {
     private ArrayList<JRadioButton> analysisSelectionButtonList;
     private JRadioButton currentFileButton;
     private JRadioButton allFilesButton;
+    private JRadioButton currentDirectoryCrossFilesButton;
     private JRadioButton multipleFilesButton;
     private JRadioButton crossFilesButton;
     private ActionListener analysisSelectionButtonListener;
@@ -333,6 +334,7 @@ public class ProjectSettingsComponent {
         }
         filesPath.setToolTipText("Specify a directory to manually choose files from.");
         multipleFilesButton.setToolTipText("Use a manually selected set of files from a directory.");
+        currentDirectoryCrossFilesButton.setToolTipText("Detect clones across Java files in the current file's directory and refactor them together.");
         crossFilesButton.setToolTipText("Optionally choose files manually; if none are selected, use open Java files or Java files next to the current file.");
 
         // Add warning icon and tooltip for empty API key
@@ -430,8 +432,10 @@ public class ProjectSettingsComponent {
         filesPanelRadioButtonsGbc.gridx = 2;
         filesPanel.add(allFilesButton, filesPanelRadioButtonsGbc);
         filesPanelRadioButtonsGbc.gridx = 3;
-        filesPanel.add(multipleFilesButton, filesPanelRadioButtonsGbc);
+        filesPanel.add(currentDirectoryCrossFilesButton, filesPanelRadioButtonsGbc);
         filesPanelRadioButtonsGbc.gridx = 4;
+        filesPanel.add(multipleFilesButton, filesPanelRadioButtonsGbc);
+        filesPanelRadioButtonsGbc.gridx = 5;
         filesPanel.add(crossFilesButton, filesPanelRadioButtonsGbc);
 
         // Add filesPath field with constraints to multFilesPathGbc
@@ -494,6 +498,7 @@ public class ProjectSettingsComponent {
         // Watch for actions in relation to currentFileButton, allFilesButton, multipleFilesButton, and crossFilesButton
         currentFileButton.addActionListener(analysisSelectionButtonListener);
         allFilesButton.addActionListener(analysisSelectionButtonListener);
+        currentDirectoryCrossFilesButton.addActionListener(analysisSelectionButtonListener);
         multipleFilesButton.addActionListener(analysisSelectionButtonListener);
         crossFilesButton.addActionListener(analysisSelectionButtonListener);
 
@@ -1477,6 +1482,9 @@ public class ProjectSettingsComponent {
                 break;
             case "All Files in Current Directory":
                 allFilesButton.setSelected(true);
+                break;
+            case "Cross Files in Current Directory":
+                currentDirectoryCrossFilesButton.setSelected(true);
                 break;
             case "Multiple Files":
                 multipleFilesButton.setSelected(true);
