@@ -7,11 +7,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jetbrains.research.anticopypaster.agents.testing;
-import org.junit.Test;
 
 public class WorkflowJavaBuildSupportTest extends LightJavaCodeInsightFixtureTestCase {
 
-    @Test
     public void testFindExistingTestTargetUsesConventionalTestFile() throws Exception {
         Path baseDir = Files.createTempDirectory("acp-existing-test-target");
         Path testFile = baseDir.resolve("src/test/java/demo/FooTest.java");
@@ -41,7 +39,6 @@ public class WorkflowJavaBuildSupportTest extends LightJavaCodeInsightFixtureTes
         assertEquals(testFile.toFile().getAbsolutePath(), target.file.getAbsolutePath());
     }
 
-    @Test
     public void testClassBytecodeJavaMajorOnClasspathReadsJava11Class() throws Exception {
         Path baseDir = Files.createTempDirectory("acp-class-version");
         Path classFile = baseDir.resolve("demo/Foo.class");
@@ -59,7 +56,6 @@ public class WorkflowJavaBuildSupportTest extends LightJavaCodeInsightFixtureTes
         assertEquals(8, WorkflowJavaBuildSupport.javaMajorFromClassFileMajor(52));
     }
 
-    @Test
     public void testCrossFileTestingRecognizesJavaVersionMismatchSkip() {
         testing.TestResult result = new testing.TestResult();
         result.raw = """
@@ -74,7 +70,6 @@ public class WorkflowJavaBuildSupportTest extends LightJavaCodeInsightFixtureTes
         assertTrue(CrossFileTestingSupport.isJavaVersionMismatchSkip(result));
     }
 
-    @Test
     public void testCrossFileTestingRecognizesUnsupportedClassVersionSkip() {
         testing.TestResult result = new testing.TestResult();
         result.raw = """
@@ -86,7 +81,6 @@ public class WorkflowJavaBuildSupportTest extends LightJavaCodeInsightFixtureTes
         assertTrue(CrossFileTestingSupport.isJavaVersionMismatchSkip(result));
     }
 
-    @Test
     public void testSelectCompatibleJavaExecutableSkipsJava8ForJava11Target() {
         String selected = WorkflowJavaBuildSupport.selectCompatibleJavaExecutable(
                 List.of(

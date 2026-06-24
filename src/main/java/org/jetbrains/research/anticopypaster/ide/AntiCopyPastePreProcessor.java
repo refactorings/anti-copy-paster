@@ -49,6 +49,8 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     private static final String SCOPE_CURRENT_DIRECTORY_CROSS_FILES = "Cross Files in Current Directory";
     private static final String SCOPE_MULTIPLE_FILES = "Multiple Files";
     private static final String SCOPE_CROSS_FILES = "Cross Files";
+    private static final int CROSS_FILE_DEFAULT_MAX_FILES = 20;
+    private static final long CROSS_FILE_DEFAULT_MAX_CHARS = 200_000L;
 
     private final Timer timer = new Timer(true);
     private final ArrayList<RefactoringNotificationTask> refactoringNotificationTask = new ArrayList<>();
@@ -251,6 +253,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
 
         if (SCOPE_CURRENT_DIRECTORY.equals(selectedAnalysisButton)
                 || SCOPE_CURRENT_DIRECTORY_CROSS_FILES.equals(selectedAnalysisButton)) {
+            boolean crossFileDirectoryScope = SCOPE_CURRENT_DIRECTORY_CROSS_FILES.equals(selectedAnalysisButton);
             if (currentPsiFile != null && currentPsiFile.getVirtualFile() != null) {
                 VirtualFile parentDir = currentPsiFile.getVirtualFile().getParent();
                 if (parentDir != null) {
@@ -259,7 +262,8 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                         File[] filesInDir = currDir.listFiles();
                         if (filesInDir != null) {
                             for (File fInDir : filesInDir) {
-                                if (fInDir.isFile()) {
+                                if (fInDir.isFile()
+                                        && (!crossFileDirectoryScope || fInDir.getName().endsWith(".java"))) {
                                     VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(fInDir.getAbsolutePath());
                                     if (vf != null) result.add(vf);
                                 }
@@ -267,6 +271,9 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                         }
                     }
                 }
+            }
+            if (crossFileDirectoryScope) {
+                return limitCrossFileDefaults(project, result, "current directory");
             }
             return result;
         }
@@ -323,7 +330,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         }
 
         if (filesByPath.size() >= 2) {
-            return new ArrayList<>(filesByPath.values());
+            return limitCrossFileDefaults(project, new ArrayList<>(filesByPath.values()), "open Java files");
         }
 
         VirtualFile parentDir = currentFile == null ? null : currentFile.getParent();
@@ -340,7 +347,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             }
         }
 
-        return new ArrayList<>(filesByPath.values());
+        return limitCrossFileDefaults(project, new ArrayList<>(filesByPath.values()), "current directory");
     }
 
     private static void addJavaFile(Map<String, VirtualFile> out, VirtualFile file) {
@@ -348,6 +355,58 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         String path = file.getPath();
         if (path == null || !path.endsWith(".java")) return;
         out.putIfAbsent(path, file);
+    }
+
+    private static List<VirtualFile> limitCrossFileDefaults(Project project,
+                                                            List<VirtualFile> files,
+                                                            String sourceDescription) {
+        if (files == null || files.isEmpty()) return new ArrayList<>();
+        ArrayList<VirtualFile> limited = new ArrayList<>();
+        long charBudgetUsed = 0L;
+        int skipped = 0;
+        for (VirtualFile file : files) {
+            if (file == null || !file.isValid() || file.isDirectory()) {
+                skipped++;
+                continue;
+            }
+            long estimatedChars = Math.max(0L, file.getLength());
+            boolean overFileLimit = limited.size() >= CROSS_FILE_DEFAULT_MAX_FILES;
+            boolean overCharBudget = !limited.isEmpty()
+                    && charBudgetUsed + estimatedChars > CROSS_FILE_DEFAULT_MAX_CHARS;
+            if (overFileLimit || overCharBudget) {
+                skipped++;
+                continue;
+            }
+            limited.add(file);
+            charBudgetUsed += estimatedChars;
+        }
+        if (skipped > 0) {
+            warnCrossFileDefaultsLimited(project, sourceDescription, limited.size(), files.size(), charBudgetUsed);
+        }
+        return limited;
+    }
+
+    private static void warnCrossFileDefaultsLimited(Project project,
+                                                     String sourceDescription,
+                                                     int included,
+                                                     int total,
+                                                     long estimatedChars) {
+        String message = "Cross Files default selection from "
+                + (sourceDescription == null || sourceDescription.isBlank() ? "defaults" : sourceDescription)
+                + " was limited to " + included + " of " + total
+                + " Java file(s) (max " + CROSS_FILE_DEFAULT_MAX_FILES
+                + ", approx char budget " + CROSS_FILE_DEFAULT_MAX_CHARS
+                + "; selected approx chars=" + estimatedChars + ").";
+        LOG.warn(message);
+        if (project != null && !project.isDisposed()) {
+            Notification notification = new Notification(
+                    "AntiCopyPaster",
+                    "Cross Files selection limited",
+                    message,
+                    NotificationType.WARNING
+            );
+            Notifications.Bus.notify(notification, project);
+        }
     }
 
     /**

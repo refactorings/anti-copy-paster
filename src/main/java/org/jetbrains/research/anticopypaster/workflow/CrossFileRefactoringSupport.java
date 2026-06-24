@@ -15,6 +15,7 @@ import static org.jetbrains.research.anticopypaster.workflow.CrossFileSharedHelp
 import static org.jetbrains.research.anticopypaster.workflow.CrossFileSharedHelperSupport.findMissingReplacementTypes;
 import static org.jetbrains.research.anticopypaster.workflow.CrossFileSharedHelperSupport.hasInvalidFunctionalInterfaceAnnotation;
 import static org.jetbrains.research.anticopypaster.workflow.CrossFileSharedHelperSupport.inferSharedHelperStrategy;
+import static org.jetbrains.research.anticopypaster.workflow.CrossFileSharedHelperSupport.newHelperPathAlreadyExists;
 import static org.jetbrains.research.anticopypaster.workflow.CrossFileSharedHelperSupport.normalizeNewHelperPlan;
 import static org.jetbrains.research.anticopypaster.workflow.CrossFileSharedHelperSupport.passesEndAsReferenceWithoutWriteBack;
 import static org.jetbrains.research.anticopypaster.workflow.CrossFileSharedHelperSupport.readExistingProjectSharedSource;
@@ -177,7 +178,7 @@ final class CrossFileRefactoringSupport {
         sb.append("11) Do not call methods or fields through AbstractChunk unless they are declared in AbstractChunk. For example, do not invent chunk.makeSpace(), chunk.flushBuffer(), chunk.out, or ((SubClass) chunk).privateField access.\n");
         sb.append("12) Primitive arrays byte[] and char[] cannot be abstracted with generic T[] parameters. Use a helper signature that Java can actually call with primitive arrays.\n");
         sb.append("13) Use @FunctionalInterface only when the interface has exactly one abstract method.\n");
-        sb.append("14) Do not rely on new imports in existing files. Prefer fully-qualified names for non-java.lang types inside helper_method and replacement_code. shared_helper.imports may be used only when it will not conflict with existing imports; otherwise the workflow rejects the plan.\n");
+        sb.append("14) Existing-file helpers should avoid new imports when possible. Prefer fully-qualified names for non-java.lang types inside helper_method and replacement_code. shared_helper.imports may be used only when it will not conflict with existing imports or declared types; otherwise the workflow rejects the plan and reports the exact conflict to repair with fully-qualified names.\n");
         sb.append("15) If helper_method references a custom callback/interface type, include that nested interface declaration in helper_method after the helper method. Do not reference undefined ArrayWriter/Callback/etc. types.\n");
         sb.append("16) replacement_code must be self-contained inside the replacement scope. Do not use deleted local variables such as limit unless replacement_code declares them first, e.g. int limit = getLimitInternal();\n");
         sb.append("17) Do not pass new int[]{end} as a mutable reference unless replacement_code assigns the updated value back to end before returning.\n\n");
@@ -596,15 +597,34 @@ final class CrossFileRefactoringSupport {
                 }
             }
         }
+        return highestScoringRefactorPanelistOutcome(outcomes);
+    }
+
+    static CrossFileRefactorPanelistOutcome highestScoringRefactorPanelistOutcome(
+            List<CrossFileRefactorPanelistOutcome> outcomes) {
+        if (outcomes == null || outcomes.isEmpty()) return null;
+        CrossFileRefactorPanelistOutcome best = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
         for (CrossFileRefactorPanelistOutcome outcome : outcomes) {
-            if (outcome != null
-                    && outcome.result != null
-                    && outcome.result.parsed
-                    && outcome.result.hasChanges()) {
-                return outcome;
+            if (outcome == null) continue;
+            double score = scoreRefactorPanelistOutcome(outcome);
+            if (best == null || score > bestScore) {
+                best = outcome;
+                bestScore = score;
             }
         }
-        return outcomes.get(0);
+        return best == null ? outcomes.get(0) : best;
+    }
+
+    private static double scoreRefactorPanelistOutcome(CrossFileRefactorPanelistOutcome outcome) {
+        if (outcome == null || outcome.result == null) return 0.0d;
+        CrossFileRefactorResult result = outcome.result;
+        double score = 0.0d;
+        if (result.parsed) score += 0.4d;
+        if (result.hasChanges()) score += 0.3d;
+        if ("refactored".equalsIgnoreCase(result.status == null ? "" : result.status.trim())) score += 0.2d;
+        if (result.warnings.isEmpty()) score += 0.1d;
+        return score;
     }
 
     static String buildRefactorSelectionFailureMessage(CrossFilePanelistSelection selection,
@@ -821,6 +841,8 @@ final class CrossFileRefactoringSupport {
             plan.existingTarget = selectedTarget == null ? projectTarget : selectedTarget;
         } else if ("new_helper_class".equalsIgnoreCase(plan.strategy)) {
             normalizeNewHelperPlan(plan, sources);
+            plan.newHelperPathAlreadyExists =
+                    selectedTarget != null || projectTarget != null || newHelperPathAlreadyExists(project, plan);
         }
         return plan;
     }

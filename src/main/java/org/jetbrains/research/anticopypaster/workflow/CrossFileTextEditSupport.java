@@ -36,12 +36,14 @@ final class CrossFileTextEditSupport {
         final int end;
         final int bodyStart;
         final int bodyEnd;
+        final String methodName;
 
-        MethodTextSpan(int start, int end, int bodyStart, int bodyEnd) {
+        MethodTextSpan(int start, int end, int bodyStart, int bodyEnd, String methodName) {
             this.start = start;
             this.end = end;
             this.bodyStart = bodyStart;
             this.bodyEnd = bodyEnd;
+            this.methodName = methodName == null ? "" : methodName;
         }
     }
 
@@ -207,6 +209,7 @@ final class CrossFileTextEditSupport {
             String simple = simpleImportName(fqn);
             if (!simple.isBlank()) existingBySimpleName.putIfAbsent(simple, fqn);
         }
+        java.util.LinkedHashSet<String> declaredTypeNames = findDeclaredJavaTypeNames(source);
 
         java.util.LinkedHashMap<String, String> requestedBySimpleName = new java.util.LinkedHashMap<>();
         for (String value : imports) {
@@ -219,6 +222,10 @@ final class CrossFileTextEditSupport {
             }
             String simple = simpleImportName(normalized);
             if (simple.isBlank()) continue;
+            if (declaredTypeNames.contains(simple)) {
+                conflicts.add(normalized + " conflicts with declared type " + simple);
+                continue;
+            }
             String existing = existingBySimpleName.get(simple);
             if (existing != null && !existing.equals(normalized)) {
                 conflicts.add(normalized + " conflicts with existing import " + existing);
@@ -230,6 +237,19 @@ final class CrossFileTextEditSupport {
             }
         }
         return conflicts;
+    }
+
+    private static java.util.LinkedHashSet<String> findDeclaredJavaTypeNames(String source) {
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        if (source == null || source.isBlank()) return names;
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("\\b(?:class|interface|enum|record)\\s+([A-Za-z_$][\\w$]*)\\b")
+                .matcher(source);
+        while (matcher.find()) {
+            String name = matcher.group(1);
+            if (name != null && !name.isBlank()) names.add(name);
+        }
+        return names;
     }
 
     private static String simpleImportName(String fqn) {
@@ -350,7 +370,7 @@ final class CrossFileTextEditSupport {
         if (replacementCode == null || replacementCode.isBlank()) {
             return new ReplacementTarget(locatedSpan, replacementCode, false);
         }
-        if (looksLikeWholeMethodText(replacementCode)) {
+        if (replacementMatchesLocatedWholeMethod(source, locatedSpan, replacementCode)) {
             return new ReplacementTarget(locatedSpan, replacementCode, false);
         }
 
@@ -607,8 +627,9 @@ final class CrossFileTextEditSupport {
         if (closeBrace < 0 || closeBrace + 1 != end) return null;
 
         String header = source.substring(start, openBrace).trim();
-        if (!looksLikeMethodHeader(header)) return null;
-        return new MethodTextSpan(start, end, openBrace + 1, closeBrace);
+        String methodName = methodNameFromHeader(header);
+        if (methodName.isBlank()) return null;
+        return new MethodTextSpan(start, end, openBrace + 1, closeBrace, methodName);
     }
 
     static boolean looksLikeWholeMethodText(String text) {
@@ -616,29 +637,46 @@ final class CrossFileTextEditSupport {
         return resolveWholeMethodSpan(text, new TextSpan(0, text.length())) != null;
     }
 
+    static boolean replacementMatchesLocatedWholeMethod(String source, TextSpan locatedSpan, String replacementCode) {
+        if (replacementCode == null || replacementCode.isBlank()) return false;
+        MethodTextSpan replacementMethod = resolveWholeMethodSpan(
+                replacementCode,
+                new TextSpan(0, replacementCode.length())
+        );
+        if (replacementMethod == null) return false;
+        MethodTextSpan targetMethod = resolveWholeMethodSpan(source, locatedSpan);
+        if (targetMethod == null) return false;
+        return replacementMethod.methodName.equals(targetMethod.methodName);
+    }
+
     static boolean looksLikeMethodHeader(String header) {
         if (header == null) return false;
+        return !methodNameFromHeader(header).isBlank();
+    }
+
+    static String methodNameFromHeader(String header) {
+        if (header == null) return "";
         String normalized = normalizeLineForMatch(header);
-        if (normalized.isEmpty()) return false;
+        if (normalized.isEmpty()) return "";
         String lower = normalized.toLowerCase(java.util.Locale.ROOT);
         String[] rejectedPrefixes = {
                 "if ", "for ", "while ", "switch ", "try", "catch ", "do", "else",
                 "synchronized ", "class ", "interface ", "enum ", "record ", "new "
         };
         for (String prefix : rejectedPrefixes) {
-            if (lower.startsWith(prefix)) return false;
+            if (lower.startsWith(prefix)) return "";
         }
-        if (normalized.contains("->") || normalized.contains("=")) return false;
+        if (normalized.contains("->") || normalized.contains("=")) return "";
 
         int openParen = normalized.indexOf('(');
         int closeParen = normalized.lastIndexOf(')');
-        if (openParen <= 0 || closeParen < openParen) return false;
+        if (openParen <= 0 || closeParen < openParen) return "";
 
         String beforeParen = normalized.substring(0, openParen).trim();
-        if (beforeParen.isEmpty()) return false;
+        if (beforeParen.isEmpty()) return "";
         int split = Math.max(beforeParen.lastIndexOf(' '), beforeParen.lastIndexOf('.'));
         String candidateName = beforeParen.substring(split + 1).trim();
-        return candidateName.matches("[A-Za-z_$][A-Za-z0-9_$]*");
+        return candidateName.matches("[A-Za-z_$][A-Za-z0-9_$]*") ? candidateName : "";
     }
 
     static String leadingWhitespace(String text) {

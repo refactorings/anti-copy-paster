@@ -316,6 +316,13 @@ final class CrossFileSharedHelperSupport {
 
         if ("new_helper_class".equalsIgnoreCase(plan.strategy)) {
             normalizeNewHelperPlan(plan, sources);
+            if (plan.newHelperPathAlreadyExists || (plan.ioFile != null && plan.ioFile.exists())) {
+                result.parsed = false;
+                result.message = "New helper path already exists and will not be overwritten: "
+                        + plan.relativePath
+                        + ". Choose a unique shared_helper.path or use an allowed existing shared helper target.";
+                return;
+            }
             String source = buildNewHelperClassSource(plan);
             if (source.isBlank()) {
                 result.parsed = false;
@@ -437,6 +444,28 @@ final class CrossFileSharedHelperSupport {
             return parent == null ? new File(path) : new File(parent, new File(path).getName());
         }
         return new File(base, path);
+    }
+
+    static boolean newHelperPathAlreadyExists(Project project, CrossFileSharedHelperPlan plan) {
+        if (plan == null) return false;
+        if (plan.ioFile != null && plan.ioFile.exists()) return true;
+        if (plan.ioFile != null) {
+            try {
+                if (LocalFileSystem.getInstance().findFileByIoFile(plan.ioFile) != null) return true;
+            } catch (Throwable ignored) {}
+        }
+        String relativePath = plan.relativePath == null || plan.relativePath.isBlank()
+                ? plan.path
+                : plan.relativePath;
+        if (project != null && relativePath != null && !relativePath.isBlank()) {
+            try {
+                VirtualFile baseDir = project.getBaseDir();
+                if (baseDir != null && baseDir.findFileByRelativePath(relativePath.replace("\\", "/")) != null) {
+                    return true;
+                }
+            } catch (Throwable ignored) {}
+        }
+        return false;
     }
 
     static String inferProjectBasePath(List<CrossFileSource> sources) {

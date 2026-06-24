@@ -202,6 +202,7 @@ final class CrossFileSharedHelperPlan {
     File ioFile;
     CrossFileSource existingTarget;
     boolean publicClass;
+    boolean newHelperPathAlreadyExists;
     final java.util.ArrayList<String> imports = new java.util.ArrayList<>();
 
     boolean isCentralizedStrategy() {

@@ -292,6 +292,14 @@ final class CrossFileProposalSupport {
 
     static void writeCrossFileChanges(Project project, CrossFileRefactorResult result) throws IOException {
         if (result == null || !result.hasChanges()) return;
+        for (CrossFileNewSource source : result.newFilesByPath.values()) {
+            if (source == null || source.ioFile == null) continue;
+            if (source.ioFile.exists()) {
+                throw new IOException("Refusing to overwrite existing new helper file: "
+                        + source.relativePath
+                        + ". Choose a unique shared_helper.path or use an allowed existing shared helper target.");
+            }
+        }
         IOException[] writeError = new IOException[1];
         Runnable writeAction = () -> ApplicationManager.getApplication().runWriteAction(() -> {
             for (Map.Entry<CrossFileSource, String> entry : result.newSourcesByFile.entrySet()) {

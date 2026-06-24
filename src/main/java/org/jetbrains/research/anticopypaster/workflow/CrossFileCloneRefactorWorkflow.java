@@ -34,14 +34,18 @@ import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
 import java.io.BufferedWriter;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 final class CrossFileCloneRefactorWorkflow {
-    private static final AtomicBoolean CANCELLED = new AtomicBoolean(false);
-    private static final AtomicReference<Thread> CURRENT_THREAD = new AtomicReference<>();
-    private static final AtomicReference<Process> CURRENT_PROCESS = new AtomicReference<>();
+    private static final int MAX_USEFULNESS_WINDOW_LINES = 80;
+    private static final ConcurrentMap<String, AtomicBoolean> CANCELLED_BY_PROJECT = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, AtomicReference<Thread>> CURRENT_THREAD_BY_PROJECT = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, AtomicReference<Process>> CURRENT_PROCESS_BY_PROJECT = new ConcurrentHashMap<>();
 
     private CrossFileCloneRefactorWorkflow() {}
 
@@ -56,9 +60,14 @@ final class CrossFileCloneRefactorWorkflow {
 
     private static void runInBackground(Project project, List<VirtualFile> targets, String pastedSnippet) {
         BufferedWriter logWriter = null;
-        CURRENT_THREAD.set(Thread.currentThread());
+        String projectKey = projectKey(project);
+        AtomicBoolean cancelled = cancelFlag(projectKey);
+        AtomicReference<Thread> currentThread = threadRef(projectKey);
+        AtomicReference<Process> currentProcess = processRef(projectKey);
+        BooleanSupplier isCancelled = () -> isCancelled(projectKey);
+        currentThread.set(Thread.currentThread());
         try {
-            resetCancelFlag();
+            resetCancelFlag(cancelled);
 
             String modelNameForLog = resolveModelNameForLog(project);
             logWriter = openLogWriter(project, "cross-files", modelNameForLog);
@@ -66,10 +75,10 @@ final class CrossFileCloneRefactorWorkflow {
                     openViewer(
                             project,
                             "Cross Files Clone Workflow Output",
-                            CrossFileCloneRefactorWorkflow::cancelWorkflow,
-                            CrossFileCloneRefactorWorkflow::isCancelled
+                            viewer -> cancelWorkflow(projectKey, viewer),
+                            isCancelled
                     ),
-                    CrossFileCloneRefactorWorkflow::isCancelled
+                    isCancelled
             );
             Consumer<String> viewer = teeViewer(baseViewer, logWriter);
 
@@ -95,7 +104,7 @@ final class CrossFileCloneRefactorWorkflow {
             }
 
             WorkflowJavaBuildSupport javaBuildSupport =
-                    new WorkflowJavaBuildSupport(project, viewer, CURRENT_PROCESS, CrossFileCloneRefactorWorkflow::isCancelled);
+                    new WorkflowJavaBuildSupport(project, viewer, currentProcess, isCancelled);
             int maxAttempts = resolveMaxAttempts(project);
             logStage(viewer, "SETTINGS", "maxAttempts=" + maxAttempts);
 
@@ -297,7 +306,7 @@ final class CrossFileCloneRefactorWorkflow {
             logStage(viewer, "WORKFLOW", "SUCCESS applied files=" + result.changedFileCount());
             showNotification(project, "[Clone] Cross Files refactor applied to " + result.changedFileCount() + " file(s).", NotificationType.INFORMATION);
         } catch (Exception e) {
-            if (isCancelled()
+            if (isCancelled(projectKey)
                     || Thread.currentThread().isInterrupted()
                     || (e.getMessage() != null && e.getMessage().contains("CANCELLED"))) {
                 showNotification(project, "Operation cancelled by user.", NotificationType.WARNING);
@@ -307,32 +316,61 @@ final class CrossFileCloneRefactorWorkflow {
             showNotification(project, "[Clone] Cross Files workflow crashed: " + e.getMessage(), NotificationType.ERROR);
         } finally {
             closeQuietly(logWriter);
-            CURRENT_PROCESS.set(null);
-            CURRENT_THREAD.compareAndSet(Thread.currentThread(), null);
+            currentProcess.set(null);
+            currentThread.compareAndSet(Thread.currentThread(), null);
+            cleanupProjectWorkflowState(projectKey, cancelled, currentThread, currentProcess);
         }
     }
 
-    private static void resetCancelFlag() {
-        CANCELLED.set(false);
+    private static void resetCancelFlag(AtomicBoolean cancelled) {
+        cancelled.set(false);
     }
 
-    private static boolean isCancelled() {
-        return CANCELLED.get();
+    private static boolean isCancelled(String projectKey) {
+        return cancelFlag(projectKey).get();
     }
 
-    private static void cancelWorkflow(Consumer<String> viewer) {
-        CANCELLED.set(true);
-        Thread thread = CURRENT_THREAD.get();
+    private static void cancelWorkflow(String projectKey, Consumer<String> viewer) {
+        cancelFlag(projectKey).set(true);
+        Thread thread = threadRef(projectKey).get();
         if (thread != null) {
             thread.interrupt();
         }
-        Process process = CURRENT_PROCESS.get();
+        Process process = processRef(projectKey).get();
         if (process != null) {
             try {
                 process.destroyForcibly();
             } catch (Throwable ignored) {}
         }
         logStage(viewer, "WORKFLOW", "CANCELLED by user (viewer closed; thread interrupted)");
+    }
+
+    private static AtomicBoolean cancelFlag(String projectKey) {
+        return CANCELLED_BY_PROJECT.computeIfAbsent(projectKey, ignored -> new AtomicBoolean(false));
+    }
+
+    private static AtomicReference<Thread> threadRef(String projectKey) {
+        return CURRENT_THREAD_BY_PROJECT.computeIfAbsent(projectKey, ignored -> new AtomicReference<>());
+    }
+
+    private static AtomicReference<Process> processRef(String projectKey) {
+        return CURRENT_PROCESS_BY_PROJECT.computeIfAbsent(projectKey, ignored -> new AtomicReference<>());
+    }
+
+    private static void cleanupProjectWorkflowState(String projectKey,
+                                                    AtomicBoolean cancelled,
+                                                    AtomicReference<Thread> currentThread,
+                                                    AtomicReference<Process> currentProcess) {
+        CURRENT_THREAD_BY_PROJECT.remove(projectKey, currentThread);
+        CURRENT_PROCESS_BY_PROJECT.remove(projectKey, currentProcess);
+        CANCELLED_BY_PROJECT.remove(projectKey, cancelled);
+    }
+
+    private static String projectKey(Project project) {
+        if (project == null) return "<no-project>";
+        String basePath = project.getBasePath();
+        if (basePath != null && !basePath.isBlank()) return basePath;
+        return Integer.toHexString(System.identityHashCode(project));
     }
 
     private static String resolveModelNameForLog(Project project) {
@@ -504,6 +542,13 @@ final class CrossFileCloneRefactorWorkflow {
         int paddingAfter = 16;
         int from = Math.max(1, startLine - paddingBefore);
         int to = Math.max(from, Math.min(countLines(source), endLine + paddingAfter));
+        if (to - from + 1 > MAX_USEFULNESS_WINDOW_LINES) {
+            to = Math.min(countLines(source), from + MAX_USEFULNESS_WINDOW_LINES - 1);
+            if (endLine > to) {
+                from = Math.max(1, endLine - MAX_USEFULNESS_WINDOW_LINES + 1);
+                to = Math.min(countLines(source), from + MAX_USEFULNESS_WINDOW_LINES - 1);
+            }
+        }
         String window = sliceLines(source, from, to);
         return safeTruncate(window, 8000);
     }

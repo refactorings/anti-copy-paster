@@ -356,34 +356,84 @@ final class CrossFileDetectionSupport {
             return merged;
         }
 
-        java.util.ArrayList<CrossFileDetectionResult> foundResults = new java.util.ArrayList<>();
+        java.util.LinkedHashMap<String, DetectionCloneVote> votesBySignature = new java.util.LinkedHashMap<>();
         for (CrossFileDetectionPanelistOutcome outcome : panelistOutcomes) {
             if (outcome == null || outcome.result == null || !outcome.result.parsed) continue;
-            if (!outcome.result.clones.isEmpty()) {
-                foundResults.add(outcome.result);
+            java.util.LinkedHashSet<String> panelistSignatures = new java.util.LinkedHashSet<>();
+            for (CrossFileClone clone : outcome.result.clones) {
+                if (clone == null || clone.affectedSources().size() < 2) continue;
+                String signature = cloneSignature(clone);
+                if (signature.isBlank() || !panelistSignatures.add(signature)) continue;
+                DetectionCloneVote vote = votesBySignature.computeIfAbsent(signature, DetectionCloneVote::new);
+                vote.add(outcome.panelistId, clone);
             }
-        }
-        if (foundResults.size() < 2) {
-            return merged;
         }
 
-        CrossFileDetectionResult best = null;
-        CrossFileClone bestClone = null;
-        for (CrossFileDetectionResult candidate : foundResults) {
-            CrossFileClone clone = selectBestCrossFileClone(candidate);
-            if (clone == null) continue;
-            if (bestClone == null
-                    || clone.affectedSources().size() > bestClone.affectedSources().size()
-                    || (clone.affectedSources().size() == bestClone.affectedSources().size()
-                    && clone.occurrences.size() > bestClone.occurrences.size())) {
-                best = candidate;
-                bestClone = clone;
+        DetectionCloneVote bestVote = null;
+        for (DetectionCloneVote vote : votesBySignature.values()) {
+            if (vote == null || vote.count() < 2) continue;
+            if (bestVote == null || vote.score() > bestVote.score()) {
+                bestVote = vote;
             }
         }
-        if (best != null) {
-            best.warnings.add("Detection curator failed; using majority panelist fallback.");
-            return best;
+        if (bestVote != null && bestVote.representative != null) {
+            CrossFileDetectionResult fallback = new CrossFileDetectionResult();
+            fallback.parsed = true;
+            fallback.status = "found_clones";
+            fallback.summary = "Detection curator failed; panelist fallback found a majority-supported cross-file clone.";
+            fallback.clones.add(bestVote.representative);
+            fallback.warnings.add("Detection curator failed; using majority panelist fallback from "
+                    + String.join(", ", bestVote.panelistIds) + ".");
+            return fallback;
         }
         return merged;
+    }
+
+    private static String cloneSignature(CrossFileClone clone) {
+        if (clone == null || clone.occurrences == null || clone.occurrences.isEmpty()) return "";
+        java.util.ArrayList<String> parts = new java.util.ArrayList<>();
+        for (CrossFileOccurrence occurrence : clone.occurrences) {
+            if (occurrence == null || occurrence.source == null) continue;
+            String path = occurrence.source.relativePath == null || occurrence.source.relativePath.isBlank()
+                    ? occurrence.source.absolutePath
+                    : occurrence.source.relativePath;
+            path = path == null ? "" : path.trim().replace('\\', '/');
+            if (path.isBlank() || occurrence.startLine <= 0 || occurrence.endLine < occurrence.startLine) continue;
+            parts.add(path + ":" + occurrence.startLine + "-" + occurrence.endLine);
+        }
+        java.util.Collections.sort(parts);
+        return String.join("|", parts);
+    }
+
+    private static final class DetectionCloneVote {
+        final String signature;
+        final java.util.LinkedHashSet<String> panelistIds = new java.util.LinkedHashSet<>();
+        CrossFileClone representative;
+
+        DetectionCloneVote(String signature) {
+            this.signature = signature == null ? "" : signature;
+        }
+
+        void add(String panelistId, CrossFileClone clone) {
+            if (panelistId != null && !panelistId.isBlank()) {
+                panelistIds.add(panelistId);
+            }
+            if (representative == null || cloneScore(clone) > cloneScore(representative)) {
+                representative = clone;
+            }
+        }
+
+        int count() {
+            return panelistIds.size();
+        }
+
+        int score() {
+            return count() * 10_000 + cloneScore(representative);
+        }
+
+        private static int cloneScore(CrossFileClone clone) {
+            if (clone == null) return 0;
+            return clone.affectedSources().size() * 100 + clone.occurrences.size();
+        }
     }
 }
