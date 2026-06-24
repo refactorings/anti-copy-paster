@@ -579,7 +579,7 @@ final class RefactoringSuggestionPanel {
 
             applyButton = new JButton("Apply");
             regenerateButton = new JButton("Regenerate");
-            editCodeButton = new JButton("Edit Code");
+            editCodeButton = new JButton("Edit");
             cancelButton = new JButton("Cancel");
 
             applyButton.addActionListener(e ->
