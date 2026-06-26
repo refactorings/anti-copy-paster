@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.workflow;
 
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.logStage;
 
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -85,21 +86,23 @@ final class WorkflowCloneRangeSupport {
     }
 
     static int[] elementLineRange(Project project, VirtualFile vf, PsiElement el) {
-        try {
-            if (project == null || project.isDisposed() || vf == null || el == null) return null;
-            Document doc = FileDocumentManager.getInstance().getDocument(vf);
-            if (doc == null) return null;
+        return ReadAction.compute(() -> {
+            try {
+                if (project == null || project.isDisposed() || vf == null || el == null) return null;
+                Document doc = FileDocumentManager.getInstance().getDocument(vf);
+                if (doc == null) return null;
 
-            int startOffset = Math.max(0, el.getTextRange().getStartOffset());
-            int endOffset = Math.max(startOffset, el.getTextRange().getEndOffset());
+                int startOffset = Math.max(0, el.getTextRange().getStartOffset());
+                int endOffset = Math.max(startOffset, el.getTextRange().getEndOffset());
 
-            int startLine = doc.getLineNumber(startOffset) + 1;
-            int endLine = doc.getLineNumber(Math.max(0, endOffset - 1)) + 1;
+                int startLine = doc.getLineNumber(startOffset) + 1;
+                int endLine = doc.getLineNumber(Math.max(0, endOffset - 1)) + 1;
 
-            return new int[]{startLine, endLine};
-        } catch (Throwable t) {
-            return null;
-        }
+                return new int[]{startLine, endLine};
+            } catch (Throwable t) {
+                return null;
+            }
+        });
     }
 
     static int getIntField(Object obj, String... names) {
@@ -190,58 +193,60 @@ final class WorkflowCloneRangeSupport {
     }
 
     static PsiMethod findWholeMethodCoveredBySnippet(Project project, VirtualFile vf, String fileSource, String pastedSnippet) {
-        try {
-            if (project == null || project.isDisposed() || vf == null) return null;
-            if (pastedSnippet == null || pastedSnippet.isBlank()) return null;
+        return ReadAction.compute(() -> {
+            try {
+                if (project == null || project.isDisposed() || vf == null) return null;
+                if (pastedSnippet == null || pastedSnippet.isBlank()) return null;
 
-            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-            if (!(psiFile instanceof PsiJavaFile)) return null;
+                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+                if (!(psiFile instanceof PsiJavaFile)) return null;
 
-            String pNorm = normalizeForMatch(pastedSnippet);
-            String pNormNoBraces = normalizeForMatch(stripOuterBraces(pastedSnippet));
+                String pNorm = normalizeForMatch(pastedSnippet);
+                String pNormNoBraces = normalizeForMatch(stripOuterBraces(pastedSnippet));
 
-            for (PsiMethod m : PsiTreeUtil.findChildrenOfType(psiFile, PsiMethod.class)) {
-                if (m == null) continue;
+                for (PsiMethod m : PsiTreeUtil.findChildrenOfType(psiFile, PsiMethod.class)) {
+                    if (m == null) continue;
 
-                String mText = m.getText();
-                if (!mText.isBlank()) {
-                    String mNorm = normalizeForMatch(mText);
-                    if (!pNorm.isBlank() && mNorm.equals(pNorm)) return m;
-                    if (!pNormNoBraces.isBlank() && mNorm.equals(pNormNoBraces)) return m;
+                    String mText = m.getText();
+                    if (!mText.isBlank()) {
+                        String mNorm = normalizeForMatch(mText);
+                        if (!pNorm.isBlank() && mNorm.equals(pNorm)) return m;
+                        if (!pNormNoBraces.isBlank() && mNorm.equals(pNormNoBraces)) return m;
+                    }
+
+                    PsiElement body = m.getBody();
+                    if (body == null) continue;
+                    String bodyText = body.getText();
+                    if (bodyText == null) bodyText = "";
+
+                    String bodyNorm = normalizeForMatch(bodyText);
+                    String bodyNoBracesNorm = normalizeForMatch(stripOuterBraces(bodyText));
+
+                    if (!pNorm.isBlank() && (bodyNorm.equals(pNorm) || bodyNoBracesNorm.equals(pNorm))) return m;
+                    if (!pNormNoBraces.isBlank() && (bodyNorm.equals(pNormNoBraces) || bodyNoBracesNorm.equals(pNormNoBraces))) return m;
                 }
 
-                PsiElement body = m.getBody();
-                if (body == null) continue;
-                String bodyText = body.getText();
-                if (bodyText == null) bodyText = "";
+                int[] sn = findSnippetLineRangeInText(fileSource, pastedSnippet);
+                if (sn == null) return null;
 
-                String bodyNorm = normalizeForMatch(bodyText);
-                String bodyNoBracesNorm = normalizeForMatch(stripOuterBraces(bodyText));
+                int idx = (fileSource == null) ? -1 : fileSource.indexOf(pastedSnippet);
+                if (idx < 0) return null;
 
-                if (!pNorm.isBlank() && (bodyNorm.equals(pNorm) || bodyNoBracesNorm.equals(pNorm))) return m;
-                if (!pNormNoBraces.isBlank() && (bodyNorm.equals(pNormNoBraces) || bodyNoBracesNorm.equals(pNormNoBraces))) return m;
+                PsiElement at = psiFile.findElementAt(Math.min(idx, Math.max(0, psiFile.getTextLength() - 1)));
+                PsiMethod host = PsiTreeUtil.getParentOfType(at, PsiMethod.class, false);
+                if (host == null) return null;
+
+                int[] mr = elementLineRange(project, vf, host);
+                if (mr == null) return null;
+
+                if (sn[0] <= mr[0] && sn[1] >= mr[1]) {
+                    return host;
+                }
+                return null;
+            } catch (Throwable t) {
+                return null;
             }
-
-            int[] sn = findSnippetLineRangeInText(fileSource, pastedSnippet);
-            if (sn == null) return null;
-
-            int idx = (fileSource == null) ? -1 : fileSource.indexOf(pastedSnippet);
-            if (idx < 0) return null;
-
-            PsiElement at = psiFile.findElementAt(Math.min(idx, Math.max(0, psiFile.getTextLength() - 1)));
-            PsiMethod host = PsiTreeUtil.getParentOfType(at, PsiMethod.class, false);
-            if (host == null) return null;
-
-            int[] mr = elementLineRange(project, vf, host);
-            if (mr == null) return null;
-
-            if (sn[0] <= mr[0] && sn[1] >= mr[1]) {
-                return host;
-            }
-            return null;
-        } catch (Throwable t) {
-            return null;
-        }
+        });
     }
 
     static boolean textMatchesSnippet(String candidateText, String snippet) {
@@ -307,20 +312,22 @@ final class WorkflowCloneRangeSupport {
                                                 VirtualFile vf,
                                                 int startOffset,
                                                 int endOffset) {
-        try {
-            if (project == null || project.isDisposed() || vf == null) return null;
-            Document doc = FileDocumentManager.getInstance().getDocument(vf);
-            if (doc == null) return null;
+        return ReadAction.compute(() -> {
+            try {
+                if (project == null || project.isDisposed() || vf == null) return null;
+                Document doc = FileDocumentManager.getInstance().getDocument(vf);
+                if (doc == null) return null;
 
-            int safeStart = Math.max(0, Math.min(startOffset, doc.getTextLength()));
-            int safeEnd = Math.max(safeStart, Math.min(endOffset, doc.getTextLength()));
-            detection.CloneRange range = new detection.CloneRange();
-            range.startLine = doc.getLineNumber(safeStart) + 1;
-            range.endLine = doc.getLineNumber(Math.max(safeStart, safeEnd - 1)) + 1;
-            return range;
-        } catch (Throwable ignored) {
-            return null;
-        }
+                int safeStart = Math.max(0, Math.min(startOffset, doc.getTextLength()));
+                int safeEnd = Math.max(safeStart, Math.min(endOffset, doc.getTextLength()));
+                detection.CloneRange range = new detection.CloneRange();
+                range.startLine = doc.getLineNumber(safeStart) + 1;
+                range.endLine = doc.getLineNumber(Math.max(safeStart, safeEnd - 1)) + 1;
+                return range;
+            } catch (Throwable ignored) {
+                return null;
+            }
+        });
     }
 
     static detection.CloneRange findFragmentRangeInMethod(Project project,
@@ -489,27 +496,29 @@ final class WorkflowCloneRangeSupport {
                                                                                       String fileSource,
                                                                                       java.util.List<detection.DetectedClone> clones,
                                                                                       Consumer<String> viewer) {
-        if (clones == null || clones.isEmpty()) return java.util.Collections.emptyList();
+        return ReadAction.compute(() -> {
+            if (clones == null || clones.isEmpty()) return java.util.Collections.emptyList();
 
-        java.util.ArrayList<detection.DetectedClone> resolved = new java.util.ArrayList<>();
-        int changedCloneCount = 0;
-        for (detection.DetectedClone clone : clones) {
-            detection.DetectedClone adjusted = resolveSingleDetectedCloneWithPsi(project, vf, fileSource, clone);
-            resolved.add(adjusted);
+            java.util.ArrayList<detection.DetectedClone> resolved = new java.util.ArrayList<>();
+            int changedCloneCount = 0;
+            for (detection.DetectedClone clone : clones) {
+                detection.DetectedClone adjusted = resolveSingleDetectedCloneWithPsi(project, vf, fileSource, clone);
+                resolved.add(adjusted);
 
-            String beforeSummary = WorkflowCloneSelectionSupport.summarizeCloneRanges(clone == null ? null : clone.ranges);
-            String afterSummary = WorkflowCloneSelectionSupport.summarizeCloneRanges(adjusted == null ? null : adjusted.ranges);
-            if (!java.util.Objects.equals(beforeSummary, afterSummary)) {
-                changedCloneCount++;
-                String cloneId = clone == null || clone.id == null || clone.id.isBlank() ? "<unknown>" : clone.id;
-                logStage(viewer, "DETECTION", "psi-resolved clone ranges for " + cloneId + ": [" + beforeSummary + "] -> [" + afterSummary + "]");
+                String beforeSummary = WorkflowCloneSelectionSupport.summarizeCloneRanges(clone == null ? null : clone.ranges);
+                String afterSummary = WorkflowCloneSelectionSupport.summarizeCloneRanges(adjusted == null ? null : adjusted.ranges);
+                if (!java.util.Objects.equals(beforeSummary, afterSummary)) {
+                    changedCloneCount++;
+                    String cloneId = clone == null || clone.id == null || clone.id.isBlank() ? "<unknown>" : clone.id;
+                    logStage(viewer, "DETECTION", "psi-resolved clone ranges for " + cloneId + ": [" + beforeSummary + "] -> [" + afterSummary + "]");
+                }
             }
-        }
 
-        if (changedCloneCount > 0) {
-            logStage(viewer, "DETECTION", "psi-resolved clone ranges: " + changedCloneCount + "/" + resolved.size() + " clone group(s)");
-        }
-        return resolved;
+            if (changedCloneCount > 0) {
+                logStage(viewer, "DETECTION", "psi-resolved clone ranges: " + changedCloneCount + "/" + resolved.size() + " clone group(s)");
+            }
+            return resolved;
+        });
     }
 
     static detection.DetectedClone resolveSingleDetectedCloneWithPsi(Project project,

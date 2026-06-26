@@ -2,7 +2,11 @@ package org.jetbrains.research.anticopypaster.config;
 
 import javax.swing.*;
 
+import com.github.copilot.CopilotClient;
+import com.github.copilot.rpc.CopilotClientOptions;
+import com.github.copilot.rpc.GetAuthStatusResponse;
 import com.intellij.icons.AllIcons;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.IdeBorderFactory;
@@ -16,14 +20,18 @@ import java.awt.*;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Hashtable;
+import java.util.concurrent.TimeUnit;
 
 
 public class ProjectSettingsComponent {
@@ -143,6 +151,11 @@ public class ProjectSettingsComponent {
     private JPanel ollamaModelPanel;
     private JTextField ollamaModel;
     private JPanel fileSelectionPanel;
+    private JPanel copilotSettingsPanel;
+    private JTextField copilotCliPathField;
+    private JButton copilotLoginButton;
+    private JButton copilotCheckStatusButton;
+    private JLabel copilotStatusLabel;
     private JSlider iterationSlider;
     private JPanel iterationNumberPanel;
     private JLabel iterationHelp;
@@ -217,6 +230,7 @@ public class ProjectSettingsComponent {
     // Suppress auto-close of Aider windows during initial render
     private boolean suppressAutoCloseOnInit = true;
     private boolean isLoadingSettings = false;
+    private boolean updatingPanelVisibilities = false;
     private Object lastMainModel = null;
     private Object lastNameModel = null;
     private JLabel apiBaseWarningLabel;
@@ -336,6 +350,7 @@ public class ProjectSettingsComponent {
         multipleFilesButton.setToolTipText("Use a manually selected set of files from a directory.");
         currentDirectoryCrossFilesButton.setToolTipText("Detect clones across Java files in the current file's directory and refactor them together.");
         crossFilesButton.setToolTipText("Optionally choose files manually; if none are selected, use open Java files or Java files next to the current file.");
+        configureCopilotSettings();
 
         // Add warning icon and tooltip for empty API key
         Icon warningIcon = AllIcons.General.Error;
@@ -607,14 +622,18 @@ public class ProjectSettingsComponent {
             if (!suppressAutoCloseOnInit && !isLoadingSettings) {
                 pendingMainModelIndex = modelComboBox.getSelectedIndex();
             }
-            updatePanelVisibilities();
+            if (!updatingPanelVisibilities) {
+                updatePanelVisibilities();
+            }
         });
 
         nameModel.addActionListener(e -> {
             if (!suppressAutoCloseOnInit && !isLoadingSettings) {
                 pendingNameModelIndex = nameModel.getSelectedIndex();
             }
-            updatePanelVisibilities();
+            if (!updatingPanelVisibilities) {
+                updatePanelVisibilities();
+            }
         });
 
         updatePanelVisibilities();
@@ -730,6 +749,7 @@ public class ProjectSettingsComponent {
         styleSection(aiSettingsPanel, "AI Model Settings");
         styleSection(multiAgentSettingsPanel, "Multi-agent Settings");
         styleSection(aiderSettingsPanel, "Clone Settings");
+        styleSection(copilotSettingsPanel, "Copilot SDK");
         styleSection(fileSelectionPanel, "Files to Analyze");
     }
 
@@ -750,6 +770,215 @@ public class ProjectSettingsComponent {
                         JBUI.Borders.empty(6, 8, 8, 8)
                 )
         ));
+    }
+
+    private void configureCopilotSettings() {
+        if (copilotCliPathField == null) {
+            return;
+        }
+        if (copilotCliPathField.getText() == null || copilotCliPathField.getText().isBlank()) {
+            copilotCliPathField.setText("copilot");
+        }
+        copilotCliPathField.setToolTipText("Path to the GitHub Copilot CLI executable. Use `copilot` when it is on PATH.");
+        if (copilotLoginButton != null) {
+            copilotLoginButton.setToolTipText("Start `copilot login` and show the device-flow output.");
+            copilotLoginButton.addActionListener(e -> startCopilotLogin());
+        }
+        if (copilotCheckStatusButton != null) {
+            copilotCheckStatusButton.setToolTipText("Check whether the Copilot SDK can use the configured CLI login.");
+            copilotCheckStatusButton.addActionListener(e -> startCopilotStatusCheck());
+        }
+        setCopilotStatusText("Use Login to authenticate Copilot CLI, then Check Status.");
+    }
+
+    private void startCopilotStatusCheck() {
+        String cliPath = getCopilotCliPath();
+        setCopilotButtonsEnabled(false);
+        setCopilotStatusText("Checking Copilot CLI...");
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            String message;
+            try {
+                message = checkCopilotStatus(cliPath);
+            } catch (Throwable t) {
+                message = "Copilot check failed: " + rootMessage(t);
+            }
+            String finalMessage = message;
+            SwingUtilities.invokeLater(() -> {
+                setCopilotStatusText(finalMessage);
+                setCopilotButtonsEnabled(true);
+            });
+        });
+    }
+
+    private void startCopilotLogin() {
+        String cliPath = getCopilotCliPath();
+        JTextArea outputArea = openCopilotOutputDialog("Copilot Login");
+        appendCopilotOutput(outputArea, "$ " + cliPath + " login --host https://github.com\n\n");
+        setCopilotButtonsEnabled(false);
+        setCopilotStatusText("Starting Copilot login...");
+
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            String message;
+            try {
+                Process process = copilotProcessBuilder(cliPath, "login", "--host", "https://github.com")
+                        .redirectErrorStream(true)
+                        .start();
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        appendCopilotOutput(outputArea, line + "\n");
+                    }
+                }
+                int exitCode = process.waitFor();
+                appendCopilotOutput(outputArea, "\nProcess exited with code " + exitCode + ".\n");
+                if (exitCode == 0) {
+                    message = checkCopilotStatus(cliPath);
+                } else {
+                    message = "Copilot login exited with code " + exitCode + ". See the login output window.";
+                }
+            } catch (Throwable t) {
+                appendCopilotOutput(outputArea, "\nLogin failed: " + rootMessage(t) + "\n");
+                message = "Copilot login failed: " + rootMessage(t);
+            }
+
+            String finalMessage = message;
+            SwingUtilities.invokeLater(() -> {
+                setCopilotStatusText(finalMessage);
+                setCopilotButtonsEnabled(true);
+            });
+        });
+    }
+
+    private String checkCopilotStatus(String cliPath) throws Exception {
+        String version = firstLine(runCopilotCommand(cliPath, 10, "--version"));
+        try (CopilotClient client = new CopilotClient(new CopilotClientOptions()
+                .setCliPath(cliPath)
+                .setUseLoggedInUser(true))) {
+            client.start().get(60, TimeUnit.SECONDS);
+            GetAuthStatusResponse auth = client.getAuthStatus().get(20, TimeUnit.SECONDS);
+            if (auth != null && auth.isAuthenticated()) {
+                String login = auth.getLogin() == null || auth.getLogin().isBlank() ? "GitHub user" : auth.getLogin();
+                String authType = auth.getAuthType() == null || auth.getAuthType().isBlank() ? "stored credentials" : auth.getAuthType();
+                return "Copilot is signed in as " + login + " via " + authType + ". " + version;
+            }
+            String status = auth == null ? "" : auth.getStatusMessage();
+            return "Copilot CLI is installed but not signed in."
+                    + (status == null || status.isBlank() ? "" : " " + status)
+                    + " " + version;
+        }
+    }
+
+    private String runCopilotCommand(String cliPath, int timeoutSeconds, String... args) throws IOException, InterruptedException {
+        Process process = copilotProcessBuilder(cliPath, args)
+                .redirectErrorStream(true)
+                .start();
+        boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        if (!finished) {
+            process.destroyForcibly();
+            throw new IOException("`" + cliPath + "` did not finish within " + timeoutSeconds + " seconds.");
+        }
+        String output;
+        try {
+            output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        } catch (Throwable ignored) {
+            output = "";
+        }
+        if (process.exitValue() != 0) {
+            throw new IOException("`" + cliPath + "` exited with code " + process.exitValue()
+                    + (output.isBlank() ? "" : ": " + output.trim()));
+        }
+        return output == null ? "" : output.trim();
+    }
+
+    private ProcessBuilder copilotProcessBuilder(String cliPath, String... args) {
+        ArrayList<String> command = new ArrayList<>();
+        String executable = cliPath == null || cliPath.isBlank() ? "copilot" : cliPath.trim();
+        if (executable.toLowerCase().endsWith(".js")) {
+            command.add("node");
+        }
+        command.add(executable);
+        if (args != null) {
+            for (String arg : args) {
+                command.add(arg);
+            }
+        }
+        return new ProcessBuilder(command);
+    }
+
+    private JTextArea openCopilotOutputDialog(String title) {
+        JTextArea outputArea = new JTextArea(18, 88);
+        outputArea.setEditable(false);
+        outputArea.setLineWrap(true);
+        outputArea.setWrapStyleWord(true);
+
+        Window owner = mainPanel == null ? null : SwingUtilities.getWindowAncestor(mainPanel);
+        JDialog dialog = owner == null
+                ? new JDialog((Frame) null, title, false)
+                : new JDialog(owner, title, Dialog.ModalityType.MODELESS);
+        dialog.setLayout(new BorderLayout());
+        dialog.add(new JBScrollPane(outputArea), BorderLayout.CENTER);
+
+        JButton closeButton = new JButton("Close");
+        closeButton.addActionListener(e -> dialog.dispose());
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel.add(closeButton);
+        dialog.add(buttonPanel, BorderLayout.SOUTH);
+
+        dialog.pack();
+        dialog.setLocationRelativeTo(mainPanel);
+        dialog.setVisible(true);
+        return outputArea;
+    }
+
+    private void appendCopilotOutput(JTextArea outputArea, String text) {
+        if (outputArea == null || text == null) {
+            return;
+        }
+        SwingUtilities.invokeLater(() -> {
+            outputArea.append(text);
+            outputArea.setCaretPosition(outputArea.getDocument().getLength());
+        });
+    }
+
+    private void setCopilotButtonsEnabled(boolean enabled) {
+        if (copilotLoginButton != null) {
+            copilotLoginButton.setEnabled(enabled);
+        }
+        if (copilotCheckStatusButton != null) {
+            copilotCheckStatusButton.setEnabled(enabled);
+        }
+    }
+
+    private void setCopilotStatusText(String text) {
+        if (copilotStatusLabel != null) {
+            copilotStatusLabel.setText(text == null ? "" : text);
+        }
+    }
+
+    private String firstLine(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        int newline = text.indexOf('\n');
+        return newline < 0 ? text.trim() : text.substring(0, newline).trim();
+    }
+
+    private static String rootMessage(Throwable t) {
+        Throwable cur = t;
+        String firstMessage = null;
+        while (cur != null && cur.getCause() != null) {
+            String message = cur.getMessage();
+            if (firstMessage == null && message != null && !message.isBlank()) {
+                firstMessage = message;
+            }
+            cur = cur.getCause();
+        }
+        String message = cur == null ? null : cur.getMessage();
+        if ((message == null || message.isBlank()) && firstMessage != null) {
+            message = firstMessage;
+        }
+        return message == null || message.isBlank() ? "unknown error" : message;
     }
 
     /**
@@ -799,8 +1028,20 @@ public class ProjectSettingsComponent {
      * and synchronizes the available options in the name model dropdown.
      */
     private void updatePanelVisibilities() {
-        String mainModel = (String) modelComboBox.getSelectedItem();
-        String nameModelValue = (String) nameModel.getSelectedItem();
+        if (updatingPanelVisibilities) {
+            return;
+        }
+        updatingPanelVisibilities = true;
+        try {
+            updatePanelVisibilitiesUnsafe();
+        } finally {
+            updatingPanelVisibilities = false;
+        }
+    }
+
+    private void updatePanelVisibilitiesUnsafe() {
+        String mainModel = modelComboBox == null ? null : (String) modelComboBox.getSelectedItem();
+        String nameModelValue = nameModel == null ? null : (String) nameModel.getSelectedItem();
 
         boolean isMainClone = "Clone".equals(mainModel);
         boolean isMainCloneMulti = "Clone_multiagent".equals(mainModel);
@@ -839,6 +1080,12 @@ public class ProjectSettingsComponent {
             }
         }
 
+        if (copilotSettingsPanel != null) {
+            copilotSettingsPanel.setVisible(isMainCopilot);
+            copilotSettingsPanel.revalidate();
+            copilotSettingsPanel.repaint();
+        }
+
         // Keep Aider help label visibility in sync with the Clone (Aider) panel.
         if (aiderHelpLabel != null) {
             aiderHelpLabel.setVisible(showAiderSettings);
@@ -874,10 +1121,10 @@ public class ProjectSettingsComponent {
         // Hide method/name/clone configuration panels for Clone and Clone_multiagent in the main model selection.
         boolean hideClonePanelsForClone = isMainClone;
         boolean hideClonePanelsForCloneMulti = isMainCloneMulti;
-        boolean hideClonePanels = hideClonePanelsForClone || hideClonePanelsForCloneMulti;
+        boolean hideClonePanels = hideClonePanelsForClone || hideClonePanelsForCloneMulti || isMainCopilot;
 
         if (numberMethodPanel != null) {
-            numberMethodPanel.setVisible(!hideClonePanelsForClone);
+            numberMethodPanel.setVisible(!hideClonePanelsForClone && !isMainCopilot);
             numberMethodPanel.revalidate();
             numberMethodPanel.repaint();
         }
@@ -916,31 +1163,68 @@ public class ProjectSettingsComponent {
         Object currentSelection = nameModel.getSelectedItem();
         if (isMainClone) {
             // When Clone is selected as the main model, only allow "Clone" in name model
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Clone"});
-            nameModel.setModel(model);
-            nameModel.setSelectedItem("Clone");
+            setNameModelOptionsPreservingSelection(new String[] {"Clone"}, "Clone", currentSelection);
         }
         else if (isMainCloneMulti) {
             // When Clone_multiagent is selected as the main model, only allow "Clone_multiagent" in name model
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Clone_multiagent"});
-            nameModel.setModel(model);
-            nameModel.setSelectedItem("Clone_multiagent");
+            setNameModelOptionsPreservingSelection(new String[] {"Clone_multiagent"}, "Clone_multiagent", currentSelection);
         }
         else if (isMainCopilot) {
             // When Copilot is selected as the main model, only allow "Copilot" in name model
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"Copilot"});
-            nameModel.setModel(model);
-            nameModel.setSelectedItem("Copilot");
+            setNameModelOptionsPreservingSelection(new String[] {"Copilot"}, "Copilot", currentSelection);
         }
         else {
             // When other main models are selected, restore all options
-            DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(new String[] {"code2vec", "built-in", "Clone", "Clone_multiagent", "Copilot"});
-            nameModel.setModel(model);
-            if (currentSelection != null && model.getIndexOf(currentSelection) != -1) {
-                nameModel.setSelectedItem(currentSelection);
-            } else {
-                nameModel.setSelectedIndex(0);
+            setNameModelOptionsPreservingSelection(
+                    new String[] {"code2vec", "built-in", "Clone", "Clone_multiagent", "Copilot"},
+                    "code2vec",
+                    currentSelection
+            );
+        }
+    }
+
+    private void setNameModelOptionsPreservingSelection(String[] options, String fallback, Object currentSelection) {
+        if (nameModel == null || options == null || options.length == 0) {
+            return;
+        }
+
+        boolean sameOptions = nameModel.getItemCount() == options.length;
+        if (sameOptions) {
+            for (int i = 0; i < options.length; i++) {
+                Object item = nameModel.getItemAt(i);
+                if (!java.util.Objects.equals(item, options[i])) {
+                    sameOptions = false;
+                    break;
+                }
             }
+        }
+
+        if (!sameOptions) {
+            nameModel.setModel(new DefaultComboBoxModel<>(options));
+        }
+
+        boolean canKeepCurrent = false;
+        for (String option : options) {
+            if (java.util.Objects.equals(option, currentSelection)) {
+                canKeepCurrent = true;
+                break;
+            }
+        }
+        Object desiredSelection = canKeepCurrent
+                ? currentSelection
+                : fallback;
+        boolean desiredExists = false;
+        for (String option : options) {
+            if (java.util.Objects.equals(option, desiredSelection)) {
+                desiredExists = true;
+                break;
+            }
+        }
+        if (desiredSelection == null || !desiredExists) {
+            desiredSelection = options[0];
+        }
+        if (!java.util.Objects.equals(nameModel.getSelectedItem(), desiredSelection)) {
+            nameModel.setSelectedItem(desiredSelection);
         }
     }
 
@@ -1575,6 +1859,24 @@ public class ProjectSettingsComponent {
      */
     public void setFilesPath(String path) {
         filesPath.setText(path);
+    }
+
+    /**
+     * Returns the configured GitHub Copilot CLI executable path.
+     */
+    public String getCopilotCliPath() {
+        return copilotCliPathField == null || copilotCliPathField.getText() == null || copilotCliPathField.getText().isBlank()
+                ? "copilot"
+                : copilotCliPathField.getText().trim();
+    }
+
+    /**
+     * Sets the configured GitHub Copilot CLI executable path.
+     */
+    public void setCopilotCliPath(String path) {
+        if (copilotCliPathField != null) {
+            copilotCliPathField.setText(path == null || path.isBlank() ? "copilot" : path.trim());
+        }
     }
 
     /**

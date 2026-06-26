@@ -6,6 +6,7 @@ import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.s
 
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ScrollType;
@@ -411,27 +412,29 @@ final class WorkflowCloneSelectionSupport {
                                                                     String fileSource,
                                                                     detection.DetectedClone clone,
                                                                     int rangeIndex) {
-        if (clone == null || clone.ranges == null || rangeIndex < 0 || rangeIndex >= clone.ranges.size()) return null;
-        detection.CloneRange range = clone.ranges.get(rangeIndex);
-        if (range == null) return null;
+        return ReadAction.compute(() -> {
+            if (clone == null || clone.ranges == null || rangeIndex < 0 || rangeIndex >= clone.ranges.size()) return null;
+            detection.CloneRange range = clone.ranges.get(rangeIndex);
+            if (range == null) return null;
 
-        com.intellij.psi.PsiMethod method = WorkflowMethodSnapshotSupport.findMethodContainingLine(project, vf, range.startLine);
-        if (method == null) method = WorkflowMethodSnapshotSupport.findMethodContainingLine(project, vf, range.endLine);
-        String displayName = method == null ? "<unknown method>" : WorkflowMethodSnapshotSupport.buildMethodDisplayName(method);
-        String uniqueKey = range.startLine + ":" + range.endLine;
+            com.intellij.psi.PsiMethod method = WorkflowMethodSnapshotSupport.findMethodContainingLine(project, vf, range.startLine);
+            if (method == null) method = WorkflowMethodSnapshotSupport.findMethodContainingLine(project, vf, range.endLine);
+            String displayName = method == null ? "<unknown method>" : WorkflowMethodSnapshotSupport.buildMethodDisplayName(method);
+            String uniqueKey = range.startLine + ":" + range.endLine;
 
-        String snippet = firstNonBlank(getDetectedCloneCodeAt(clone, rangeIndex, fileSource), sliceSourceByCloneRange(fileSource, range));
-        String label = "Occurrence " + (rangeIndex + 1) + ": " + displayName + " [" + range.startLine + "-" + range.endLine + "]";
-        StringBuilder details = new StringBuilder();
-        details.append("Method: ").append(displayName).append("\n");
-        details.append("Lines: ").append(range.startLine).append("-").append(range.endLine).append("\n");
+            String snippet = firstNonBlank(getDetectedCloneCodeAt(clone, rangeIndex, fileSource), sliceSourceByCloneRange(fileSource, range));
+            String label = "Occurrence " + (rangeIndex + 1) + ": " + displayName + " [" + range.startLine + "-" + range.endLine + "]";
+            StringBuilder details = new StringBuilder();
+            details.append("Method: ").append(displayName).append("\n");
+            details.append("Lines: ").append(range.startLine).append("-").append(range.endLine).append("\n");
 
-        String snippetPreview = previewCodeForSelection(snippet);
-        if (!snippetPreview.isBlank()) {
-            details.append("\nCode preview:\n").append(snippetPreview);
-        }
+            String snippetPreview = previewCodeForSelection(snippet);
+            if (!snippetPreview.isBlank()) {
+                details.append("\nCode preview:\n").append(snippetPreview);
+            }
 
-        return new CloneRangeSelectionOption(rangeIndex, range, label, details.toString().trim(), snippet, uniqueKey);
+            return new CloneRangeSelectionOption(rangeIndex, range, label, details.toString().trim(), snippet, uniqueKey);
+        });
     }
 
     static String buildRangeSelectionDetails(java.util.List<CloneRangeSelectionOption> selected) {

@@ -2,6 +2,7 @@ package org.jetbrains.research.anticopypaster.workflow;
 
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.logStage;
 
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -160,74 +161,80 @@ final class WorkflowMethodSnapshotSupport {
     }
 
     static PsiMethod findMethodBySnapshot(Project project, VirtualFile vf, CloneMethodSnapshot snapshot) {
-        try {
-            if (project == null || project.isDisposed() || vf == null || snapshot == null) return null;
+        return ReadAction.compute(() -> {
+            try {
+                if (project == null || project.isDisposed() || vf == null || snapshot == null) return null;
 
-            if (snapshot.pointer != null) {
-                PsiMethod pointed = snapshot.pointer.getElement();
-                if (pointed != null && pointed.isValid()) {
-                    String cls = getMethodClassName(pointed);
-                    if (java.util.Objects.equals(snapshot.className, cls)
-                            && java.util.Objects.equals(snapshot.methodName, pointed.getName())
-                            && snapshot.parameterCount == pointed.getParameterList().getParametersCount()) {
-                        return pointed;
+                if (snapshot.pointer != null) {
+                    PsiMethod pointed = snapshot.pointer.getElement();
+                    if (pointed != null && pointed.isValid()) {
+                        String cls = getMethodClassName(pointed);
+                        if (java.util.Objects.equals(snapshot.className, cls)
+                                && java.util.Objects.equals(snapshot.methodName, pointed.getName())
+                                && snapshot.parameterCount == pointed.getParameterList().getParametersCount()) {
+                            return pointed;
+                        }
                     }
                 }
-            }
 
-            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-            if (!(psiFile instanceof PsiJavaFile javaFile)) return null;
+                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+                if (!(psiFile instanceof PsiJavaFile javaFile)) return null;
 
-            for (PsiClass psiClass : javaFile.getClasses()) {
-                String cls = psiClass.getQualifiedName() != null ? psiClass.getQualifiedName() : psiClass.getName();
-                if (!java.util.Objects.equals(snapshot.className, cls)) continue;
-                for (PsiMethod method : psiClass.getMethods()) {
-                    if (!java.util.Objects.equals(snapshot.methodName, method.getName())) continue;
-                    if (snapshot.parameterCount != method.getParameterList().getParametersCount()) continue;
-                    return method;
+                for (PsiClass psiClass : javaFile.getClasses()) {
+                    String cls = psiClass.getQualifiedName() != null ? psiClass.getQualifiedName() : psiClass.getName();
+                    if (!java.util.Objects.equals(snapshot.className, cls)) continue;
+                    for (PsiMethod method : psiClass.getMethods()) {
+                        if (!java.util.Objects.equals(snapshot.methodName, method.getName())) continue;
+                        if (snapshot.parameterCount != method.getParameterList().getParametersCount()) continue;
+                        return method;
+                    }
                 }
+                return null;
+            } catch (Throwable t) {
+                return null;
             }
-            return null;
-        } catch (Throwable t) {
-            return null;
-        }
+        });
     }
 
     static PsiMethod findMethodContainingLine(Project project, VirtualFile vf, int oneBasedLine) {
-        try {
-            if (project == null || project.isDisposed() || vf == null) return null;
-            if (oneBasedLine <= 0) return null;
+        return ReadAction.compute(() -> {
+            try {
+                if (project == null || project.isDisposed() || vf == null) return null;
+                if (oneBasedLine <= 0) return null;
 
-            Document doc = FileDocumentManager.getInstance().getDocument(vf);
-            if (doc == null) return null;
-            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-            if (!(psiFile instanceof PsiJavaFile)) return null;
-            if (doc.getLineCount() <= 0) return null;
+                Document doc = FileDocumentManager.getInstance().getDocument(vf);
+                if (doc == null) return null;
+                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+                if (!(psiFile instanceof PsiJavaFile)) return null;
+                if (doc.getLineCount() <= 0) return null;
 
-            int zeroBasedLine = Math.max(0, Math.min(oneBasedLine - 1, doc.getLineCount() - 1));
-            int startOffset = doc.getLineStartOffset(zeroBasedLine);
-            int endOffset = Math.max(startOffset, doc.getLineEndOffset(zeroBasedLine) - 1);
+                int zeroBasedLine = Math.max(0, Math.min(oneBasedLine - 1, doc.getLineCount() - 1));
+                int startOffset = doc.getLineStartOffset(zeroBasedLine);
+                int endOffset = Math.max(startOffset, doc.getLineEndOffset(zeroBasedLine) - 1);
 
-            PsiElement at = psiFile.findElementAt(startOffset);
-            if (at == null) at = psiFile.findElementAt(endOffset);
-            if (at == null) return null;
+                PsiElement at = psiFile.findElementAt(startOffset);
+                if (at == null) at = psiFile.findElementAt(endOffset);
+                if (at == null) return null;
 
-            return PsiTreeUtil.getParentOfType(at, PsiMethod.class, false);
-        } catch (Throwable t) {
-            return null;
-        }
+                return PsiTreeUtil.getParentOfType(at, PsiMethod.class, false);
+            } catch (Throwable t) {
+                return null;
+            }
+        });
     }
 
     static PsiMethod findMethodContainingCloneRange(Project project, VirtualFile vf, detection.CloneRange range) {
-        if (range == null) return null;
-        PsiMethod start = findMethodContainingLine(project, vf, range.startLine);
-        PsiMethod end = findMethodContainingLine(project, vf, range.endLine);
-        if (start != null && end != null) {
-            String startKey = buildMethodTrackingKey(start);
-            String endKey = buildMethodTrackingKey(end);
-            if (startKey.equals(endKey)) return start;
-        }
-        return start != null ? start : end;
+        return ReadAction.compute(() -> {
+            if (range == null) return null;
+            PsiMethod start = findMethodContainingLine(project, vf, range.startLine);
+            PsiMethod end = findMethodContainingLine(project, vf, range.endLine);
+            if (start != null && end != null) {
+                String startKey = buildMethodTrackingKey(start);
+                String endKey = buildMethodTrackingKey(end);
+                if (startKey.equals(endKey)) return start;
+            }
+            return start != null ? start : end;
+        });
     }
 
     static void addCloneMethodSnapshot(java.util.Map<String, CloneMethodSnapshot> out,
@@ -258,35 +265,37 @@ final class WorkflowMethodSnapshotSupport {
                                                                             VirtualFile vf,
                                                                             detection.DetectedClone clone,
                                                                             Consumer<String> viewer) {
-        java.util.LinkedHashMap<String, CloneMethodSnapshot> out = new java.util.LinkedHashMap<>();
-        try {
-            if (project == null || project.isDisposed() || vf == null || clone == null || clone.ranges == null) {
-                return new java.util.ArrayList<>();
+        return ReadAction.compute(() -> {
+            java.util.LinkedHashMap<String, CloneMethodSnapshot> out = new java.util.LinkedHashMap<>();
+            try {
+                if (project == null || project.isDisposed() || vf == null || clone == null || clone.ranges == null) {
+                    return new java.util.ArrayList<>();
+                }
+
+                for (detection.CloneRange range : clone.ranges) {
+                    if (range == null) continue;
+
+                    PsiMethod method = findMethodContainingLine(project, vf, range.startLine);
+                    if (method == null) method = findMethodContainingLine(project, vf, range.endLine);
+                    if (method == null) continue;
+
+                    String key = buildMethodTrackingKey(method);
+                    if (out.containsKey(key)) continue;
+                    SmartPsiElementPointer<PsiMethod> ptr = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(method);
+                    String displayName = buildMethodDisplayName(method);
+                    String className = getMethodClassName(method);
+                    String methodName = method.getName();
+                    int parameterCount = method.getParameterList().getParametersCount();
+                    String methodKey = buildUsefulnessMethodKey(method);
+                    String baselineBodyText = normalizeMethodBodyText(getMethodBodyText(method));
+                    out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, methodKey, baselineBodyText, displayName));
+                    logStage(viewer, "WATCH", "tracking cloned method: " + displayName);
+                }
+            } catch (Throwable t) {
+                logStage(viewer, "WATCH", "failed to capture cloned method snapshots: " + t.getMessage());
             }
-
-            for (detection.CloneRange range : clone.ranges) {
-                if (range == null) continue;
-
-                PsiMethod method = findMethodContainingLine(project, vf, range.startLine);
-                if (method == null) method = findMethodContainingLine(project, vf, range.endLine);
-                if (method == null) continue;
-
-                String key = buildMethodTrackingKey(method);
-                if (out.containsKey(key)) continue;
-                SmartPsiElementPointer<PsiMethod> ptr = SmartPointerManager.getInstance(project).createSmartPsiElementPointer(method);
-                String displayName = buildMethodDisplayName(method);
-                String className = getMethodClassName(method);
-                String methodName = method.getName();
-                int parameterCount = method.getParameterList().getParametersCount();
-                String methodKey = buildUsefulnessMethodKey(method);
-                String baselineBodyText = normalizeMethodBodyText(getMethodBodyText(method));
-                out.put(key, new CloneMethodSnapshot(ptr, className, methodName, parameterCount, methodKey, baselineBodyText, displayName));
-                logStage(viewer, "WATCH", "tracking cloned method: " + displayName);
-            }
-        } catch (Throwable t) {
-            logStage(viewer, "WATCH", "failed to capture cloned method snapshots: " + t.getMessage());
-        }
-        return new java.util.ArrayList<>(out.values());
+            return new java.util.ArrayList<>(out.values());
+        });
     }
 
     static java.util.List<org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint> buildUsefulnessTargetMethodHints(
@@ -294,79 +303,83 @@ final class WorkflowMethodSnapshotSupport {
             java.util.List<CloneMethodSnapshot> watchedCloneMethods,
             Consumer<String> viewer
     ) {
-        java.util.LinkedHashMap<String, org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint> out = new java.util.LinkedHashMap<>();
-        try {
-            if (wholeMethod != null) {
-                org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint hint =
-                        new org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint(
-                                getMethodClassName(wholeMethod),
-                                wholeMethod.getName(),
-                                wholeMethod.getParameterList() == null ? 0 : wholeMethod.getParameterList().getParametersCount(),
-                                buildUsefulnessMethodKey(wholeMethod)
-                        );
-                out.put(hint.methodKey.isBlank()
-                        ? (hint.className + "#" + hint.methodName + "#" + hint.parameterCount)
-                        : hint.methodKey, hint);
-            }
-
-            if (watchedCloneMethods != null) {
-                for (CloneMethodSnapshot snapshot : watchedCloneMethods) {
-                    if (snapshot == null) continue;
+        return ReadAction.compute(() -> {
+            java.util.LinkedHashMap<String, org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint> out = new java.util.LinkedHashMap<>();
+            try {
+                if (wholeMethod != null) {
                     org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint hint =
                             new org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint(
-                                    snapshot.className,
-                                    snapshot.methodName,
-                                    snapshot.parameterCount,
-                                    snapshot.methodKey
+                                    getMethodClassName(wholeMethod),
+                                    wholeMethod.getName(),
+                                    wholeMethod.getParameterList() == null ? 0 : wholeMethod.getParameterList().getParametersCount(),
+                                    buildUsefulnessMethodKey(wholeMethod)
                             );
                     out.put(hint.methodKey.isBlank()
                             ? (hint.className + "#" + hint.methodName + "#" + hint.parameterCount)
                             : hint.methodKey, hint);
                 }
+
+                if (watchedCloneMethods != null) {
+                    for (CloneMethodSnapshot snapshot : watchedCloneMethods) {
+                        if (snapshot == null) continue;
+                        org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint hint =
+                                new org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint(
+                                        snapshot.className,
+                                        snapshot.methodName,
+                                        snapshot.parameterCount,
+                                        snapshot.methodKey
+                                );
+                        out.put(hint.methodKey.isBlank()
+                                ? (hint.className + "#" + hint.methodName + "#" + hint.parameterCount)
+                                : hint.methodKey, hint);
+                    }
+                }
+            } catch (Throwable t) {
+                logStage(viewer, "USEFUL", "failed to build target method hints: " + t.getMessage());
             }
-        } catch (Throwable t) {
-            logStage(viewer, "USEFUL", "failed to build target method hints: " + t.getMessage());
-        }
 
-        java.util.ArrayList<org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint> hints =
-                new java.util.ArrayList<>(out.values());
-        if (hints.size() >= 2) {
-            String joined = hints.stream()
-                    .map(h -> h.methodKey == null || h.methodKey.isBlank()
-                            ? (h.className + "#" + h.methodName + "#" + h.parameterCount)
-                            : h.methodKey)
-                    .collect(java.util.stream.Collectors.joining(", "));
-            logStage(viewer, "USEFUL", "target method hints=" + hints.size() + ": " + joined);
-            return hints;
-        }
+            java.util.ArrayList<org.jetbrains.research.anticopypaster.agents.usefulnessChecker.TargetMethodHint> hints =
+                    new java.util.ArrayList<>(out.values());
+            if (hints.size() >= 2) {
+                String joined = hints.stream()
+                        .map(h -> h.methodKey == null || h.methodKey.isBlank()
+                                ? (h.className + "#" + h.methodName + "#" + h.parameterCount)
+                                : h.methodKey)
+                        .collect(java.util.stream.Collectors.joining(", "));
+                logStage(viewer, "USEFUL", "target method hints=" + hints.size() + ": " + joined);
+                return hints;
+            }
 
-        if (!hints.isEmpty()) {
-            logStage(viewer, "USEFUL", "insufficient target method hints for target-only analysis: " + hints.size());
-        }
-        return java.util.List.of();
+            if (!hints.isEmpty()) {
+                logStage(viewer, "USEFUL", "insufficient target method hints for target-only analysis: " + hints.size());
+            }
+            return java.util.List.of();
+        });
     }
 
     static String findModifiedCloneMethod(Project project,
                                           VirtualFile vf,
                                           java.util.List<CloneMethodSnapshot> snapshots) {
-        try {
-            if (snapshots == null || snapshots.isEmpty()) return null;
-            for (CloneMethodSnapshot snapshot : snapshots) {
-                if (snapshot == null) continue;
+        return ReadAction.compute(() -> {
+            try {
+                if (snapshots == null || snapshots.isEmpty()) return null;
+                for (CloneMethodSnapshot snapshot : snapshots) {
+                    if (snapshot == null) continue;
 
-                PsiMethod method = findMethodBySnapshot(project, vf, snapshot);
-                if (method == null || !method.isValid()) {
-                    continue;
-                }
+                    PsiMethod method = findMethodBySnapshot(project, vf, snapshot);
+                    if (method == null || !method.isValid()) {
+                        continue;
+                    }
 
-                String currentBodyText = normalizeMethodBodyText(getMethodBodyText(method));
-                if (!java.util.Objects.equals(snapshot.baselineBodyText, currentBodyText)) {
-                    return snapshot.displayName;
+                    String currentBodyText = normalizeMethodBodyText(getMethodBodyText(method));
+                    if (!java.util.Objects.equals(snapshot.baselineBodyText, currentBodyText)) {
+                        return snapshot.displayName;
+                    }
                 }
+                return null;
+            } catch (Throwable t) {
+                return null;
             }
-            return null;
-        } catch (Throwable t) {
-            return null;
-        }
+        });
     }
 }

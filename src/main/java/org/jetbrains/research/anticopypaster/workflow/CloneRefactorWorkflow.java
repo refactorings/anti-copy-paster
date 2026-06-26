@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 
@@ -132,10 +133,11 @@ public final class CloneRefactorWorkflow {
     private static String readCurrentSource(VirtualFile vf, File ioFile) throws IOException {
         // Prefer in-memory content (includes unsaved edits) if available.
         try {
-            Document doc = FileDocumentManager.getInstance().getDocument(vf);
-            if (doc != null) {
-                return doc.getText();
-            }
+            String documentText = ReadAction.compute(() -> {
+                Document doc = FileDocumentManager.getInstance().getDocument(vf);
+                return doc == null ? null : doc.getText();
+            });
+            if (documentText != null) return documentText;
         } catch (Throwable ignored) {}
 
         // Fallback: read from disk.
@@ -512,7 +514,7 @@ public final class CloneRefactorWorkflow {
                 final java.util.List<WorkflowMethodSnapshotSupport.CloneMethodSnapshot> watchedCloneMethods = WorkflowMethodSnapshotSupport.captureCloneMethodSnapshots(project, vf, clone, viewer);
                 final java.util.List<usefulnessChecker.TargetMethodHint> targetMethodHints =
                         WorkflowMethodSnapshotSupport.buildUsefulnessTargetMethodHints(wholeMethod, watchedCloneMethods, viewer);
-                trackedDocument = FileDocumentManager.getInstance().getDocument(vf);
+                trackedDocument = ReadAction.compute(() -> FileDocumentManager.getInstance().getDocument(vf));
                 if (trackedDocument != null && watchedCloneMethods != null && !watchedCloneMethods.isEmpty()) {
                     final java.util.List<WorkflowMethodSnapshotSupport.CloneMethodSnapshot> listenerSnapshots = watchedCloneMethods;
                     cloneMethodChangeListener = new DocumentListener() {

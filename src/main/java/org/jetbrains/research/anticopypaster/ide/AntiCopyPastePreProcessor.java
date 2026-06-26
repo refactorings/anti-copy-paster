@@ -15,8 +15,6 @@ import com.intellij.openapi.editor.RawText;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
@@ -25,9 +23,9 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.llm.LlmConfigurationNotifier;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
+import org.jetbrains.research.anticopypaster.workflow.CopilotSdkRefactorWorkflow;
 
 import javax.swing.*;
-import org.jetbrains.research.anticopypaster.Copilot.CopilotBridge;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Timer;
@@ -104,35 +102,27 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 if (requiresSelectedFileList(selectedAnalysisButton)) {
                     if (filesPath == null || filesPath.isEmpty()) {
                         ApplicationManager.getApplication().invokeLater(() -> {
-                            notify(project, "No directory path provided. Please configure a valid directory for Copilot multi-file analysis.");
+                            notifyCopilot(project, "No directory path provided. Please configure a valid directory for Copilot multi-file analysis.");
                         });
                         return text;
                     }
                     File filesDir = new File(filesPath);
                     if (!filesDir.isDirectory()) {
                         ApplicationManager.getApplication().invokeLater(() -> {
-                            notify(project, "Invalid directory path for Copilot multi-file analysis. Please select a valid directory.");
+                            notifyCopilot(project, "Invalid directory path for Copilot multi-file analysis. Please select a valid directory.");
                         });
                         return text;
                     }
                     boolean filesSelected = targets != null && !targets.isEmpty();
                     if (!filesSelected) {
                         ApplicationManager.getApplication().invokeLater(() -> {
-                            notify(project, "No files have been selected. Please pick at least one file for Copilot to analyze.");
+                            notifyCopilot(project, "No files have been selected. Please pick at least one file for Copilot to analyze.");
                         });
                         return text;
                     }
                 }
 
-                String prompt = buildCopilotPrompt(project, targets);
-
-                if (CopilotBridge.isCopilotChatAvailable()) {
-                    CopilotBridge.openChatWithClipboardPrompt(project, editor, prompt);
-                } else {
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        notify(project, "GitHub Copilot Chat is not available. Please install/enable the Copilot plugin.");
-                    });
-                }
+                CopilotSdkRefactorWorkflow.run(project, file, text, targets);
             }
             // We still return the original text so the paste content remains unchanged.
             return text;
@@ -410,29 +400,6 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     }
 
     /**
-     * Build a Copilot prompt that enumerates project-relative file paths,
-     * so Copilot Chat can auto-load them as context.
-     */
-    private static String buildCopilotPrompt(Project project, List<VirtualFile> targets) {
-        StringBuilder promptBuilder = new StringBuilder();
-        promptBuilder.append("Please detect any clones across the following files and refactor them by Extract Method.\n")
-                .append("Keep behavior identical, use a clear intention-revealing method name, update all call sites,\n")
-                .append("and show the final version of the class or classes.\n\n");
-
-        if (targets != null && !targets.isEmpty()) {
-            promptBuilder.append("Files:\n");
-            for (VirtualFile vf : targets) {
-                String abs = vf.getPath();
-                promptBuilder.append("- ").append(toProjectRelative(project, abs)).append("\n");
-            }
-            promptBuilder.append("\n");
-        } else {
-            promptBuilder.append("Files: (current editor file)\n\n");
-        }
-        return promptBuilder.toString();
-    }
-
-    /**
      * Finds the RefactoringNotificationTask in the refactoringNotificationTask ArrayList that is associated with the
      * given project. Returns the RefactoringNotificationTask if it exists, and null if it does not.
      * */
@@ -459,22 +426,14 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         }
     }
 
-    /**
-     * Returns a project-relative path if possible, otherwise returns the original absolute path.
-     * This produces cleaner paths that Copilot Chat can often resolve within the current project.
-     */
-    private static String toProjectRelative(Project project, String absolutePath) {
-        if (project == null || absolutePath == null) return absolutePath;
-        String base = project.getBasePath();
-        if (base == null) return absolutePath;
-        if (absolutePath.startsWith(base)) {
-            String rel = absolutePath.substring(base.length());
-            if (rel.startsWith("/") || rel.startsWith("\\")) {
-                rel = rel.substring(1);
-            }
-            return rel.isEmpty() ? absolutePath : rel;
-        }
-        return absolutePath;
+    private static void notifyCopilot(Project project, String content) {
+        Notification notification = new Notification(
+                "AntiCopyPaster",
+                "Copilot",
+                content,
+                NotificationType.INFORMATION
+        );
+        Notifications.Bus.notify(notification, project);
     }
 
     private static void notify(Project project, String content) {
