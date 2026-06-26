@@ -8,7 +8,13 @@ import com.intellij.icons.AllIcons;
 import com.intellij.ide.BrowserUtil;
 //import com.intellij.ide.startup.importSettings.chooser.ui.RoundedBorder;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.EditorFactory;
+import com.intellij.openapi.editor.EditorSettings;
+import com.intellij.openapi.editor.actions.ScrollUpAction;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
@@ -20,15 +26,23 @@ import com.intellij.openapi.wm.RegisterToolWindowTask;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowAnchor;
 import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.ui.InplaceButton;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.SeparatorComponent;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
+import com.intellij.util.IconUtil;
+import com.intellij.util.ui.JBFont;
 import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.JLabelUtil;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -329,7 +343,7 @@ final class RefactoringSuggestionPanel {
             DiffRequestPanel diffPanel = createDiffPanel(project, diffDisposable, safeInfo); //JULIANA
 
             add(createTopPanel(safeInfo), BorderLayout.NORTH);
-            add(createComparisonPanel(safeInfo), BorderLayout.CENTER); //add(diffPanel.getComponent(), BorderLayout.CENTER);
+            add(createComparisonPanel(project, safeInfo), BorderLayout.CENTER); //add(diffPanel.getComponent(), BorderLayout.CENTER);
             add(createBottomPanel(safeInfo), BorderLayout.SOUTH);
             setDecisionButtonsEnabled(decisionEnabled);
             if (statusLabel != null && statusText != null && !statusText.isBlank()) {
@@ -660,63 +674,145 @@ final class RefactoringSuggestionPanel {
         return panel;
     }
 
-    private static JComponent createCard(JLabel header, String code, Color color) {
-            JPanel card = new RoundedPanel(12); //new JPanel(new BorderLayout());
+    private static JComponent createCard(Project project, JLabel header, String code, Color color, Color border) {
+            RoundedPanel card = new RoundedPanel(12); //new JPanel(new BorderLayout());
             card.setLayout(new BorderLayout());
             card.setBorder(JBUI.Borders.empty(12));
 
-            //JLabel header = new JLabel(title); SILENCED
-            header.setBorder(JBUI.Borders.empty(12));
-            //header.add(loadHeaderIcon(JBUI)); attempt to add the little icon
+            header.setBorder(new EmptyBorder(0, 0, 12, 0));
 
-            JTextArea textArea = new JTextArea(code);
-            textArea.setEditable(false);
+            //OG Code editor - disabled
+            //JTextArea textArea = new JTextArea(code);
+            //textArea.setEditable(false);
+            //intellij code editor
+            Document document = EditorFactory.getInstance().createDocument(code);
+            Editor editor = EditorFactory.getInstance().createViewer(document, project); //project?
+            EditorSettings settings = editor.getSettings();
+            settings.setLineNumbersShown(false);
 
             card.add(header, BorderLayout.NORTH);
-            //card.add(editor.getComponent(), BorderLayout.CENTER); fix this in order to replace current editor region
-            card.add(new JScrollPane(textArea), BorderLayout.CENTER);
+            card.add(editor.getComponent(), BorderLayout.CENTER);
+            //card.add(new JScrollPane(textArea), BorderLayout.CENTER);
             card.setBackground(color);
+            card.setBorderColor(border);
 
             return card;
 
     }
 
-    private static JComponent createComparisonPanel(RefactoringSuggestionDialog.SuggestionInfo info){
-        JPanel comparisonPanel = new JPanel(new GridLayout(1, 2, 8, 0));
+    private static ActionToolbar toolB(){
+        ActionGroup actionGroup = new ActionGroup() {
+            @Override
+            public AnAction @NotNull [] getChildren(@Nullable AnActionEvent e) {
+                return new AnAction[0];
+            }
+        };
+
+        ActionToolbar toolbar = ActionManager.getInstance().createActionToolbar(
+                "DiffPreviewToolBar",
+                actionGroup,
+                true
+        );
+
+        //JButton b1 = new InplaceButton(AllIcons.General.ArrowUp, e -> {
+        //    AnAction nextCloneAction = ActionManager.getInstance().getAction("nextClone");
+            //finish up
+        //});
+
+        return toolbar;
+
+    }
+
+    private static JComponent createComparisonPanel(Project project, RefactoringSuggestionDialog.SuggestionInfo info){
+        JPanel comparisonPanel = new JPanel(new GridLayout(1, 2, 12, 12));
         comparisonPanel.setBorder(JBUI.Borders.empty(12));
         comparisonPanel.setLayout(new BoxLayout(comparisonPanel, BoxLayout.Y_AXIS)); //vertical flow
 
-        JPanel diffPanelHeader = new JPanel (new GridLayout(1, 2, 8, 0));
-        JLabel headerLabel = new JLabel("Diff Preview", AllIcons.General.Warning, JBLabel.LEFT);
+        //top panel for header and toolbar
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.Y_AXIS));
+
+        //header
+        JPanel diffPanelHeader = new JPanel(new BorderLayout());
         diffPanelHeader.setBorder(JBUI.Borders.empty(12));
-        diffPanelHeader.add(headerLabel);
+        //huhh.diffPanelHeader.setLayout(new BoxLayout(diffPanelHeader, BoxLayout.Y_AXIS));
+
+        //header - icon
+        Icon infoIcon = AllIcons.General.InformationDialog;
+        Icon smallInfoIcon = IconUtil.scale(infoIcon, null, 0.8f);
+
+        JLabel headerLabel = new JBLabel("Diff Preview")//, smallInfoIcon, JBLabel.LEFT);
+                .withFont(JBFont.h3());
+        headerLabel.setIcon(smallInfoIcon);
+
+        diffPanelHeader.setBorder(JBUI.Borders.empty(12));
+        diffPanelHeader.add(headerLabel, BorderLayout.WEST);
         comparisonPanel.add(diffPanelHeader);
+        comparisonPanel.add(new JSeparator());
 
 
-        JSeparator separator = new JSeparator(SwingConstants.HORIZONTAL);
-        comparisonPanel.add(separator);
+        //JToolBar toolBar = new JToolBar();
+        //toolBar.setFloatable(false);
+        //JButton up = new JButton("", AllIcons.General.ArrowUp);
+        //toolBar.add(up);
 
-        JPanel cardsPanel = new JPanel(new GridLayout(1, 2, 8, 0));
+        //diffPanelHeader.add(toolBar);
+
+        JPanel cardsPanel = new JPanel();
         cardsPanel.setBorder(JBUI.Borders.empty(12));
         cardsPanel.setLayout(new BoxLayout(cardsPanel, BoxLayout.X_AXIS)); //horizontal flow
 
-        //red intellij
-        Color red = JBColor.RED;
-        Color green = JBColor.GREEN;
+        //original card color
+        Color originalColor = JBColor.namedColor(
+                "Refactoring.Original.Background",
+                new JBColor(
+                        new Color(255, 235, 235), //light mode
+                        new Color(64, 41, 41)) //dark mode
+        );
 
-        cardsPanel.add(
-                createCard(
-                        new JLabel("Original Duplicate Code", AllIcons.General.BalloonWarning, JBLabel.LEFT),
-                        info.beforeDiffText,
-                        new Color(64, 41, 41) //switch to JBUI Colors
-                ));
+        Color extractedColor = JBColor.namedColor(
+                "Refactoring.Extracted.Background",
+                new JBColor(
+                        new Color(232, 248, 237), //light mode
+                        new Color(37, 54, 49)) //dark mode
+        );
 
-        cardsPanel.add(
-                createCard(
-                        new JLabel("Extracted (Proposed Refactoring)",  AllIcons.General.GreenCheckmark, JBLabel.LEFT),
-                        info.afterDiffText,
-                        new Color(37, 54, 49) //switch to JBUI colors
-                ));
+        Color originalBorderColor = JBColor.namedColor(
+                "Refactoring.Original.Border",
+                new JBColor(
+                        new Color(220, 170, 170), //light mode
+                        new Color(110, 70, 70)) //dark mode
+        );
+
+        Color extractedBorderColor = JBColor.namedColor(
+                "Refactoring.Extracted.Border",
+                new JBColor(
+                        new Color(160, 210, 170), //light mode
+                        new Color(70, 110, 85)) //dark mode
+        );
+
+        JComponent original = createCard(
+                project,
+                new JLabel("Original Duplicate Code", AllIcons.General.Error, JBLabel.LEFT),
+                info.beforeDiffText,
+                originalColor,
+                originalBorderColor
+        );
+
+        //original.setBorderColor(originalBorder);
+        cardsPanel.add(original);
+
+        cardsPanel.add(Box.createHorizontalStrut(12));
+
+        JComponent extracted = createCard(
+                project,
+                new JLabel("Extracted (Proposed Refactoring)",  AllIcons.General.GreenCheckmark, JBLabel.LEFT),
+                info.afterDiffText,
+                extractedColor,
+                extractedBorderColor
+        );
+
+        cardsPanel.add(extracted);
 
         comparisonPanel.add(cardsPanel);
 
@@ -727,15 +823,23 @@ final class RefactoringSuggestionPanel {
     static class RoundedPanel extends JPanel {
 
         private final int radius;
+        private Color borderColor = JBColor.border();
 
         public RoundedPanel(int radius) {
             this.radius = radius;
             setOpaque(false);
         }
 
+        public void setBorderColor(Color borderColor){
+            this.borderColor = borderColor;
+            repaint();
+        }
+
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = (Graphics2D) g.create();
+
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,  RenderingHints.VALUE_ANTIALIAS_ON);
 
             g2.setColor(getBackground());
 
@@ -744,6 +848,16 @@ final class RefactoringSuggestionPanel {
                     0,
                     getWidth(),
                     getHeight(),
+                    radius,
+                    radius
+            );
+
+            g2.setColor(borderColor);
+            g2.drawRoundRect(
+                    0,
+                    0,
+                    getWidth() - 1,
+                    getHeight() - 1,
                     radius,
                     radius
             );
