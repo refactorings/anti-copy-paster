@@ -2699,7 +2699,8 @@ The fragment usefulness analyzer failed before compilation.%s
                     -1,
                     verified ? "Verified" : "Verifying",
                     "Extract Method",
-                    metadataRows
+                    metadataRows,
+                    false
             );
         }
     }
@@ -2820,7 +2821,8 @@ The fragment usefulness analyzer failed before compilation.%s
                 pastedLine,
                 verified ? "Verified" : "Verifying",
                 diffTitle,
-                metadataRows
+                metadataRows,
+                false
         );
     }
 

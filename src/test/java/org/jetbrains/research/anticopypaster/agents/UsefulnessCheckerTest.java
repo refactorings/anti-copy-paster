@@ -1,6 +1,7 @@
 package org.jetbrains.research.anticopypaster.agents;
 
 import com.intellij.testFramework.LightPlatformTestCase;
+import org.junit.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,6 +32,7 @@ public class UsefulnessCheckerTest extends LightPlatformTestCase {
         }
     }
 
+    @Test
     public void testAnalyzeUsesExactTargetMethodSignatureForOverloads() {
         String beforeSource = """
                 package org.jhotdraw.contrib;
@@ -159,6 +161,7 @@ public class UsefulnessCheckerTest extends LightPlatformTestCase {
         assertTrue(result.notes.contains("targetPairs=1"));
     }
 
+    @Test
     public void testAnalyzeReturnsNullWhenAfterSourceHasSyntaxErrors() {
         String beforeSource = """
                 class Demo {

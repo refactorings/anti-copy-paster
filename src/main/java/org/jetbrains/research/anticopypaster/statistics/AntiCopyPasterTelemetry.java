@@ -10,6 +10,7 @@ import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationGroup;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.progress.*;
 import com.intellij.openapi.progress.impl.BackgroundableProcessIndicator;
@@ -27,7 +28,6 @@ import java.util.UUID;
 import java.util.zip.GZIPInputStream;
 
 import com.intellij.openapi.project.Project;
-import com.intellij.util.progress.ProgressVisibilityManager;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.MongoException;
 import com.mongodb.client.MongoClients;
@@ -68,6 +68,10 @@ public class AntiCopyPasterTelemetry implements ProjectActivity {
     @Nullable
     @Override
     public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
+        if (ApplicationManager.getApplication().isUnitTestMode()) {
+            return Unit.INSTANCE;
+        }
+
         ProjectSettingsState settings = ProjectSettingsState.getInstance(project);
         Thread predserver = new Thread(new predHolder());
         predserver.start();
