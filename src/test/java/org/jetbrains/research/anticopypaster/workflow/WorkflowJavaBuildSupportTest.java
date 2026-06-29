@@ -81,6 +81,42 @@ public class WorkflowJavaBuildSupportTest extends LightJavaCodeInsightFixtureTes
         assertTrue(CrossFileTestingSupport.isJavaVersionMismatchSkip(result));
     }
 
+    public void testCrossFileTestingRecognizesEvoSuiteUnsupportedMajorSkip() {
+        testing.TestResult result = new testing.TestResult();
+        result.raw = """
+                java.lang.IllegalArgumentException: Unsupported class file major version 67
+                    at org.evosuite.shaded.org.objectweb.asm.ClassReader.<init>(ClassReader.java:199)
+                """;
+
+        assertTrue(CrossFileTestingSupport.isJavaVersionMismatchSkip(result));
+    }
+
+    public void testCrossFileTestingRecognizesEvoSuiteGenerationFailureSkip() {
+        testing.TestResult result = new testing.TestResult();
+        result.raw = """
+                [TEST_SKIPPED]
+                status=tests_skipped
+                reason=evosuite_generation_failed
+                * Error while initializing target class: No converter available
+                com.thoughtworks.xstream.converters.ConversionException: No converter available
+                """;
+
+        assertTrue(CrossFileTestingSupport.isTestingInfrastructureSkip(result));
+    }
+
+    public void testCrossFileTestingRecognizesEvoSuiteInaccessibleObjectFailureSkip() {
+        testing.TestResult result = new testing.TestResult();
+        result.raw = """
+                * EvoSuite 1.2.0
+                message[1]: Unable to make private void java.util.ArrayList.readObject(java.io.ObjectInputStream)
+                accessible: module java.base does not "opens java.util" to unnamed module
+                com.thoughtworks.xstream.converters.ConversionException: No converter available
+                java.lang.reflect.InaccessibleObjectException
+                """;
+
+        assertTrue(CrossFileTestingSupport.isTestingInfrastructureSkip(result));
+    }
+
     public void testSelectCompatibleJavaExecutableSkipsJava8ForJava11Target() {
         String selected = WorkflowJavaBuildSupport.selectCompatibleJavaExecutable(
                 List.of(
@@ -92,6 +128,19 @@ public class WorkflowJavaBuildSupportTest extends LightJavaCodeInsightFixtureTes
         );
 
         assertEquals("/jdk11/bin/java", selected);
+    }
+
+    public void testSelectCompatibleJavaExecutablePrefersLowestCompatibleRuntime() {
+        String selected = WorkflowJavaBuildSupport.selectCompatibleJavaExecutable(
+                List.of(
+                        new WorkflowJavaBuildSupport.JavaRuntimeCandidate("/jdk23/bin/java", 23),
+                        new WorkflowJavaBuildSupport.JavaRuntimeCandidate("/jdk17/bin/java", 17),
+                        new WorkflowJavaBuildSupport.JavaRuntimeCandidate("/jdk21/bin/java", 21)
+                ),
+                17
+        );
+
+        assertEquals("/jdk17/bin/java", selected);
     }
 
     private static void writeMinimalClassHeader(Path classFile, int classFileMajor) throws Exception {

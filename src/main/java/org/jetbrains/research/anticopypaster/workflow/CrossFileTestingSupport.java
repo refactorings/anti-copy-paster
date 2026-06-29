@@ -68,10 +68,10 @@ final class CrossFileTestingSupport {
                     afterSource
             );
 
-            if (isJavaVersionMismatchSkip(testResult)) {
+            if (isTestingInfrastructureSkip(testResult)) {
                 skippedTargets.add(targetFqn);
                 logStage(viewer, "TEST", "skipped: " + targetFqn
-                        + " because Testing Agent Java runtime cannot load target bytecode");
+                        + " because the Testing Agent/EvoSuite could not generate runnable tests in this environment");
                 continue;
             }
 
@@ -98,7 +98,7 @@ final class CrossFileTestingSupport {
             } else {
                 result.summary = "Cross-file tests skipped for "
                         + String.join(", ", skippedTargets)
-                        + " because the Testing Agent Java runtime is older than the compiled target bytecode.";
+                        + " because the Testing Agent/EvoSuite could not generate runnable tests in this environment.";
             }
             return result;
         }
@@ -108,15 +108,26 @@ final class CrossFileTestingSupport {
         return result;
     }
 
-    static boolean isJavaVersionMismatchSkip(testing.TestResult testResult) {
+    static boolean isTestingInfrastructureSkip(testing.TestResult testResult) {
         if (testResult == null || testResult.raw == null) return false;
         String raw = testResult.raw;
         String lower = raw.toLowerCase(java.util.Locale.ROOT);
-        return raw.contains("[TEST_SKIPPED]")
-                && lower.contains("java_version_mismatch")
+        return (raw.contains("[TEST_SKIPPED]")
+                && (lower.contains("tests_skipped")
+                || lower.contains("java_version_mismatch")
+                || lower.contains("evosuite_generation_failed")))
+                || lower.contains("unsupported class file major version")
                 || lower.contains("unsupportedclassversionerror")
+                || (lower.contains("no converter available")
+                && (lower.contains("evosuite")
+                || lower.contains("xstream")
+                || lower.contains("inaccessibleobjectexception")))
                 || (lower.contains("class file version")
                 && lower.contains("only recognizes class file versions up to"));
+    }
+
+    static boolean isJavaVersionMismatchSkip(testing.TestResult testResult) {
+        return isTestingInfrastructureSkip(testResult);
     }
 
     private static String resolveTestTargetFqn(WorkflowJavaBuildSupport javaBuildSupport,

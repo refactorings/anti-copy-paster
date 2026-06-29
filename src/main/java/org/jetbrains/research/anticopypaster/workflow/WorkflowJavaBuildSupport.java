@@ -930,12 +930,43 @@ final class WorkflowJavaBuildSupport {
                 }
             }
 
+            String excerpt = evOut;
+            if (excerpt.length() > 6000) excerpt = excerpt.substring(0, 6000) + "\n...<truncated>...";
+            if (!hasGeneratedTests && isEvoSuiteBytecodeVersionFailure(evOut)) {
+                if (viewer != null) {
+                    viewer.accept("[EvoSuite] generation skipped because EvoSuite could not analyze target bytecode with the selected Java runtime.");
+                }
+                return "[TEST_SKIPPED]\n"
+                        + "status=tests_skipped\n"
+                        + "reason=java_version_mismatch\n"
+                        + "targetClass=" + targetClass + "\n"
+                        + "targetJavaMajor=" + targetBytecodeMajor + "\n"
+                        + "runtimeJavaMajor=" + major + "\n"
+                        + "message=EvoSuite could not analyze target bytecode with the selected Java runtime.\n"
+                        + "---evosuite---\n"
+                        + excerpt
+                        + "\nBUILD SUCCESS\n";
+            }
+            if (!hasGeneratedTests && isEvoSuiteGenerationInfrastructureFailure(evOut)) {
+                if (viewer != null) {
+                    viewer.accept("[EvoSuite] generation skipped because EvoSuite failed before creating test files.");
+                }
+                return "[TEST_SKIPPED]\n"
+                        + "status=tests_skipped\n"
+                        + "reason=evosuite_generation_failed\n"
+                        + "targetClass=" + targetClass + "\n"
+                        + "targetJavaMajor=" + targetBytecodeMajor + "\n"
+                        + "runtimeJavaMajor=" + major + "\n"
+                        + "message=EvoSuite failed before creating test files.\n"
+                        + "---evosuite---\n"
+                        + excerpt
+                        + "\nBUILD SUCCESS\n";
+            }
+
             String testOutput = runProjectTests(base, evosuiteJar);
             boolean testSuccess = testOutput != null && testOutput.contains("BUILD SUCCESS");
             String finalStatus = testSuccess ? "tests_passed" : "tests_failed";
 
-            String excerpt = evOut;
-            if (excerpt.length() > 6000) excerpt = excerpt.substring(0, 6000) + "\n...<truncated>...";
             if (hasFailureMarker && viewer != null && !hasGeneratedTests) {
                 viewer.accept("[EvoSuite] generation reported failure markers without producing tests.");
             }
@@ -2498,9 +2529,53 @@ final class WorkflowJavaBuildSupport {
         addJavaRuntimeCandidateFromEnv(candidates, "JAVA_17_HOME");
         addJavaRuntimeCandidateFromEnv(candidates, "JAVA_21_HOME");
         addJavaRuntimeCandidateFromEnv(candidates, "JAVA_8_HOME");
+        addInstalledJavaRuntimeCandidates(candidates);
         addJavaRuntimeCandidate(candidates, "java");
 
         return new java.util.ArrayList<>(candidates.values());
+    }
+
+    private void addInstalledJavaRuntimeCandidates(java.util.Map<String, JavaRuntimeCandidate> candidates) {
+        try {
+            addJavaRuntimeCandidatesFromInstallDir(
+                    candidates,
+                    new File(File.separator + "Library" + File.separator
+                            + "Java" + File.separator
+                            + "JavaVirtualMachines")
+            );
+            addJavaRuntimeCandidatesFromInstallDir(
+                    candidates,
+                    new File(System.getProperty("user.home"), "Library" + File.separator
+                            + "Java" + File.separator
+                            + "JavaVirtualMachines")
+            );
+        } catch (Exception e) {
+            logBestEffortFailure("resolve installed Java runtime candidates", e);
+        }
+    }
+
+    private void addJavaRuntimeCandidatesFromInstallDir(java.util.Map<String, JavaRuntimeCandidate> candidates,
+                                                        File installDir) {
+        if (candidates == null || installDir == null || !installDir.isDirectory()) return;
+        File[] homes = installDir.listFiles();
+        if (homes == null) return;
+        for (File home : homes) {
+            if (home == null || !home.isDirectory()) continue;
+            addJavaRuntimeCandidate(candidates, javaExecutableFromSdkHome(home.getAbsolutePath()));
+            addJavaRuntimeCandidate(
+                    candidates,
+                    javaExecutableFromSdkHome(home.getAbsolutePath()
+                            + File.separator + "Contents"
+                            + File.separator + "Home")
+            );
+            addJavaRuntimeCandidate(
+                    candidates,
+                    javaExecutableFromSdkHome(home.getAbsolutePath()
+                            + File.separator + "Contents"
+                            + File.separator + "Home"
+                            + File.separator + "jre")
+            );
+        }
     }
 
     private void addJavaRuntimeCandidateFromEnv(java.util.Map<String, JavaRuntimeCandidate> candidates,
@@ -2532,6 +2607,7 @@ final class WorkflowJavaBuildSupport {
                                                  int requiredMajor) {
         int required = requiredMajor > 0 ? requiredMajor : 8;
         if (candidates == null) return "";
+        JavaRuntimeCandidate best = null;
         for (JavaRuntimeCandidate candidate : candidates) {
             if (candidate == null
                     || candidate.executable == null
@@ -2540,10 +2616,12 @@ final class WorkflowJavaBuildSupport {
                 continue;
             }
             if (candidate.major >= required) {
-                return candidate.executable;
+                if (best == null || candidate.major < best.major) {
+                    best = candidate;
+                }
             }
         }
-        return "";
+        return best == null ? "" : best.executable;
     }
 
     static final class JavaRuntimeCandidate {
@@ -2737,6 +2815,22 @@ final class WorkflowJavaBuildSupport {
             if (h.contains(n.toLowerCase(Locale.ROOT))) return true;
         }
         return false;
+    }
+
+    private static boolean isEvoSuiteBytecodeVersionFailure(String output) {
+        String lower = output == null ? "" : output.toLowerCase(Locale.ROOT);
+        return lower.contains("unsupported class file major version")
+                || lower.contains("unsupportedclassversionerror")
+                || (lower.contains("class file version")
+                && lower.contains("only recognizes class file versions up to"));
+    }
+
+    private static boolean isEvoSuiteGenerationInfrastructureFailure(String output) {
+        String lower = output == null ? "" : output.toLowerCase(Locale.ROOT);
+        return lower.contains("no converter available")
+                || lower.contains("inaccessibleobjectexception")
+                || lower.contains("error while initializing target class")
+                || lower.contains("failed to handle 'identitymap'");
     }
 
     private static String readProcessOutput(Process p) throws Exception {

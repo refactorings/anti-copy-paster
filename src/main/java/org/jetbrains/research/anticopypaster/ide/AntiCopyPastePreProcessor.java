@@ -48,7 +48,6 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     private static final String SCOPE_MULTIPLE_FILES = "Multiple Files";
     private static final String SCOPE_CROSS_FILES = "Cross Files";
     private static final int CROSS_FILE_DEFAULT_MAX_FILES = 20;
-    private static final long CROSS_FILE_DEFAULT_MAX_CHARS = 200_000L;
 
     private final Timer timer = new Timer(true);
     private final ArrayList<RefactoringNotificationTask> refactoringNotificationTask = new ArrayList<>();
@@ -352,26 +351,21 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                                                             String sourceDescription) {
         if (files == null || files.isEmpty()) return new ArrayList<>();
         ArrayList<VirtualFile> limited = new ArrayList<>();
-        long charBudgetUsed = 0L;
         int skipped = 0;
         for (VirtualFile file : files) {
             if (file == null || !file.isValid() || file.isDirectory()) {
                 skipped++;
                 continue;
             }
-            long estimatedChars = Math.max(0L, file.getLength());
             boolean overFileLimit = limited.size() >= CROSS_FILE_DEFAULT_MAX_FILES;
-            boolean overCharBudget = !limited.isEmpty()
-                    && charBudgetUsed + estimatedChars > CROSS_FILE_DEFAULT_MAX_CHARS;
-            if (overFileLimit || overCharBudget) {
+            if (overFileLimit) {
                 skipped++;
                 continue;
             }
             limited.add(file);
-            charBudgetUsed += estimatedChars;
         }
         if (skipped > 0) {
-            warnCrossFileDefaultsLimited(project, sourceDescription, limited.size(), files.size(), charBudgetUsed);
+            warnCrossFileDefaultsLimited(project, sourceDescription, limited.size(), files.size());
         }
         return limited;
     }
@@ -379,14 +373,11 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     private static void warnCrossFileDefaultsLimited(Project project,
                                                      String sourceDescription,
                                                      int included,
-                                                     int total,
-                                                     long estimatedChars) {
+                                                     int total) {
         String message = "Cross Files default selection from "
                 + (sourceDescription == null || sourceDescription.isBlank() ? "defaults" : sourceDescription)
                 + " was limited to " + included + " of " + total
-                + " Java file(s) (max " + CROSS_FILE_DEFAULT_MAX_FILES
-                + ", approx char budget " + CROSS_FILE_DEFAULT_MAX_CHARS
-                + "; selected approx chars=" + estimatedChars + ").";
+                + " Java file(s) (max " + CROSS_FILE_DEFAULT_MAX_FILES + ").";
         LOG.warn(message);
         if (project != null && !project.isDisposed()) {
             Notification notification = new Notification(

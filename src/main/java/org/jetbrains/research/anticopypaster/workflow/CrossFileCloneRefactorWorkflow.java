@@ -243,6 +243,11 @@ final class CrossFileCloneRefactorWorkflow {
                     String detail = compileResult == null ? "Compilation did not return a result." : compileResult.summary;
                     finalFailure = "Cross Files refactor was not applied because compilation failed. " + detail;
                     logStage(viewer, "COMPILE", "failed: " + detail);
+                    showNotification(
+                            project,
+                            "[Clone] Cross Files compilation failed (attempt " + attempt + ")\n" + detail,
+                            NotificationType.ERROR
+                    );
                     retryFeedback = CrossFileRefactoringSupport.buildRetryFeedback(
                             "The previous refactoring attempt failed compilation.",
                             CrossFileRefactoringSupport.buildCompileRetryDetail(compileResult),
