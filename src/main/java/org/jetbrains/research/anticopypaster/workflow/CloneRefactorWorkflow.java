@@ -2763,7 +2763,7 @@ The fragment usefulness analyzer failed before compilation.%s
                 + "Usefulness checks, isolated compilation, and tests passed.\n"
                 + "The Apply button is enabled."
                 : "Verification status:\n"
-                + "AntiCopyPaster is checking usefulness, isolated compilation, and tests.\n"
+                + "CLONE is checking usefulness, isolated compilation, and tests.\n"
                 + "The Apply button will stay disabled until verification passes.";
 
         String beforeDiffText = buildFocusedFeedbackRefactoredCode(project, fileName, before, before, snapshots);
@@ -2863,7 +2863,7 @@ Revise the Extract Method refactoring according to the user's instructions. Pres
                                                     int sourceLine,
                                                     int pastedLine) {
         StringBuilder sb = new StringBuilder();
-        sb.append("AntiCopyPaster found a ");
+        sb.append("CLONE found a ");
         sb.append((cloneType == null || cloneType.isBlank()) ? "clone" : cloneType);
         sb.append(" in this file.");
 
