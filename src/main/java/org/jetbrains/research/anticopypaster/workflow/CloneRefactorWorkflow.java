@@ -2748,17 +2748,23 @@ The fragment usefulness analyzer failed before compilation.%s
         String detectionExplanation = buildDetectionExplanation(
                 cloneType,
                 detectedMethodDisplayName,
+                pastedMethodDisplayName,
                 sourceLine,
                 pastedLine
         );
-        String refactoringExplanation = "This suggestion extracts the common logic into "
+        String refactoringExplanation = "Suggested refactoring:\n"
+                + "Extract the shared calculation logic into a new helper method named\n"
                 + helperMethodText
-                + " and replaces the original clone locations with calls to the extracted method.";
+                + ".\n"
+                + "This would replace both duplicate code blocks with calls to the new method,\n"
+                + "reducing repeated code while keeping the same behavior.";
         String usefulnessExplanation = verified
-                ? "AntiCopyPaster recommends it because the usefulness checks found shared delegation, "
-                + "and the proposed source compiled and passed tests."
-                : "AntiCopyPaster is verifying this proposal with usefulness checks, isolated compilation, and tests. "
-                + "Apply is enabled only after verification passes.";
+                ? "Verification status:\n"
+                + "Usefulness checks, isolated compilation, and tests passed.\n"
+                + "The Apply button is enabled."
+                : "Verification status:\n"
+                + "AntiCopyPaster is checking usefulness, isolated compilation, and tests.\n"
+                + "The Apply button will stay disabled until verification passes.";
 
         String beforeDiffText = buildFocusedFeedbackRefactoredCode(project, fileName, before, before, snapshots);
         String afterDiffText = buildFocusedFeedbackRefactoredCode(project, fileName, before, after, snapshots);
@@ -2853,21 +2859,30 @@ Revise the Extract Method refactoring according to the user's instructions. Pres
 
     private static String buildDetectionExplanation(String cloneType,
                                                     String existingMethodDisplayName,
+                                                    String pastedMethodDisplayName,
                                                     int sourceLine,
                                                     int pastedLine) {
         StringBuilder sb = new StringBuilder();
-        sb.append("AntiCopyPaster found that the code you just pasted is a ");
+        sb.append("AntiCopyPaster found a ");
         sb.append((cloneType == null || cloneType.isBlank()) ? "clone" : cloneType);
-        sb.append(" of ");
-        sb.append((existingMethodDisplayName == null || existingMethodDisplayName.isBlank())
-                ? "an existing method"
-                : "the existing method " + existingMethodDisplayName);
-        if (sourceLine > 0) {
-            sb.append(" on line ").append(sourceLine);
-        }
-        sb.append(".");
-        if (pastedLine > 0) {
-            sb.append(" The pasted clone starts on line ").append(pastedLine).append(".");
+        sb.append(" in this file.");
+
+        if (pastedLine > 0 || sourceLine > 0) {
+            sb.append("\nThe pasted code");
+            if (pastedMethodDisplayName != null && !pastedMethodDisplayName.isBlank()) {
+                sb.append(" in `").append(pastedMethodDisplayName).append("`");
+            }
+            if (pastedLine > 0) {
+                sb.append(" starts on line ").append(pastedLine);
+            }
+            sb.append(" and matches existing code");
+            if (existingMethodDisplayName != null && !existingMethodDisplayName.isBlank()) {
+                sb.append(" in ").append(existingMethodDisplayName);
+            }
+            if (sourceLine > 0) {
+                sb.append(" starting on line ").append(sourceLine);
+            }
+            sb.append(".");
         }
         return sb.toString();
     }
