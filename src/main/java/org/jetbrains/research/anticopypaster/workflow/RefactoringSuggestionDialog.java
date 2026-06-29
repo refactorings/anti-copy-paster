@@ -33,14 +33,8 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.JTextArea;
-import java.awt.BorderLayout;
-import java.awt.Cursor;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
+import javax.swing.BorderFactory;
+import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -170,7 +164,7 @@ final class RefactoringSuggestionDialog {
     }
 
     private static Decision showOnEdt(Project project, SuggestionInfo info) {
-        Disposable diffDisposable = Disposer.newDisposable("AntiCopyPasterSuggestionDiff");
+        Disposable diffDisposable = Disposer.newDisposable("CLONESuggestionDiff");
         try {
             DiffRequestPanel diffPanel = createDiffPanel(project, diffDisposable, info);
             SuggestionDialog dialog = new SuggestionDialog(project, info, diffPanel);
@@ -232,7 +226,7 @@ final class RefactoringSuggestionDialog {
 
         DialogWrapper dialog = new DialogWrapper(project, true) {
             {
-                setTitle("Edit Refactoring Instructions");
+                setTitle("Edit instructions for regeneration");
                 setOKButtonText("Regenerate");
                 setCancelButtonText("Cancel");
                 init();
@@ -245,7 +239,7 @@ final class RefactoringSuggestionDialog {
 
                 JTextArea prompt = nonEditableTextArea(
                         "Describe what should change in the refactoring suggestion. " +
-                                "AntiCopyPaster will send this feedback to the refactoring agent and regenerate the proposal."
+                                "CLONE will send this feedback to the refactoring agent and regenerate the proposal."
                 );
                 panel.add(prompt, BorderLayout.NORTH);
 
@@ -329,10 +323,28 @@ final class RefactoringSuggestionDialog {
             panel.setMinimumSize(new Dimension(900, 620));
 
             panel.add(createTopPanel(), BorderLayout.NORTH);
-            panel.add(diffPanel.getComponent(), BorderLayout.CENTER);
+            panel.add(createDiffCardsPanel(), BorderLayout.CENTER); //CHANGE: panel.add(diffPanel.getComponent(), BorderLayout.CENTER);
             panel.add(createMetadataPanel(), BorderLayout.SOUTH);
 
             return panel;
+        }
+
+        private JComponent createDiffCardsPanel(){
+            JPanel wrapper = new JPanel(new BorderLayout());
+
+            JPanel comparisonPanel = new JPanel(new GridLayout(1, 2, 8, 0));
+            comparisonPanel.setBorder(JBUI.Borders.empty(8));
+            comparisonPanel.add(createCard(new JLabel("Original Duplicate Code")));
+            comparisonPanel.add(createCard(new JLabel("Extracted (Proposed Refactoring)")));
+            return comparisonPanel;
+        }
+
+        private JComponent createCard(JLabel header){
+            JPanel cardPanel = new JPanel(new BorderLayout());
+            cardPanel.setBorder(JBUI.Borders.empty(12));
+            cardPanel.add(header, BorderLayout.WEST);
+            //add code snippet
+            return cardPanel;
         }
 
         private JComponent createTopPanel() {
@@ -409,6 +421,19 @@ final class RefactoringSuggestionDialog {
             wrapper.add(details);
             return wrapper;
         }
+
+        /*
+
+        private static DiffRequestPanel createDiffRequestPanel() {
+            DiffRequestPanel panel = new DiffRequestPanel() {
+            };
+            panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+            panel.setBorder(JBUI.Borders.empty(8, 12, 8, 12));
+
+            return panel;
+
+        }
+         */
 
         private String detailsTitle(boolean expanded) {
             String arrow = expanded ? "v" : ">";
@@ -507,7 +532,7 @@ final class RefactoringSuggestionDialog {
                                 Messages.showInfoMessage(
                                         project,
                                         "See README.md, section \"Refactoring Suggestion Panel\".",
-                                        "AntiCopyPaster Help"
+                                        "CLONE Help"
                                 );
                             }
                         }
