@@ -183,6 +183,24 @@ If the response takes longer than 30 seconds, consider using a smaller model or 
 
 ---
 
+### Refactoring Suggestion Panel
+
+After AntiCopyPaster verifies a generated refactoring, it opens a refactoring suggestion panel before modifying the file.
+The panel is designed to make the recommendation auditable:
+
+- The header identifies the suggestion and can be dismissed with the standard close button.
+- The explanation states the detected clone type, the existing clone location, the pasted location, and the extracted-method summary.
+- The side-by-side diff shows the original clone code on the left and the proposed extracted method plus replacement call sites on the right.
+- The collapsed details section records provenance such as clone type, source and pasted locations, target methods, selected ranges, detection reason, and verification status.
+- **Apply** writes the verified refactoring to the source file.
+- **Edit...** lets you give feedback to the refactoring agent and regenerate the proposal when retry attempts remain.
+- **Cancel** closes the suggestion without changing the file.
+- **?** opens this help section.
+
+AntiCopyPaster records Apply, Edit, Cancel, and Help interactions in project-level usage statistics.
+
+---
+
 ### Using Aider for Naming Suggestions
 
 1. In **AntiCopyPaster Settings**, set **Aider** as the *Name recommendation model*.

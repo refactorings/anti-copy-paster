@@ -11,6 +11,7 @@ import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.RegisterToolWindowTask;
 import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.openapi.wm.ToolWindowAnchor;
 import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.content.Content;
@@ -32,6 +33,7 @@ import java.util.function.Consumer;
 
 final class WorkflowUiSupport {
     private static final DateTimeFormatter LOG_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+    private static final String LOGS_FALLBACK_TOOL_WINDOW_ID = "AntiCopyPaster Logs";
     private static final Map<String, ConsoleView> CONSOLE_BY_PROJECT_AND_TITLE = new ConcurrentHashMap<>();
     private static final java.util.concurrent.atomic.AtomicReference<String> STDOUT_LAST_STAGE =
             new java.util.concurrent.atomic.AtomicReference<>();
@@ -112,9 +114,15 @@ final class WorkflowUiSupport {
             ToolWindowManager twm = ToolWindowManager.getInstance(project);
             ToolWindow toolWindow = twm.getToolWindow(ToolWindowId.RUN);
             if (toolWindow == null) {
-                toolWindow = twm.getToolWindow("AntiCopyPaster");
+                toolWindow = twm.getToolWindow(LOGS_FALLBACK_TOOL_WINDOW_ID);
                 if (toolWindow == null) {
-                    toolWindow = twm.registerToolWindow(RegisterToolWindowTask.notClosable("AntiCopyPaster"));
+                    toolWindow = twm.registerToolWindow(RegisterToolWindowTask.notClosable(LOGS_FALLBACK_TOOL_WINDOW_ID));
+                }
+                try {
+                    if (toolWindow.getAnchor() != ToolWindowAnchor.BOTTOM) {
+                        toolWindow.setAnchor(ToolWindowAnchor.BOTTOM, null);
+                    }
+                } catch (Throwable ignored) {
                 }
             }
 

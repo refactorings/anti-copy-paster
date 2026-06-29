@@ -33,14 +33,8 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 import javax.swing.JTextArea;
-import java.awt.BorderLayout;
-import java.awt.Cursor;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
+import javax.swing.BorderFactory;
+import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -48,6 +42,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 final class RefactoringSuggestionDialog {
     private static final int EDIT_EXIT_CODE = DialogWrapper.NEXT_USER_EXIT_CODE;
+    private static final int EDIT_CODE_EXIT_CODE = DialogWrapper.NEXT_USER_EXIT_CODE + 1;
     private static final String HELP_URL =
             "https://github.com/JetBrains-Research/anti-copy-paster#refactoring-suggestion-panel";
 
@@ -57,28 +52,36 @@ final class RefactoringSuggestionDialog {
     enum Choice {
         APPLY,
         EDIT,
+        EDIT_CODE,
         CANCEL
     }
 
     static final class Decision {
         final Choice choice;
         final String editInstructions;
+        final String editedCode;
 
-        private Decision(Choice choice, String editInstructions) {
+        private Decision(Choice choice, String editInstructions, String editedCode) {
             this.choice = choice == null ? Choice.CANCEL : choice;
             this.editInstructions = editInstructions == null ? "" : editInstructions;
+            this.editedCode = editedCode == null ? "" : editedCode;
         }
 
         static Decision apply() {
-            return new Decision(Choice.APPLY, "");
+            return new Decision(Choice.APPLY, "", "");
         }
 
         static Decision edit(String editInstructions) {
-            return new Decision(Choice.EDIT, editInstructions);
+            return new Decision(Choice.EDIT, editInstructions, "");
         }
 
+        static Decision editCode(String editedCode) {
+            return new Decision(Choice.EDIT_CODE, "", editedCode);
+        }
+
+
         static Decision cancel() {
-            return new Decision(Choice.CANCEL, "");
+            return new Decision(Choice.CANCEL, "", "");
         }
     }
 
@@ -101,6 +104,7 @@ final class RefactoringSuggestionDialog {
         final String confidenceLabel;
         final String diffTitle;
         final LinkedHashMap<String, String> metadataRows;
+        final boolean refactoringFailed; // Boolean to determine if refactoring failed and therefore if buttons must be disabled
 
         SuggestionInfo(String fileName,
                        VirtualFile file,
@@ -119,7 +123,7 @@ final class RefactoringSuggestionDialog {
                        int pastedLine,
                        String confidenceLabel,
                        String diffTitle,
-                       LinkedHashMap<String, String> metadataRows) {
+                       LinkedHashMap<String, String> metadataRows, boolean refactoringFailed) {
             this.fileName = safe(fileName);
             this.file = file;
             this.cloneType = safe(cloneType);
@@ -138,6 +142,7 @@ final class RefactoringSuggestionDialog {
             this.confidenceLabel = safe(confidenceLabel);
             this.diffTitle = safe(diffTitle);
             this.metadataRows = metadataRows == null ? new LinkedHashMap<>() : metadataRows;
+            this.refactoringFailed = refactoringFailed;
         }
     }
 
@@ -178,6 +183,15 @@ final class RefactoringSuggestionDialog {
                 }
                 return Decision.edit(instructions);
             }
+
+            if (exitCode == EDIT_CODE_EXIT_CODE) {
+                String editedCode = dialog.getEditedCode();
+                if (editedCode == null || editedCode.isBlank()) {
+                    return Decision.cancel();
+                }
+                return Decision.editCode(editedCode);
+            }
+
 
             return Decision.cancel();
         } catch (Throwable t) {
@@ -240,10 +254,50 @@ final class RefactoringSuggestionDialog {
         return ok ? area.getText().trim() : "";
     }
 
+
+    // New edit code button opens an editable text box with the "after" code from the diff, allowing the user
+    // to directly edit the code before adding it to their program
+    private static String showCodeEditDialog(Project project, String initialCode) {
+        JTextArea area = new JTextArea(20, 90);
+        area.setLineWrap(false);
+        area.setFont(UIUtil.getLabelFont().deriveFont(Font.PLAIN, 13f));
+        area.setText(initialCode == null ? "" : initialCode);
+
+        DialogWrapper dialog = new DialogWrapper(project, true) {
+            {
+                setTitle("Edit Proposed Code");
+                setOKButtonText("Use This Code");
+                setCancelButtonText("Back");
+                init();
+            }
+
+            @Override
+            protected @Nullable JComponent createCenterPanel() {
+                JPanel panel = new JPanel(new BorderLayout());
+                panel.setBorder(JBUI.Borders.empty(8));
+
+                JTextArea prompt = nonEditableTextArea(
+                        "Make any changes to the refactored code below, then click \"Use This Code\" " +
+                                "to apply your edited version instead of the original suggestion."
+                );
+                panel.add(prompt, BorderLayout.NORTH);
+
+                JScrollPane scrollPane = new JScrollPane(area);
+                scrollPane.setPreferredSize(new Dimension(820, 420));
+                panel.add(scrollPane, BorderLayout.CENTER);
+                return panel;
+            }
+        };
+
+        boolean ok = dialog.showAndGet();
+        return ok ? area.getText() : "";
+    }
+
     private static final class SuggestionDialog extends DialogWrapper {
         private final Project project;
         private final SuggestionInfo info;
         private final DiffRequestPanel diffPanel;
+        private String editedCode = "";
 
         private SuggestionDialog(Project project, SuggestionInfo info, DiffRequestPanel diffPanel) {
             super(project, true);
@@ -256,6 +310,12 @@ final class RefactoringSuggestionDialog {
             init();
         }
 
+        // Simple getter method for editedCode variable
+        public String getEditedCode() {
+            return editedCode;
+        }
+
+
         @Override
         protected @Nullable JComponent createCenterPanel() {
             JPanel panel = new JPanel(new BorderLayout());
@@ -263,10 +323,28 @@ final class RefactoringSuggestionDialog {
             panel.setMinimumSize(new Dimension(900, 620));
 
             panel.add(createTopPanel(), BorderLayout.NORTH);
-            panel.add(diffPanel.getComponent(), BorderLayout.CENTER);
+            panel.add(createDiffCardsPanel(), BorderLayout.CENTER); //CHANGE: panel.add(diffPanel.getComponent(), BorderLayout.CENTER);
             panel.add(createMetadataPanel(), BorderLayout.SOUTH);
 
             return panel;
+        }
+
+        private JComponent createDiffCardsPanel(){
+            JPanel wrapper = new JPanel(new BorderLayout());
+
+            JPanel comparisonPanel = new JPanel(new GridLayout(1, 2, 8, 0));
+            comparisonPanel.setBorder(JBUI.Borders.empty(8));
+            comparisonPanel.add(createCard(new JLabel("Original Duplicate Code")));
+            comparisonPanel.add(createCard(new JLabel("Extracted (Proposed Refactoring)")));
+            return comparisonPanel;
+        }
+
+        private JComponent createCard(JLabel header){
+            JPanel cardPanel = new JPanel(new BorderLayout());
+            cardPanel.setBorder(JBUI.Borders.empty(12));
+            cardPanel.add(header, BorderLayout.WEST);
+            //add code snippet
+            return cardPanel;
         }
 
         private JComponent createTopPanel() {
@@ -344,6 +422,19 @@ final class RefactoringSuggestionDialog {
             return wrapper;
         }
 
+        /*
+
+        private static DiffRequestPanel createDiffRequestPanel() {
+            DiffRequestPanel panel = new DiffRequestPanel() {
+            };
+            panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+            panel.setBorder(JBUI.Borders.empty(8, 12, 8, 12));
+
+            return panel;
+
+        }
+         */
+
         private String detailsTitle(boolean expanded) {
             String arrow = expanded ? "v" : ">";
             String confidence = info.confidenceLabel.isBlank() ? "Verified" : info.confidenceLabel;
@@ -399,12 +490,30 @@ final class RefactoringSuggestionDialog {
 
         @Override
         protected Action[] createActions() {
+            // If the refactoring has failed, the apply action will be disabled
+            Action applyAction = getOKAction();
+            if(info.refactoringFailed) {
+                applyAction.setEnabled(false);
+            }
+
             return new Action[]{
-                    getOKAction(),
-                    new AbstractAction("Regenerate") {
+                    applyAction,
+                    new AbstractAction("Edit Instructions...") {
                         @Override
                         public void actionPerformed(ActionEvent e) {
                             close(EDIT_EXIT_CODE);
+                        }
+                    },
+                    // Adding in functionality for edit code button
+                    new AbstractAction("Edit Code...") {
+                        @Override
+                        public void actionPerformed(ActionEvent e) {
+                            String result = showCodeEditDialog(project, info.afterDiffText);
+                            if (result != null && !result.isBlank()) {
+                                editedCode = result;
+                                close(EDIT_CODE_EXIT_CODE);
+
+                            }
                         }
                     },
                     getCancelAction(),

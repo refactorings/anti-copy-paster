@@ -1588,22 +1588,28 @@ public class ProjectSettingsComponent {
         // This method exists solely to trigger IntelliJ's internal modified state tracking
     }
     /**
-     * API key prefix validation is intentionally disabled.
+     * Warns the user if the entered API key's prefix does not match the selected provider.
      */
     void validateApiKeyPrefix() {
-//        String error = getApiKeyPrefixValidationError();
-//        if (error != null) {
-//            JOptionPane.showMessageDialog(
-//                    mainPanel,
-//                    error,
-//                    "API Key Provider Mismatch",
-//                    JOptionPane.WARNING_MESSAGE
-//            );
-//        }
+        // API key prefix validation is temporarily disabled.
+        /*
+        String error = getApiKeyPrefixValidationError();
+        if (error != null) {
+            JOptionPane.showMessageDialog(
+                    mainPanel,
+                    error,
+                    "API Key Provider Mismatch",
+                    JOptionPane.WARNING_MESSAGE
+            );
+        }
+        */
     }
 
     public String getApiKeyPrefixValidationError() {
-//        return ApiKeyPrefixValidator.validate(getLlmProvider(), getAiderApiKey());
+        // API key prefix validation is temporarily disabled.
+        /*
+        return ApiKeyPrefixValidator.validate(getLlmProvider(), getAiderApiKey());
+        */
         return null;
     }
 
