@@ -9,6 +9,7 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Disposer;
@@ -87,7 +88,7 @@ final class RefactoringSuggestionPanel {
                         info,
                         null,
                         false,
-                        "Proposal generated. Running usefulness, compile, and tests before Apply is enabled."
+                        "CLONE is verifying this proposal with usefulness checks, isolated compilation, and tests. Apply is enabled only after verification passes."
                 );
             } catch (Throwable ignored) {
             }
@@ -106,7 +107,7 @@ final class RefactoringSuggestionPanel {
                 SuggestionToolPanel panel = ensurePanel(project, false);
                 panel.setVerificationStatus(
                         message == null || message.isBlank()
-                                ? "Verification failed. AntiCopyPaster will retry if attempts remain."
+                                ? "Workflow failed after 3 attempts. See the logs below for details."
                                 : message
                 );
             } catch (Throwable ignored) {
@@ -153,6 +154,8 @@ final class RefactoringSuggestionPanel {
             Thread.currentThread().interrupt();
             cancelPendingDecision(project, "Workflow cancelled before a decision was selected.");
             return RefactoringSuggestionDialog.Decision.cancel();
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (Throwable ignored) {
             cancelPendingDecision(project, "Workflow stopped before a decision was selected.");
             return RefactoringSuggestionDialog.Decision.cancel();
@@ -205,6 +208,8 @@ final class RefactoringSuggestionPanel {
             } else {
                 ApplicationManager.getApplication().invokeAndWait(runnable);
             }
+        } catch (ProcessCanceledException e) {
+            throw e;
         } catch (Throwable t) {
             if (t instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
@@ -299,7 +304,7 @@ final class RefactoringSuggestionPanel {
             panel.setBorder(JBUI.Borders.empty(16, 18, 16, 18));
 
             JPanel header = new JPanel(new BorderLayout(8, 0));
-            JLabel title = new JLabel("[AntiCopyPaster] Refactoring Suggestion");
+            JLabel title = new JLabel("[CLONE] Refactoring Suggestion");
             title.setFont(title.getFont().deriveFont(Font.BOLD, title.getFont().getSize2D() + 2.0f));
             header.add(new JLabel(loadHeaderIcon()), BorderLayout.WEST);
             header.add(title, BorderLayout.CENTER);
@@ -398,7 +403,7 @@ final class RefactoringSuggestionPanel {
             panel.setBorder(JBUI.Borders.empty(10, 12, 8, 12));
 
             JPanel header = new JPanel(new BorderLayout(8, 0));
-            JLabel title = new JLabel("[AntiCopyPaster] Refactoring Suggestion");
+            JLabel title = new JLabel("[CLONE] Refactoring Suggestion");
             title.setFont(title.getFont().deriveFont(Font.BOLD, title.getFont().getSize2D() + 2.0f));
             header.add(new JLabel(loadHeaderIcon()), BorderLayout.WEST);
             header.add(title, BorderLayout.CENTER);
@@ -556,7 +561,7 @@ final class RefactoringSuggestionPanel {
 
         private JComponent createActionPanel() {
             JPanel panel = new JPanel(new BorderLayout(8, 0));
-            statusLabel = new JLabel("Review the verified refactoring and choose an action.");
+            statusLabel = new JLabel("Apply is enabled only after verification passes.");
             panel.add(statusLabel, BorderLayout.CENTER);
 
             JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
@@ -570,7 +575,7 @@ final class RefactoringSuggestionPanel {
             cancelButton = new JButton("Cancel");
 
             applyButton.addActionListener(e ->
-                    complete(RefactoringSuggestionDialog.Decision.apply(), "Apply selected. Workflow is applying the change."));
+                    complete(RefactoringSuggestionDialog.Decision.apply(), "Apply selected. Workflow is applying the proposed refactoring."));
             regenerateButton.addActionListener(e -> regenerateFromInstructions());
             cancelButton.addActionListener(e ->
                     complete(RefactoringSuggestionDialog.Decision.cancel(), "Cancelled. The suggestion remains visible for review."));
@@ -595,7 +600,7 @@ final class RefactoringSuggestionPanel {
             AntiCopyPasterUsageStatistics.getInstance(project).refactoringEdited();
             complete(
                     RefactoringSuggestionDialog.Decision.edit(instructions),
-                    "Regenerate selected. Workflow is sending your edit instructions."
+                    "Regenerate selected. CLONE is sending your edit instructions."
             );
         }
 
@@ -628,7 +633,7 @@ final class RefactoringSuggestionPanel {
                 Messages.showInfoMessage(
                         project,
                         "See README.md, section \"Refactoring Suggestion Panel\".",
-                        "AntiCopyPaster Help"
+                        "CLONE Help"
                 );
             }
         }
