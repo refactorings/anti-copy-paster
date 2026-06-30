@@ -257,7 +257,7 @@ final class RefactoringSuggestionDialog {
 
     // New edit code button opens an editable text box with the "after" code from the diff, allowing the user
     // to directly edit the code before adding it to their program
-    private static String showCodeEditDialog(Project project, String initialCode) {
+    static String showCodeEditDialog(Project project, String initialCode) {
         JTextArea area = new JTextArea(20, 90);
         area.setLineWrap(false);
         area.setFont(UIUtil.getLabelFont().deriveFont(Font.PLAIN, 13f));

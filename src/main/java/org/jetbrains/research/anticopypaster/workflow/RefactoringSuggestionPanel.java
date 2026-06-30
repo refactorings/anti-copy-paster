@@ -38,6 +38,7 @@ import com.intellij.util.ui.JBFont;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.JLabelUtil;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 
@@ -78,6 +79,8 @@ import java.util.function.Consumer;
 import com.intellij.openapi.ui.DialogWrapper;
 import org.jetbrains.annotations.Nullable;
 import java.awt.event.ActionEvent;
+
+import static org.jetbrains.research.anticopypaster.workflow.RefactoringSuggestionDialog.showCodeEditDialog;
 
 final class RefactoringSuggestionPanel {
     private static final String TOOL_WINDOW_ID = "AntiCopyPaster";
@@ -369,10 +372,11 @@ final class RefactoringSuggestionPanel {
                     : info;
 
             diffDisposable = Disposer.newDisposable("AntiCopyPasterPersistentSuggestionDiff");
-            DiffRequestPanel diffPanel = createDiffPanel(project, diffDisposable, safeInfo);
+            JComponent diffPanel = createComparisonPanel(project, safeInfo);
+            //DiffRequestPanel diffPanel = createDiffPanel(project, diffDisposable, safeInfo);
 
             add(createTopPanel(safeInfo), BorderLayout.NORTH);
-            add(diffPanel.getComponent(), BorderLayout.CENTER);
+            add(diffPanel, BorderLayout.CENTER);
             add(createBottomPanel(safeInfo), BorderLayout.SOUTH);
             setDecisionButtonsEnabled(decisionEnabled);
             if (statusLabel != null && statusText != null && !statusText.isBlank()) {
@@ -1350,7 +1354,8 @@ final class RefactoringSuggestionPanel {
                 -1,
                 "",
                 "",
-                new LinkedHashMap<>()
+                new LinkedHashMap<>(),
+                false
         );
     }
 
