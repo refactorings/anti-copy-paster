@@ -486,10 +486,14 @@ public final class CloneRefactorWorkflow {
                         showNotification(project, "[Clone] Clone selection cancelled for: " + fileName, NotificationType.WARNING);
                         return;
                     }
+                    boolean selectedClonePassedMetrics = !continueDespiteAllMetricsRejected
+                            && metricsGate != null
+                            && metricsGate.hasPassedClones()
+                            && metricsGate.passedClones.contains(clone);
                     if (!continueDespiteAllMetricsRejected
                             && metricsGate != null
                             && metricsGate.hasPassedClones()
-                            && !metricsGate.passedClones.contains(clone)) {
+                            && !selectedClonePassedMetrics) {
                         logStage(viewer, "METRICS", "selected clone did not pass metrics gate; asking user whether to continue");
                         if (!WorkflowCloneMetricsGate.confirmContinue(project, fileName, metricsGate, "the selected clone")) {
                             logStage(viewer, "METRICS", "stopped by user after selected clone failed metrics gate");
@@ -506,7 +510,13 @@ public final class CloneRefactorWorkflow {
                         showNotification(project, "[Clone] Clone range selection cancelled for: " + fileName, NotificationType.WARNING);
                         return;
                     }
-                    showNotification(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
+                    if (selectedClonePassedMetrics) {
+                        showNotification(project,
+                                "[Clone] Clone is worth refactoring in: " + fileName,
+                                NotificationType.INFORMATION);
+                    } else {
+                        showNotification(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
+                    }
                 } finally {
                     logWorkflowStageEnd(viewer);
                 }

@@ -23,8 +23,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import org.jetbrains.research.anticopypaster.llm.LlmClient;
+import org.jetbrains.research.anticopypaster.rag.RagService;
 
 final class CrossFileDetectionSupport {
+    private static final String CLONE_DB_PATH = "combined_clone_database_cleaned.csv";
+    private static final int DETECTION_FEWSHOT_K = 8;
+    private static final int DETECTION_MAX_CHARS = 400;
 
     private static final List<CrossFilePanelistSpec> DETECTION_PANELISTS = List.of(
             new CrossFilePanelistSpec("P1", "Detection Panelist 1"),
@@ -41,7 +45,7 @@ final class CrossFileDetectionSupport {
                                                                        String pastedSnippet) {
         java.util.ArrayList<CrossFileDetectionPanelistOutcome> panelistOutcomes = new java.util.ArrayList<>();
         for (CrossFilePanelistSpec spec : DETECTION_PANELISTS) {
-            String prompt = buildCrossFileDetectionPanelistPrompt(spec, sources, pastedSnippet);
+            String prompt = buildCrossFileDetectionPanelistPrompt(spec, project, sources, pastedSnippet);
             String raw = WorkflowLlmCallSupport.callDetection(llm, prompt, viewer, project);
             CrossFileDetectionResult parsed = parseCrossFileDetectionResult(raw, sources, pastedSnippet);
             panelistOutcomes.add(new CrossFileDetectionPanelistOutcome(
@@ -74,15 +78,23 @@ final class CrossFileDetectionSupport {
     }
 
     static String buildCrossFileDetectionPanelistPrompt(CrossFilePanelistSpec spec,
+                                                                Project project,
                                                                 List<CrossFileSource> sources,
                                                                 String pastedSnippet) {
         StringBuilder sb = new StringBuilder();
         sb.append(spec.title).append(" (").append(spec.id).append(")\n");
         sb.append("You are one of three independent cross-file clone-detection panelists.\n");
-        sb.append("Review the selected Java files independently and return your best evidence.\n");
+        sb.append("All panelists review the same selected Java files and pasted snippet independently.\n");
+        sb.append("Return your best evidence for the pasted-snippet clone class across files.\n");
         sb.append("Return ONLY one JSON object and no extra text.\n\n");
-        appendCrossFileDetectionTask(sb, sources, pastedSnippet);
+        appendCrossFileDetectionTask(sb, project, sources, pastedSnippet, true);
         return sb.toString();
+    }
+
+    static String buildCrossFileDetectionPanelistPrompt(CrossFilePanelistSpec spec,
+                                                                List<CrossFileSource> sources,
+                                                                String pastedSnippet) {
+        return buildCrossFileDetectionPanelistPrompt(spec, null, sources, pastedSnippet);
     }
 
     static String buildCrossFileDetectionCuratorPrompt(List<CrossFileSource> sources,
@@ -101,7 +113,7 @@ final class CrossFileDetectionSupport {
         sb.append("Merge duplicate or overlapping clone groups when they clearly refer to the same cross-file clone class.\n");
         sb.append("Return ONLY one JSON object and no extra text.\n\n");
 
-        appendCrossFileDetectionTask(sb, sources, pastedSnippet);
+        appendCrossFileDetectionTask(sb, null, sources, pastedSnippet, false);
 
         sb.append("=== PANELIST OUTPUTS ===\n");
         Gson gson = new GsonBuilder().disableHtmlEscaping().create();
@@ -119,11 +131,23 @@ final class CrossFileDetectionSupport {
     }
 
     static void appendCrossFileDetectionTask(StringBuilder sb,
+                                                     Project project,
                                                      List<CrossFileSource> sources,
-                                                     String pastedSnippet) {
+                                                     String pastedSnippet,
+                                                     boolean includeFewShot) {
         sb.append("You are acting as the Cross Files Detection Agent.\n");
-        sb.append("Detect non-trivial duplicated Java code clones that occur ACROSS at least two selected files.\n");
-        sb.append("Only report clones where the same extraction concept should affect multiple files.\n");
+        sb.append("Analyze the selected Java source files as one working set.\n");
+        if (pastedSnippet != null && !pastedSnippet.isBlank()) {
+            sb.append("Your task is to exhaustively find every non-trivial clone of the user's pasted snippet that occurs ACROSS at least two selected files.\n");
+            sb.append("You MUST focus on the pasted snippet and enumerate all cross-file code regions that are clones of it.\n");
+            sb.append("Do NOT report clones that do not involve the pasted snippet.\n");
+        } else {
+            sb.append("Your task is to find the strongest non-trivial duplicated Java code clone class that occurs ACROSS at least two selected files.\n");
+        }
+        sb.append("Only report clones where the same Extract Method concept should affect multiple files.\n");
+        sb.append("Ignore only truly trivial single-line repetitions.\n");
+        sb.append("Do not reject short, method-level, symmetric, or small-substitution clones merely because only a few identifiers, literals, casts, or method names differ.\n");
+        sb.append("Do not stop after finding the first match. Keep searching until you have listed all relevant cross-file matches for the same clone class.\n");
         sb.append("Return no_clones if duplication is only within one file or is too small/trivial to refactor.\n\n");
 
         if (pastedSnippet != null && !pastedSnippet.isBlank()) {
@@ -131,8 +155,27 @@ final class CrossFileDetectionSupport {
             sb.append("This is a HARD anchor, not a general hint.\n");
             sb.append("Only report a cross-file clone class if at least one occurrence contains this pasted snippet inside its exact line range/snippet.\n");
             sb.append("Do not search for an unrelated strongest clone elsewhere in the selected files.\n");
+            sb.append("If the snippet appears in one selected file, include that occurrence and all cross-file matching occurrences in the same clone object.\n");
             sb.append("If no cross-file clone can be found around this pasted snippet, return {\"status\":\"no_clones\",\"clones\":[]}.\n");
             sb.append("```\n").append(pastedSnippet).append("\n```\n\n");
+        }
+
+        if (includeFewShot && project != null) {
+            try {
+                String fewShot = RagService.buildDetectionPromptWithFewShot(
+                        project,
+                        CLONE_DB_PATH,
+                        DETECTION_FEWSHOT_K,
+                        DETECTION_MAX_CHARS
+                );
+                if (fewShot != null && !fewShot.isBlank()) {
+                    sb.append("=== FEW-SHOT EXAMPLES (from clone database) ===\n");
+                    sb.append(fewShot).append("\n");
+                    sb.append("=== END FEW-SHOT EXAMPLES ===\n\n");
+                }
+            } catch (Throwable ignored) {
+                // If RAG fails, continue with the base prompt.
+            }
         }
 
         CrossFileRefactoringSupport.appendSelectedFiles(sb, sources);
@@ -140,14 +183,18 @@ final class CrossFileDetectionSupport {
 
         sb.append("=== DETECTION RULES ===\n");
         sb.append("1) A valid cross-file clone must include occurrences in at least two different files.\n");
-        sb.append("2) Prefer the strongest coherent clone class, not every possible duplicate.\n");
-        sb.append("3) Give exact line ranges and the snippet for each occurrence.\n");
-        sb.append("4) Do not invent line ranges. The workflow will verify every occurrence against the local source text and drop unverifiable occurrences.\n\n");
+        sb.append("2) Prefer the strongest coherent clone class, and include every relevant occurrence of that class across the selected files.\n");
+        sb.append("3) Give exact 1-based inclusive line ranges and a verbatim snippet for each occurrence.\n");
+        sb.append("4) The snippet for each occurrence must be copied from the listed file source and aligned with start_line/end_line.\n");
+        sb.append("5) Do not rewrite, reformat, rename variables, or add missing context when copying snippets from source files.\n");
+        sb.append("6) Focus on structural similarity, even when a few identifiers, literals, casts, method names, or API calls differ.\n");
+        sb.append("7) Do not invent line ranges. The workflow will verify every occurrence against the local source text and drop unverifiable occurrences.\n");
         if (pastedSnippet != null && !pastedSnippet.isBlank()) {
-            sb.append("5) With a pasted snippet anchor, every returned clone class MUST include an occurrence whose verified code contains that pasted snippet.\n");
-            sb.append("6) If you return an empty clones array, status MUST be \"no_clones\". Never return \"found_clones\" with no clone objects.\n\n");
+            sb.append("8) With a pasted snippet anchor, every returned clone class MUST include an occurrence whose verified code contains that pasted snippet.\n");
+            sb.append("9) If there are multiple distinct cross-file clone classes involving the pasted snippet, return multiple objects in \"clones\".\n");
+            sb.append("10) If you return an empty clones array, status MUST be \"no_clones\". Never return \"found_clones\" with no clone objects.\n\n");
         } else {
-            sb.append("5) If you return an empty clones array, status MUST be \"no_clones\". Never return \"found_clones\" with no clone objects.\n\n");
+            sb.append("8) If you return an empty clones array, status MUST be \"no_clones\". Never return \"found_clones\" with no clone objects.\n\n");
         }
 
         appendCrossFileDetectionOutputSchema(sb);
@@ -285,9 +332,13 @@ final class CrossFileDetectionSupport {
     }
 
     static CrossFileClone selectBestCrossFileClone(CrossFileDetectionResult detectionResult) {
-        if (detectionResult == null || detectionResult.clones.isEmpty()) return null;
+        return detectionResult == null ? null : selectBestCrossFileClone(detectionResult.clones);
+    }
+
+    static CrossFileClone selectBestCrossFileClone(List<CrossFileClone> clones) {
+        if (clones == null || clones.isEmpty()) return null;
         CrossFileClone best = null;
-        for (CrossFileClone clone : detectionResult.clones) {
+        for (CrossFileClone clone : clones) {
             if (clone == null || clone.affectedSources().size() < 2) continue;
             if (best == null) {
                 best = clone;

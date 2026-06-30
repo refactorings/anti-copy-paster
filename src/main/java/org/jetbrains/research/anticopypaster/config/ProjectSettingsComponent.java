@@ -502,12 +502,7 @@ public class ProjectSettingsComponent {
         // (If user selects either of the other buttons, resort to default visibility)
         analysisSelectionButtonListener = e -> {
             JRadioButton selectedButton = (JRadioButton) e.getSource();
-            if (usesDirectoryFilePicker(selectedButton.getText())) {
-                multFilesPanel.setVisible(true);
-            } else {
-                multFilesPanel.setVisible(false);
-                filesCheckboxesScrollPane.setVisible(false);
-            }
+            updateAnalysisSelectionDetailsVisibility(selectedButton.getText());
         };
 
         // Watch for actions in relation to currentFileButton, allFilesButton, multipleFilesButton, and crossFilesButton
@@ -746,7 +741,7 @@ public class ProjectSettingsComponent {
 
         styleSection(generalPreferencesPanel, "General Preferences");
         styleSection(manualHeuristicsPanel, "Manual Heuristics");
-        styleSection(aiSettingsPanel, "AI Model Settings");
+        styleSection(aiSettingsPanel, "Worth Refactoring Threshold");
         styleSection(multiAgentSettingsPanel, "Multi-agent Settings");
         styleSection(aiderSettingsPanel, "Clone Settings");
         styleSection(copilotSettingsPanel, "Copilot SDK");
@@ -1052,9 +1047,10 @@ public class ProjectSettingsComponent {
 
         boolean isMainManual = "my manual heuristics".equals(mainModel);
         boolean isMainAiModel = "the AI model".equals(mainModel);
+        boolean showWorthRefactoringThreshold = isMainAiModel || isMainCloneMulti;
 
         manualHeuristicsPanel.setVisible(isMainManual);
-        aiSettingsPanel.setVisible(isMainAiModel);
+        aiSettingsPanel.setVisible(showWorthRefactoringThreshold);
 
         // Show Aider (single-agent) clone settings when either selection is "Clone",
         // but hide if the main model is Copilot.
@@ -1107,6 +1103,7 @@ public class ProjectSettingsComponent {
         boolean showFileSelection = isMainClone || isMainCloneMulti || isMainCopilot;
         if (fileSelectionPanel != null) {
             fileSelectionPanel.setVisible(showFileSelection);
+            updateAnalysisScopeOptions(isMainClone, isMainCloneMulti);
             fileSelectionPanel.revalidate();
             fileSelectionPanel.repaint();
         }
@@ -1754,9 +1751,13 @@ public class ProjectSettingsComponent {
     public void setSelectedAnalysisButton(String analysisButtonText) {
         if (analysisButtonText == null || analysisButtonText.isBlank()) {
             currentFileButton.setSelected(true);
-            multFilesPanel.setVisible(false);
-            filesCheckboxesScrollPane.setVisible(false);
+            updateAnalysisSelectionDetailsVisibility("Current File");
+            updateAnalysisScopeOptions(isMainCloneSelected(), isMainCloneMultiSelected());
             return;
+        }
+
+        if (isAnalysisScopeHiddenForCurrentModel(analysisButtonText)) {
+            analysisButtonText = "Current File";
         }
 
         boolean showDirectoryPicker = false;
@@ -1779,11 +1780,72 @@ public class ProjectSettingsComponent {
                 showDirectoryPicker = true;
                 break;
         }
-        multFilesPanel.setVisible(showDirectoryPicker);
+        updateAnalysisSelectionDetailsVisibility(showDirectoryPicker ? analysisButtonText : "");
+        updateAnalysisScopeOptions(isMainCloneSelected(), isMainCloneMultiSelected());
     }
 
     private static boolean usesDirectoryFilePicker(String analysisButtonText) {
         return "Multiple Files".equals(analysisButtonText) || "Cross Files".equals(analysisButtonText);
+    }
+
+    private boolean isMainCloneMultiSelected() {
+        return modelComboBox != null && "Clone_multiagent".equals(modelComboBox.getSelectedItem());
+    }
+
+    private boolean isMainCloneSelected() {
+        return modelComboBox != null && "Clone".equals(modelComboBox.getSelectedItem());
+    }
+
+    private boolean isAnalysisScopeHiddenForCurrentModel(String analysisButtonText) {
+        return (isMainCloneSelected() && isTemporarilyHiddenCloneScope(analysisButtonText))
+                || (isMainCloneMultiSelected() && isTemporarilyHiddenMultiAgentScope(analysisButtonText));
+    }
+
+    private static boolean isTemporarilyHiddenCloneScope(String analysisButtonText) {
+        return "Cross Files in Current Directory".equals(analysisButtonText) || "Cross Files".equals(analysisButtonText);
+    }
+
+    private static boolean isTemporarilyHiddenMultiAgentScope(String analysisButtonText) {
+        return "All Files in Current Directory".equals(analysisButtonText) || "Multiple Files".equals(analysisButtonText);
+    }
+
+    private void updateAnalysisScopeOptions(boolean isMainClone, boolean isMainCloneMulti) {
+        // Temporarily hide model-specific scopes while keeping the controls available for other models.
+        if (allFilesButton != null) {
+            allFilesButton.setVisible(!isMainCloneMulti);
+        }
+        if (multipleFilesButton != null) {
+            multipleFilesButton.setVisible(!isMainCloneMulti);
+        }
+        if (currentDirectoryCrossFilesButton != null) {
+            currentDirectoryCrossFilesButton.setVisible(!isMainClone);
+        }
+        if (crossFilesButton != null) {
+            crossFilesButton.setVisible(!isMainClone);
+        }
+
+        String selectedAnalysisButton = getSelectedAnalysisButton();
+        if ((isMainClone && isTemporarilyHiddenCloneScope(selectedAnalysisButton))
+                || (isMainCloneMulti && isTemporarilyHiddenMultiAgentScope(selectedAnalysisButton))) {
+            currentFileButton.setSelected(true);
+            selectedAnalysisButton = "Current File";
+        }
+        updateAnalysisSelectionDetailsVisibility(selectedAnalysisButton);
+
+        if (filesPanel != null) {
+            filesPanel.revalidate();
+            filesPanel.repaint();
+        }
+    }
+
+    private void updateAnalysisSelectionDetailsVisibility(String analysisButtonText) {
+        boolean showDirectoryPicker = usesDirectoryFilePicker(analysisButtonText);
+        if (multFilesPanel != null) {
+            multFilesPanel.setVisible(showDirectoryPicker);
+        }
+        if (!showDirectoryPicker && filesCheckboxesScrollPane != null) {
+            filesCheckboxesScrollPane.setVisible(false);
+        }
     }
 
     /**

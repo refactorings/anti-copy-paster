@@ -418,6 +418,81 @@ public class CrossFileRefactoringSupportTest extends LightJavaCodeInsightFixture
         assertFalse(prompt.contains("return failed"));
     }
 
+    public void testCrossFileDetectionPromptMirrorsCurrentFileCloneRules() {
+        CrossFileSource first = addSource("demo/A.java", """
+                package demo;
+
+                public class A {
+                    void one() {
+                        same();
+                    }
+                }
+                """);
+        CrossFileSource second = addSource("demo/B.java", """
+                package demo;
+
+                public class B {
+                    void two() {
+                        same();
+                    }
+                }
+                """);
+
+        String prompt = CrossFileDetectionSupport.buildCrossFileDetectionPanelistPrompt(
+                new CrossFilePanelistSpec("P1", "Detection Panelist 1"),
+                null,
+                List.of(first, second),
+                "same();"
+        );
+
+        assertTrue(prompt.contains("exhaustively find every non-trivial clone of the user's pasted snippet"));
+        assertTrue(prompt.contains("Do NOT report clones that do not involve the pasted snippet"));
+        assertTrue(prompt.contains("Do not reject short, method-level, symmetric, or small-substitution clones"));
+        assertTrue(prompt.contains("snippet for each occurrence must be copied from the listed file source"));
+    }
+
+    public void testCrossFileRefactorPromptUsesCurrentFileStyleSections() {
+        CrossFileSource first = addSource("demo/A.java", """
+                package demo;
+
+                public class A {
+                    void one() {
+                        same();
+                    }
+                }
+                """);
+        CrossFileSource second = addSource("demo/B.java", """
+                package demo;
+
+                public class B {
+                    void two() {
+                        same();
+                    }
+                }
+                """);
+        CrossFileClone clone = cloneFor(first, 5, 5, second, 5, 5);
+        CrossFileRefactorContext context = CrossFileRefactorContextSupport.build(
+                getProject(),
+                List.of(first, second),
+                clone
+        );
+
+        String prompt = CrossFileRefactoringSupport.buildCrossFileRefactorPrompt(
+                getProject(),
+                List.of(first, second),
+                clone,
+                "",
+                null,
+                context
+        );
+
+        assertTrue(prompt.contains("=== CONTEXT ==="));
+        assertTrue(prompt.contains("=== REFACTORING TASK ==="));
+        assertTrue(prompt.contains("=== STEPS TO FOLLOW (DO NOT OUTPUT THESE STEPS) ==="));
+        assertTrue(prompt.contains("=== STRICT CONSTRAINTS (HARD RULES) ==="));
+        assertTrue(prompt.contains("selected occurrence snippets are the mandatory refactoring target"));
+    }
+
     public void testDetectionFallbackRequiresMajorityForSameClone() {
         CrossFileSource first = addSource("demo/A.java", """
                 package demo;

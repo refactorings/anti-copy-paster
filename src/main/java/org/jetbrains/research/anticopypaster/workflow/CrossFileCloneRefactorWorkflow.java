@@ -83,6 +83,9 @@ final class CrossFileCloneRefactorWorkflow {
             Consumer<String> viewer = teeViewer(baseViewer, logWriter);
 
             viewer.accept("[START] Cross Files");
+            showNotification(project,
+                    "[Clone] Cross Files workflow started for " + targets.size() + " selected file(s).",
+                    NotificationType.INFORMATION);
             logStage(viewer, "SETTINGS", "selectedTargets=" + targets.size());
             if (pastedSnippet != null && !pastedSnippet.isBlank()) {
                 logStage(viewer, "PASTE", "snippet provided (chars=" + pastedSnippet.length() + ")");
@@ -126,7 +129,34 @@ final class CrossFileCloneRefactorWorkflow {
                 return;
             }
 
-            CrossFileClone selectedClone = CrossFileDetectionSupport.selectBestCrossFileClone(detectionResult);
+            List<CrossFileClone> cloneCandidates = detectionResult.clones;
+            CrossFileMetricsGateSupport.Result metricsGate =
+                    CrossFileMetricsGateSupport.filter(project, detectionResult.clones, viewer);
+            if (metricsGate == null || !metricsGate.hasPassedClones()) {
+                logStage(viewer, "METRICS", "no cross-file clone groups passed the metrics gate; will ask user before refactoring");
+                boolean continueDespiteMetrics = WorkflowCloneMetricsGate.confirmContinue(
+                        project,
+                        "Cross Files",
+                        metricsGate == null ? null : metricsGate.metricsGate,
+                        "the detected cross-file clone groups"
+                );
+                if (!continueDespiteMetrics) {
+                    logStage(viewer, "METRICS", "stopped by user after metrics gate rejected all cross-file clone groups");
+                    showNotification(project,
+                            "[Clone] Cross Files refactor skipped because the detected clones are below the current confidence requirement.",
+                            NotificationType.INFORMATION);
+                    return;
+                }
+                logStage(viewer, "METRICS", "user chose to continue despite cross-file metrics gate rejection");
+            } else if (metricsGate.passedClones.size() != detectionResult.clones.size()) {
+                logStage(viewer, "METRICS", "some cross-file clone groups did not pass the metrics gate; selecting from passed clone groups");
+                cloneCandidates = metricsGate.passedClones;
+            }
+
+            CrossFileClone selectedClone = CrossFileDetectionSupport.selectBestCrossFileClone(cloneCandidates);
+            boolean selectedClonePassedMetrics = metricsGate != null
+                    && metricsGate.hasPassedClones()
+                    && metricsGate.passedClones.contains(selectedClone);
             if (selectedClone == null) {
                 String detail = detectionResult.message == null || detectionResult.message.isBlank()
                         ? "Detection result did not include a clone spanning at least two files."
@@ -138,6 +168,15 @@ final class CrossFileCloneRefactorWorkflow {
             logStage(viewer, "DETECTION", "selected clone " + selectedClone.displayId()
                     + " touching " + selectedClone.affectedSources().size()
                     + " file(s): " + selectedClone.affectedPathSummary());
+            if (selectedClonePassedMetrics) {
+                showNotification(project,
+                        "[Clone] Cross-file clone is worth refactoring in selected files.",
+                        NotificationType.INFORMATION);
+            } else {
+                showNotification(project,
+                        "[Clone] Cross-file clones detected in selected files.",
+                        NotificationType.INFORMATION);
+            }
 
             CrossFileRefactorResult result = null;
             String beforeBundle = buildCrossFileDiffBundle(sources, Map.of());
@@ -227,6 +266,13 @@ final class CrossFileCloneRefactorWorkflow {
                             : usefulness.summary;
                     finalFailure = "Cross Files refactor was not applied: " + detail;
                     logStage(viewer, "USEFULNESS", "not useful: " + detail);
+                    showRejectedCrossFileRefactorNotification(
+                            project,
+                            attempt,
+                            maxAttempts,
+                            "Usefulness Checker",
+                            detail
+                    );
                     retryFeedback = CrossFileRefactoringSupport.buildRetryFeedback(
                             "The previous refactoring attempt was rejected by the Usefulness Checker.",
                             detail,
@@ -258,6 +304,9 @@ final class CrossFileCloneRefactorWorkflow {
                     break;
                 }
                 logStage(viewer, "COMPILE", compileResult.summary);
+                showNotification(project,
+                        "Compilation successful: Ready to run (attempt " + attempt + ") for: Cross Files",
+                        NotificationType.INFORMATION);
 
                 logStage(viewer, "TEST", "running Testing Agent for affected cross-file target classes");
                 CrossFileTestingSupport.CrossFileTestResult testResult =
@@ -275,6 +324,9 @@ final class CrossFileCloneRefactorWorkflow {
                             : testResult.summary;
                     finalFailure = "Cross Files refactor was not applied because tests failed. " + detail;
                     logStage(viewer, "TEST", "failed: " + detail);
+                    showNotification(project,
+                            "[Clone] Cross Files tests failed (attempt " + attempt + ")",
+                            NotificationType.WARNING);
                     retryFeedback = CrossFileRefactoringSupport.buildRetryFeedback(
                             "The previous refactoring attempt failed generated tests.",
                             testResult == null ? detail : testResult.feedback,
@@ -302,14 +354,18 @@ final class CrossFileCloneRefactorWorkflow {
             if (!applyNow) {
                 CloneUsageStatistics.getInstance(project).refactoringCancelled();
                 logStage(viewer, "REFACTOR", "cross-file proposal not applied (user cancelled)");
-                showNotification(project, "[Clone] Cross Files changes were not applied.", NotificationType.WARNING);
+                showNotification(project,
+                        "[Clone] Tests passed but Cross Files changes were not applied (user cancelled).",
+                        NotificationType.WARNING);
                 return;
             }
 
             writeCrossFileChanges(project, result);
             CloneUsageStatistics.getInstance(project).refactoringAccepted();
             logStage(viewer, "WORKFLOW", "SUCCESS applied files=" + result.changedFileCount());
-            showNotification(project, "[Clone] Cross Files refactor applied to " + result.changedFileCount() + " file(s).", NotificationType.INFORMATION);
+            showNotification(project,
+                    "[Clone] Tests passed. Cross Files refactor applied to " + result.changedFileCount() + " file(s).",
+                    NotificationType.INFORMATION);
         } catch (Exception e) {
             if (isCancelled(projectKey)
                     || Thread.currentThread().isInterrupted()
@@ -413,6 +469,30 @@ final class CrossFileCloneRefactorWorkflow {
             }
         } catch (Throwable ignored) {}
         return 3;
+    }
+
+    private static void showRejectedCrossFileRefactorNotification(Project project,
+                                                                  int attempt,
+                                                                  int maxAttempts,
+                                                                  String reason,
+                                                                  String details) {
+        boolean willRetry = maxAttempts <= 0 || attempt < maxAttempts;
+        StringBuilder message = new StringBuilder()
+                .append("[Clone] Cross Files refactor attempt rejected (attempt ")
+                .append(attempt)
+                .append(")\n\n")
+                .append(willRetry
+                        ? "The proposed cross-file change did not safely reduce the duplicated code, so AntiCopyPaster will revise it."
+                        : "The proposed cross-file change did not safely reduce the duplicated code, so AntiCopyPaster will not apply it.");
+
+        if (reason != null && !reason.isBlank()) {
+            message.append("\n\nCheck: ").append(reason);
+        }
+        if (details != null && !details.isBlank()) {
+            message.append("\n").append(details);
+        }
+
+        showNotification(project, message.toString(), NotificationType.WARNING);
     }
 
     static CrossFileUsefulnessResult runCrossFileUsefulnessChecker(LlmClient llm,

@@ -146,13 +146,20 @@ final class CrossFileRefactoringSupport {
         sb.append("Follow the constraints and output format EXACTLY.\n");
         sb.append("Do not skip the refactoring task. If the cross-file target clone can be extracted with parameters or a helper class, you must still perform Extract Method.\n");
         sb.append("If anything is unclear, prefer the most conservative valid cross-file Extract Method that targets the provided clone rather than leaving the files unchanged.\n");
-        sb.append("Preserve behavior, package declarations, imports, public API, and existing file names.\n");
-        sb.append("You may add exactly one small helper class only when there is no valid existing shared location.\n");
-        sb.append("You may also modify one allowed existing project shared owner, such as a common superclass, when it is the natural place for the shared helper.\n");
-        sb.append("Do not refactor unrelated duplicates that are not part of the selected cross-file clone class.\n");
-        sb.append("The workflow will reject the result unless EVERY affected file from TARGET CLONE OCCURRENCES replaces its clone occurrence with calls to shared extracted logic.\n\n");
+        sb.append("The selected occurrence snippets are the mandatory refactoring target. Do NOT ignore them and do NOT switch to a different duplicated region.\n\n");
 
         appendSelectedFiles(sb, sources);
+
+        sb.append("=== CONTEXT ===\n");
+        sb.append("- Language: Java\n");
+        sb.append("- Goal: Remove duplicated code (clone) with Extract Method if clones are worth refactoring.\n");
+        sb.append("- Scope: Cross-file working set. Use shared extracted logic rather than separate helper methods per file.\n");
+        sb.append("- Constraints: Preserve behavior, package declarations, imports, public API, and existing file names.\n");
+        sb.append("- You may add exactly one small helper class only when there is no valid existing shared location.\n");
+        sb.append("- You may also modify one allowed existing project shared owner, such as a common superclass, when it is the natural place for the shared helper.\n");
+        sb.append("- Do not refactor unrelated duplicates that are not part of the selected cross-file clone class.\n");
+        sb.append("- The workflow will reject the result unless EVERY affected file from TARGET CLONE OCCURRENCES replaces its clone occurrence with calls to shared extracted logic.\n\n");
+
         appendTargetClone(sb, selectedClone);
         CrossFileRefactorContextSupport.appendPromptFacts(sb, context);
         if (retryFeedback != null && !retryFeedback.isBlank()) {
@@ -164,24 +171,49 @@ final class CrossFileRefactoringSupport {
         appendWorkingSet(sb, sources);
         CrossFileRefactorContextSupport.appendAllowedProjectOwnerSources(sb, context);
 
-        sb.append("=== REFACTORING RULES ===\n");
-        sb.append("1) First try to introduce ONE shared helper method, then replace every target occurrence with a call to it.\n");
-        sb.append("2) Preferred shared location order: allowed existing_selected_file target, allowed existing_project_file target, then one new package-level helper class.\n");
-        sb.append("3) Do not create separate helper methods in each affected file; that only relocates the cross-file clone.\n");
-        sb.append("4) Do not return whole existing files, whole existing classes, package declarations for existing files, or unrelated edits.\n");
-        sb.append("5) Keep each replacement_code to only the method call or minimal statements that replace that exact occurrence.\n");
-        sb.append("6) Preserve checked exceptions, return values, side effects, ordering, synchronization, visibility, and null behavior.\n");
-        sb.append("7) If you create a new helper class, keep it package-private only when all callers are in the same package; otherwise make it public and use a fully-qualified helper class name in replacement_code.\n");
-        sb.append("8) A helper called from multiple classes must be static and must not be private. Use package-private visibility when the callers are in the same package, otherwise public.\n");
-        sb.append("9) Java visibility must compile: a helper inserted into an existing shared owner may use only members declared in that owner plus public/protected/package-visible API available from its parameters. Do not access subclass private fields/methods from the helper.\n");
-        sb.append("10) If target logic needs private fields or private methods from ByteChunk/CharChunk/etc., keep those accesses inside replacement_code callbacks/lambdas in the original class, or pass plain values into the helper.\n");
-        sb.append("11) Do not call methods or fields through AbstractChunk unless they are declared in AbstractChunk. For example, do not invent chunk.makeSpace(), chunk.flushBuffer(), chunk.out, or ((SubClass) chunk).privateField access.\n");
-        sb.append("12) Primitive arrays byte[] and char[] cannot be abstracted with generic T[] parameters. Use a helper signature that Java can actually call with primitive arrays.\n");
-        sb.append("13) Use @FunctionalInterface only when the interface has exactly one abstract method.\n");
-        sb.append("14) Existing-file helpers should avoid new imports when possible. Prefer fully-qualified names for non-java.lang types inside helper_method and replacement_code. shared_helper.imports may be used only when it will not conflict with existing imports or declared types; otherwise the workflow rejects the plan and reports the exact conflict to repair with fully-qualified names.\n");
-        sb.append("15) If helper_method references a custom callback/interface type, include that nested interface declaration in helper_method after the helper method. Do not reference undefined ArrayWriter/Callback/etc. types.\n");
-        sb.append("16) replacement_code must be self-contained inside the replacement scope. Do not use deleted local variables such as limit unless replacement_code declares them first, e.g. int limit = getLimitInternal();\n");
-        sb.append("17) Do not pass new int[]{end} as a mutable reference unless replacement_code assigns the updated value back to end before returning.\n\n");
+        sb.append("=== REFACTORING TASK ===\n");
+        sb.append("Refactoring Pattern: Extract Method (ONLY)\n");
+        sb.append("Intent: Improve maintainability and reduce duplication across files while preserving behavior.\n");
+        sb.append("Requirements:\n");
+        sb.append("1) Refactor the provided cross-file target clone, not some other duplication in the selected files.\n");
+        sb.append("2) First try to introduce ONE shared helper method, then replace every target occurrence with a call to it.\n");
+        sb.append("3) Preferred shared location order: allowed existing_selected_file target, allowed existing_project_file target, then one new package-level helper class.\n");
+        sb.append("4) Replace ALL target clone occurrences with calls to the shared extracted logic.\n");
+        sb.append("5) Prefer a parameterized helper method when the clone occurrences have small local differences.\n");
+        sb.append("6) Choose the smallest safe extraction boundary that still removes the target duplication.\n");
+        sb.append("7) Ensure the result compiles as valid Java.\n");
+        sb.append("8) Do not leave the target clone unchanged if a valid cross-file Extract Method can be applied with the allowed helper targets.\n\n");
+
+        sb.append("=== STEPS TO FOLLOW (DO NOT OUTPUT THESE STEPS) ===\n");
+        sb.append("Step 1: Use the selected occurrence snippets as the primary target. Use line ranges only as approximate hints to locate those snippets in the files.\n");
+        sb.append("Step 2: Locate only the occurrences that correspond to the selected cross-file clone class.\n");
+        sb.append("Step 3: Create one shared helper method with a clear name and parameters if needed.\n");
+        sb.append("Step 4: Replace every target occurrence in every affected file with a helper call or minimal wrapper statements.\n");
+        sb.append("Step 5: Re-check for compilation issues (imports, generics, visibility, checked exceptions, package access, static context).\n\n");
+
+        sb.append("=== STRICT CONSTRAINTS (HARD RULES) ===\n");
+        sb.append("- Do not create separate helper methods in each affected file; that only relocates the cross-file clone.\n");
+        sb.append("- Do not return whole existing files, whole existing classes, package declarations for existing files, or unrelated edits.\n");
+        sb.append("- Keep each replacement_code to only the method call or minimal statements that replace that exact occurrence.\n");
+        sb.append("- Preserve checked exceptions, return values, side effects, ordering, synchronization, visibility, and null behavior.\n");
+        sb.append("- Preserve package declarations, existing imports unless explicitly needed, public/protected method signatures, and class public API.\n");
+        sb.append("- The selected occurrence snippets are mandatory refactoring targets.\n");
+        sb.append("- The clone ranges are approximate hints and must not override the snippets.\n");
+        sb.append("- Do NOT refactor unrelated duplicated code elsewhere in the selected files.\n");
+        sb.append("- If exact matching is difficult, prefer the closest valid extraction centered on the selected occurrence snippets.\n");
+        sb.append("- Minimize edits outside the target clone regions and the chosen shared helper location.\n");
+        sb.append("- If you create a new helper class, keep it package-private only when all callers are in the same package; otherwise make it public and use a fully-qualified helper class name in replacement_code.\n");
+        sb.append("- A helper called from multiple classes must be static and must not be private. Use package-private visibility when the callers are in the same package, otherwise public.\n");
+        sb.append("- Java visibility must compile: a helper inserted into an existing shared owner may use only members declared in that owner plus public/protected/package-visible API available from its parameters. Do not access subclass private fields/methods from the helper.\n");
+        sb.append("- If target logic needs private fields or private methods from ByteChunk/CharChunk/etc., keep those accesses inside replacement_code callbacks/lambdas in the original class, or pass plain values into the helper.\n");
+        sb.append("- Do not call methods or fields through AbstractChunk unless they are declared in AbstractChunk. For example, do not invent chunk.makeSpace(), chunk.flushBuffer(), chunk.out, or ((SubClass) chunk).privateField access.\n");
+        sb.append("- Primitive arrays byte[] and char[] cannot be abstracted with generic T[] parameters. Use a helper signature that Java can actually call with primitive arrays.\n");
+        sb.append("- Use @FunctionalInterface only when the interface has exactly one abstract method.\n");
+        sb.append("- Existing-file helpers should avoid new imports when possible. Prefer fully-qualified names for non-java.lang types inside helper_method and replacement_code. shared_helper.imports may be used only when it will not conflict with existing imports or declared types; otherwise the workflow rejects the plan and reports the exact conflict to repair with fully-qualified names.\n");
+        sb.append("- If helper_method references a custom callback/interface type, include that nested interface declaration in helper_method after the helper method. Do not reference undefined ArrayWriter/Callback/etc. types.\n");
+        sb.append("- replacement_code must be self-contained inside the replacement scope. Do not use deleted local variables such as limit unless replacement_code declares them first, e.g. int limit = getLimitInternal();\n");
+        sb.append("- Do not pass new int[]{end} as a mutable reference unless replacement_code assigns the updated value back to end before returning.\n");
+        sb.append("- Do NOT include explanatory prose outside JSON.\n\n");
 
         sb.append("=== OUTPUT FORMAT ===\n");
         sb.append("- Output ONLY a valid JSON object.\n");
