@@ -1042,12 +1042,13 @@ public class ProjectSettingsComponent {
         boolean isMainCloneMulti = "Clone_multiagent".equals(mainModel);
         boolean isMainCopilot = "Copilot".equals(mainModel);
 
-        boolean isNameClone = "Clone".equals(nameModelValue);
-        boolean isNameCloneMulti = "Clone_multiagent".equals(nameModelValue);
+        boolean mainModelForcesNameModel = isMainClone || isMainCloneMulti || isMainCopilot;
+        boolean isNameClone = !mainModelForcesNameModel && "Clone".equals(nameModelValue);
+        boolean isNameCloneMulti = !mainModelForcesNameModel && "Clone_multiagent".equals(nameModelValue);
 
         boolean isMainManual = "my manual heuristics".equals(mainModel);
         boolean isMainAiModel = "the AI model".equals(mainModel);
-        boolean showWorthRefactoringThreshold = isMainAiModel || isMainCloneMulti;
+        boolean showWorthRefactoringThreshold = isMainAiModel || isMainClone || isMainCloneMulti;
 
         manualHeuristicsPanel.setVisible(isMainManual);
         aiSettingsPanel.setVisible(showWorthRefactoringThreshold);
