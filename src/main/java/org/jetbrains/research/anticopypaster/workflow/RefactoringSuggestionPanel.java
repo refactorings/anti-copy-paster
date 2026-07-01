@@ -362,6 +362,7 @@ final class RefactoringSuggestionPanel {
                 complete(RefactoringSuggestionDialog.Decision.cancel(), "Previous suggestion was replaced.");
             }
 
+
             disposeCurrentDiff();
             currentInfo = info;
             decisionConsumer = onDecision;
@@ -373,11 +374,17 @@ final class RefactoringSuggestionPanel {
 
             diffDisposable = Disposer.newDisposable("AntiCopyPasterPersistentSuggestionDiff");
             JComponent diffPanel = createComparisonPanel(project, safeInfo);
-            //DiffRequestPanel diffPanel = createDiffPanel(project, diffDisposable, safeInfo);
 
-            add(createTopPanel(safeInfo), BorderLayout.NORTH);
-            add(diffPanel, BorderLayout.CENTER);
-            add(createBottomPanel(safeInfo), BorderLayout.SOUTH);
+            JPanel content = new JPanel();
+            content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+
+            content.add(createTopPanel(safeInfo));
+            content.add(diffPanel);
+            content.add(createBottomPanel(safeInfo));
+
+            JScrollPane scrollPane = new JScrollPane(content);
+            add(scrollPane, BorderLayout.CENTER);
+
             setDecisionButtonsEnabled(decisionEnabled);
             if (statusLabel != null && statusText != null && !statusText.isBlank()) {
                 statusLabel.setText(statusText);
@@ -468,6 +475,7 @@ final class RefactoringSuggestionPanel {
         }
 
         private JComponent createBottomPanel(RefactoringSuggestionDialog.SuggestionInfo info) {
+            //JPanel everything =  new JPanel(new BorderLayout());
             JPanel wrapper = new JPanel();
             wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
             wrapper.setBorder(JBUI.Borders.empty(8, 12, 10, 12));
@@ -479,6 +487,12 @@ final class RefactoringSuggestionPanel {
             wrapper.add(createEditPanel());
             wrapper.add(Box.createVerticalStrut(8));
             wrapper.add(createActionPanel());
+            //JComponent action = createActionPanel();
+            //wrapper.add(action);
+
+            //everything.add(wrapper, BorderLayout.CENTER);
+            //everything.add(createActionPanel(), BorderLayout.SOUTH);
+
             return wrapper;
         }
 
@@ -999,10 +1013,10 @@ final class RefactoringSuggestionPanel {
         private JComponent createActionPanel() {
             JPanel panel = new JPanel(new BorderLayout(8, 0));
             statusLabel = new JLabel("Review the verified refactoring and choose an action.");
-            panel.add(statusLabel, BorderLayout.CENTER);
+            panel.add(statusLabel, BorderLayout.NORTH);//CENTER
 
-            JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-            JButton helpButton = new JButton("?");
+            JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+            JButton helpButton = new JButton("");
             helpButton.setIcon(Messages.getQuestionIcon());
             helpButton.setToolTipText("Help and feedback");
             helpButton.addActionListener(e -> openHelp());
@@ -1024,7 +1038,9 @@ final class RefactoringSuggestionPanel {
             buttons.add(regenerateButton);
             buttons.add(editCodeButton);
             buttons.add(cancelButton);
-            panel.add(buttons, BorderLayout.EAST);
+
+            panel.add(Box.createHorizontalStrut(8), BorderLayout.CENTER);
+            panel.add(buttons, BorderLayout.SOUTH);
             return panel;
         }
 
