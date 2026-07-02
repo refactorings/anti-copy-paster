@@ -484,8 +484,8 @@ final class RefactoringSuggestionPanel {
             wrapper.add(Box.createVerticalStrut(8));
             wrapper.add(createMetadataPanel(info));
             wrapper.add(Box.createVerticalStrut(8));
-            wrapper.add(createEditPanel());
-            wrapper.add(Box.createVerticalStrut(8));
+            //wrapper.add(createEditPanel());
+            //wrapper.add(Box.createVerticalStrut(8));
             wrapper.add(createActionPanel());
             //JComponent action = createActionPanel();
             //wrapper.add(action);
@@ -516,7 +516,10 @@ final class RefactoringSuggestionPanel {
             }
 
             JPanel toggleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-            JButton toggle = new JButton(detailsTitle(false, info));
+            //JButton toggle = new JButton(detailsTitle(false, info));
+            JButton toggle = detailsButton(false, info);
+            toggle.setText("Details & Provenance");
+            //
             toggle.setBorderPainted(false);
             toggle.setContentAreaFilled(false);
             toggle.setFocusPainted(false);
@@ -524,7 +527,12 @@ final class RefactoringSuggestionPanel {
             toggle.addActionListener(e -> {
                 boolean expanded = !details.isVisible();
                 details.setVisible(expanded);
-                toggle.setText(detailsTitle(expanded, info));
+                //toggle.setText(detailsTitle(expanded, info));
+                toggle.setText("Details & Provenance");
+                toggle.setIcon(expanded
+                        ? AllIcons.General.ArrowDown
+                        : AllIcons.General.ArrowRight);
+                //
                 wrapper.revalidate();
                 wrapper.repaint();
             });
@@ -939,6 +947,15 @@ final class RefactoringSuggestionPanel {
             String arrow = expanded ? "v" : ">";
             String confidence = info.confidenceLabel.isBlank() ? "Verified" : info.confidenceLabel;
             return arrow + " Details & Provenance (Confidence: " + confidence + ")";
+        }
+
+        private JButton detailsButton(boolean expanded, RefactoringSuggestionDialog.SuggestionInfo info) {
+            JButton detailsButton = new JButton();
+            detailsButton.setIcon(expanded
+                    ? AllIcons.General.ArrowDown
+                    : AllIcons.General.ArrowRight
+            );
+            return detailsButton;
         }
 
         private void addMetadataRow(JPanel panel,
