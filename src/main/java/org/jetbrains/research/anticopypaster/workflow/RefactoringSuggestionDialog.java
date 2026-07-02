@@ -97,6 +97,7 @@ final class RefactoringSuggestionDialog {
         final String usefulnessExplanation;
         final String beforeDiffText;
         final String afterDiffText;
+        final String proposedSource;
         final String sourceLocationLabel;
         final int sourceLine;
         final String pastedLocationLabel;
@@ -117,6 +118,7 @@ final class RefactoringSuggestionDialog {
                        String usefulnessExplanation,
                        String beforeDiffText,
                        String afterDiffText,
+                       String proposedSource,
                        String sourceLocationLabel,
                        int sourceLine,
                        String pastedLocationLabel,
@@ -135,6 +137,7 @@ final class RefactoringSuggestionDialog {
             this.usefulnessExplanation = safe(usefulnessExplanation);
             this.beforeDiffText = safe(beforeDiffText);
             this.afterDiffText = safe(afterDiffText);
+            this.proposedSource = safe(proposedSource);
             this.sourceLocationLabel = safe(sourceLocationLabel);
             this.sourceLine = sourceLine;
             this.pastedLocationLabel = safe(pastedLocationLabel);
@@ -508,7 +511,7 @@ final class RefactoringSuggestionDialog {
                     new AbstractAction("Edit Code...") {
                         @Override
                         public void actionPerformed(ActionEvent e) {
-                            String result = showCodeEditDialog(project, info.afterDiffText);
+                            String result = showCodeEditDialog(project, info.proposedSource);
                             if (result != null && !result.isBlank()) {
                                 editedCode = result;
                                 close(EDIT_CODE_EXIT_CODE);

@@ -1064,7 +1064,7 @@ final class RefactoringSuggestionPanel {
         // Opens the new code editor from the edit code button
         private void openCodeEditor() {
             if (currentInfo == null) return;
-            String initialCode = currentInfo.afterDiffText;
+            String initialCode = currentInfo.proposedSource;
             String edited = showCodeEditDialog(project, initialCode);
             if (edited != null && !edited.isBlank()) {
                 complete(
@@ -1372,6 +1372,7 @@ final class RefactoringSuggestionPanel {
         return new RefactoringSuggestionDialog.SuggestionInfo(
                 "",
                 null,
+                "",
                 "",
                 "",
                 "",
