@@ -429,7 +429,7 @@ final class RefactoringSuggestionPanel {
         private JComponent createTopPanel(RefactoringSuggestionDialog.SuggestionInfo info) {
             JPanel panel = new JPanel();
             panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-            panel.setBorder(JBUI.Borders.empty(10, 12, 8, 12));
+            panel.setBorder(JBUI.Borders.empty(6, 12, 4, 12));
 
             JPanel header = new JPanel(new BorderLayout(8, 0));
             JLabel title = new JLabel("[CLONE] Refactoring Suggestion");
@@ -443,26 +443,26 @@ final class RefactoringSuggestionPanel {
                         "Refactoring Failed."
                 );
                 panel.add(warning);
-                panel.add(Box.createVerticalStrut(8));
+                panel.add(Box.createVerticalStrut(4));
             }
 
-            panel.add(Box.createVerticalStrut(8));
+            panel.add(Box.createVerticalStrut(4));
             panel.add(new JSeparator());
-            panel.add(Box.createVerticalStrut(8));
+            panel.add(Box.createVerticalStrut(4));
 
-            panel.add(nonEditableTextArea(info.detectionExplanation));
-            panel.add(Box.createVerticalStrut(6));
-            panel.add(nonEditableTextArea(info.refactoringExplanation));
+            panel.add(compactDescriptionArea(info.detectionExplanation));
+            panel.add(Box.createVerticalStrut(3));
+            panel.add(compactDescriptionArea(info.refactoringExplanation));
             if (!info.usefulnessExplanation.isBlank()) {
-                panel.add(Box.createVerticalStrut(6));
-                panel.add(nonEditableTextArea(info.usefulnessExplanation));
+                panel.add(Box.createVerticalStrut(3));
+                panel.add(compactDescriptionArea(info.usefulnessExplanation));
             }
 
-            panel.add(Box.createVerticalStrut(8));
+            panel.add(Box.createVerticalStrut(4));
             JLabel diffTitle = new JLabel("Diff: " + (info.diffTitle.isBlank() ? "Extract Method" : info.diffTitle));
             diffTitle.setFont(diffTitle.getFont().deriveFont(Font.BOLD));
             panel.add(diffTitle);
-            panel.add(Box.createVerticalStrut(6));
+            panel.add(Box.createVerticalStrut(3));
 
             return panel;
         }
@@ -1385,6 +1385,19 @@ final class RefactoringSuggestionPanel {
         area.setOpaque(false);
         area.setFont(UIUtil.getLabelFont());
         area.setBorder(JBUI.Borders.empty());
+        return area;
+    }
+
+    private static JTextArea compactDescriptionArea(String text) {
+        JTextArea area = nonEditableTextArea(text);
+
+        Font baseFont = UIUtil.getLabelFont();
+        area.setFont(
+                baseFont.deriveFont(
+                        Math.max(10.0f, baseFont.getSize2D() - 1.0f)
+                )
+        );
+
         return area;
     }
 
