@@ -8,14 +8,14 @@ plugins {
 }
 
 group = "org.jetbrains.research.anticopypaster"
-version = "2026.1-3.3" //version of the plugin, not the platform
+version = "2024.1-3.7" //version of the plugin, not the platform
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(JavaLanguageVersion.of(17))
     }
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 repositories {
@@ -49,6 +49,7 @@ dependencies {
     implementation("args4j:args4j:2.33")
     implementation("org.jetbrains:annotations:24.0.1")
     implementation("org.apache.commons:commons-compress:1.21")
+    implementation("com.github:copilot-sdk-java:1.0.1")
     /**
      * This file is commented out as it uses the TensorFlow API. By removing that dependency,
      * the plugin will be a fifth of the size and much more lightweight, but this won't

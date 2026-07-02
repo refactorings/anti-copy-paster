@@ -198,6 +198,86 @@ If the response takes longer than 30 seconds, consider using a smaller model or 
 
 By integrating Aider, AntiCopyPaster makes it easier to manage code clones while improving code readability and maintainability.
 
+## GitHub Copilot on Windows
+
+AntiCopyPaster has two Copilot-related paths:
+
+- **Copilot SDK** is used when **Copilot** is selected as the extraction judgement model. It needs a local `copilot` CLI executable and a signed-in GitHub Copilot account.
+- **Copilot Chat bridge** opens the GitHub Copilot JetBrains plugin, copies the generated prompt to your clipboard, and expects you to paste and send it in Copilot Chat.
+
+### Prerequisites
+
+1. Make sure your GitHub account has active Copilot access. If Copilot is provided by an organization or enterprise, the Copilot CLI and IDE plugin policies must be enabled by the administrator.
+2. Use Windows PowerShell 6 or later.
+3. Use an IntelliJ IDEA version compatible with both AntiCopyPaster and the GitHub Copilot JetBrains plugin.
+
+### Install Copilot CLI
+
+GitHub's recommended Windows installation path is WinGet:
+
+```powershell
+winget install GitHub.Copilot
+```
+
+Alternatively, install with npm. This requires Node.js 22 or later:
+
+```powershell
+npm install -g @github/copilot
+```
+
+Open a new PowerShell window and verify that Windows can find the executable:
+
+```powershell
+copilot --version
+where.exe copilot
+```
+
+For more details, see GitHub's [Copilot CLI installation guide](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli).
+
+### Configure AntiCopyPaster
+
+1. Open **Settings -> Tools -> AntiCopyPaster**.
+2. In **Extraction judgements should be performed by**, select **Copilot**.
+3. In the **Copilot SDK** section, set **Copilot CLI Path**:
+   - Use `copilot` if `copilot --version` works in a fresh PowerShell window.
+   - Or use the full path printed by `where.exe copilot`, such as `C:\Users\your-name\AppData\Local\Microsoft\WinGet\Links\copilot.exe` or `C:\Users\your-name\AppData\Roaming\npm\copilot.cmd`.
+   - Do not wrap the path in quotes. Paths with spaces are handled by AntiCopyPaster.
+   - If you point to a `.js` file, AntiCopyPaster will run it through `node`, so `node --version` must work.
+4. Click **Login** inside the AntiCopyPaster settings panel.
+5. Use the device code shown in the AntiCopyPaster login dialog, open the GitHub authorization URL shown there, and complete the browser authorization.
+6. Click **Check Status** in AntiCopyPaster. A successful setup should report that Copilot is signed in.
+
+Use the **Login** button in AntiCopyPaster as the recommended authentication path. Logging in from a separate PowerShell window can be useful for diagnostics, but it may not be enough for AntiCopyPaster if IntelliJ uses a different `copilot` executable path, a different environment, or a different stored credential location. If PowerShell says login succeeded but AntiCopyPaster still cannot use Copilot, run **Login** from AntiCopyPaster and use the code from that settings dialog.
+
+Optional PowerShell diagnostic command:
+
+```powershell
+copilot login --host https://github.com
+```
+
+GitHub documents this device-flow login in the [Copilot CLI authentication guide](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli).
+
+AntiCopyPaster passes this CLI path to the Copilot SDK as a local CLI binary. GitHub describes this setup in the [Copilot SDK local CLI guide](https://docs.github.com/en/copilot/how-tos/copilot-sdk/setup/local-cli).
+
+### Optional: Install Copilot Chat in IntelliJ
+
+If you use the Copilot Chat bridge, also install the **GitHub Copilot** plugin in IntelliJ IDEA:
+
+1. Open **Settings -> Plugins -> Marketplace**.
+2. Search for **GitHub Copilot** and install it.
+3. Restart IntelliJ IDEA.
+4. Use **Tools -> GitHub Copilot -> Login to GitHub** and complete the browser sign-in.
+
+GitHub's JetBrains setup steps are available in the [Copilot extension installation guide](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-extension).
+
+### Troubleshooting on Windows
+
+- If AntiCopyPaster reports that `copilot` cannot be found, restart IntelliJ IDEA after changing `PATH`, or paste the full path from `where.exe copilot` into **Copilot CLI Path**.
+- If PowerShell login succeeds but AntiCopyPaster still fails **Check Status**, do not reuse the PowerShell code. Click **Login** in AntiCopyPaster and authorize with the code shown in the AntiCopyPaster dialog.
+- If **Check Status** says the CLI is installed but not signed in, confirm that **Copilot CLI Path** points to the same executable returned by `where.exe copilot`, then run **Login** from AntiCopyPaster again.
+- If your organization uses SAML SSO, authorize the relevant organization during the GitHub device-flow login.
+- If Copilot Chat does not open, install, enable, or update the GitHub Copilot JetBrains plugin.
+
 ## EvoSuite Integration
 
 AntiCopyPaster integrates with **EvoSuite** to automatically generate unit tests after refactoring, ensuring that the extracted methods preserve program behavior.

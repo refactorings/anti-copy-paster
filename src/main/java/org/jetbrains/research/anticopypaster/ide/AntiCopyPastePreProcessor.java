@@ -15,8 +15,7 @@ import com.intellij.openapi.editor.RawText;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiMethod;
 import org.jetbrains.annotations.NotNull;
@@ -24,9 +23,9 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
 import org.jetbrains.research.anticopypaster.llm.LlmConfigurationNotifier;
 import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
+import org.jetbrains.research.anticopypaster.workflow.CopilotSdkRefactorWorkflow;
 
 import javax.swing.*;
-import org.jetbrains.research.anticopypaster.Copilot.CopilotBridge;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Timer;
@@ -44,6 +43,11 @@ import static org.jetbrains.research.anticopypaster.utils.PsiUtil.findMethodByOf
  */
 public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     private static final long INTERNAL_COPY_VALIDITY_MS = 30_000L;
+    private static final String SCOPE_CURRENT_DIRECTORY = "All Files in Current Directory";
+    private static final String SCOPE_CURRENT_DIRECTORY_CROSS_FILES = "Cross Files in Current Directory";
+    private static final String SCOPE_MULTIPLE_FILES = "Multiple Files";
+    private static final String SCOPE_CROSS_FILES = "Cross Files";
+    private static final int CROSS_FILE_DEFAULT_MAX_FILES = 20;
 
     private final Timer timer = new Timer(true);
     private final ArrayList<RefactoringNotificationTask> refactoringNotificationTask = new ArrayList<>();
@@ -94,38 +98,30 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                 List<VirtualFile> targets = collectTargetFiles(project, file, selectedAnalysisButton, filesPath, filesCheckboxes);
 
                 // Friendly validations mirroring previous behavior
-                if ("Multiple Files".equals(selectedAnalysisButton)) {
+                if (requiresSelectedFileList(selectedAnalysisButton)) {
                     if (filesPath == null || filesPath.isEmpty()) {
                         ApplicationManager.getApplication().invokeLater(() -> {
-                            notify(project, "No directory path provided. Please configure a valid directory for Copilot multi-file analysis.");
+                            notifyCopilot(project, "No directory path provided. Please configure a valid directory for Copilot multi-file analysis.");
                         });
                         return text;
                     }
                     File filesDir = new File(filesPath);
                     if (!filesDir.isDirectory()) {
                         ApplicationManager.getApplication().invokeLater(() -> {
-                            notify(project, "Invalid directory path for Copilot multi-file analysis. Please select a valid directory.");
+                            notifyCopilot(project, "Invalid directory path for Copilot multi-file analysis. Please select a valid directory.");
                         });
                         return text;
                     }
                     boolean filesSelected = targets != null && !targets.isEmpty();
                     if (!filesSelected) {
                         ApplicationManager.getApplication().invokeLater(() -> {
-                            notify(project, "No files have been selected. Please pick at least one file for Copilot to analyze.");
+                            notifyCopilot(project, "No files have been selected. Please pick at least one file for Copilot to analyze.");
                         });
                         return text;
                     }
                 }
 
-                String prompt = buildCopilotPrompt(project, targets);
-
-                if (CopilotBridge.isCopilotChatAvailable()) {
-                    CopilotBridge.openChatWithClipboardPrompt(project, editor, prompt);
-                } else {
-                    ApplicationManager.getApplication().invokeLater(() -> {
-                        notify(project, "GitHub Copilot Chat is not available. Please install/enable the Copilot plugin.");
-                    });
-                }
+                CopilotSdkRefactorWorkflow.run(project, file, text, targets);
             }
             // We still return the original text so the paste content remains unchanged.
             return text;
@@ -148,7 +144,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             List<VirtualFile> targets =
                     collectTargetFiles(project, file, selectedAnalysisButton, filesPath, filesCheckboxes);
 
-            if ("Multiple Files".equals(selectedAnalysisButton)) {
+            if (requiresSelectedFileList(selectedAnalysisButton)) {
                 if (filesPath == null || filesPath.isEmpty()) {
                     ApplicationManager.getApplication().invokeLater(() ->
                             notify(project, "Invalid directory path provided in the plugin menu. Please input a valid directory and select at least one file."));
@@ -165,6 +161,12 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                             notify(project, "No files have been selected in the plugin menu. Please select at least one file."));
                     return text;
                 }
+            }
+
+            if (isCrossFileWorkflowScope(selectedAnalysisButton) && cloneMode != ProjectSettingsState.CloneMode.MULTI_AGENT) {
+                ApplicationManager.getApplication().invokeLater(() ->
+                        notify(project, "Cross-file analysis requires Clone_multiagent. Please select Clone_multiagent as the model to refactor selected files together."));
+                return text;
             }
 
             // Fallback to current file if nothing was selected
@@ -191,7 +193,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
 
             List<VirtualFile> finalTargets = targets;
             // Schedule after timeBuffer seconds; repeated pastes within the buffer window will reset the timer.
-            scheduleAiderWorkflow(project, finalTargets, text, cloneMode, provider, model, apiKey, aiderPath, apiBase, apiVersion);
+            scheduleAiderWorkflow(project, finalTargets, text, selectedAnalysisButton, cloneMode, provider, model, apiKey, aiderPath, apiBase, apiVersion);
 
             return text;
         }
@@ -221,7 +223,8 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     /**
      * Collect target files according to the selected analysis scope.
      * Mirrors the three scopes used by both Aider and Copilot:
-     * "Current File", "All Files in Current Directory", "Multiple Files".
+     * "Current File", "All Files in Current Directory", "Cross Files in Current Directory",
+     * "Multiple Files", "Cross Files".
      */
     private static List<VirtualFile> collectTargetFiles(Project project,
                                                        @Nullable PsiFile currentPsiFile,
@@ -237,7 +240,9 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             return result;
         }
 
-        if ("All Files in Current Directory".equals(selectedAnalysisButton)) {
+        if (SCOPE_CURRENT_DIRECTORY.equals(selectedAnalysisButton)
+                || SCOPE_CURRENT_DIRECTORY_CROSS_FILES.equals(selectedAnalysisButton)) {
+            boolean crossFileDirectoryScope = SCOPE_CURRENT_DIRECTORY_CROSS_FILES.equals(selectedAnalysisButton);
             if (currentPsiFile != null && currentPsiFile.getVirtualFile() != null) {
                 VirtualFile parentDir = currentPsiFile.getVirtualFile().getParent();
                 if (parentDir != null) {
@@ -246,7 +251,8 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                         File[] filesInDir = currDir.listFiles();
                         if (filesInDir != null) {
                             for (File fInDir : filesInDir) {
-                                if (fInDir.isFile()) {
+                                if (fInDir.isFile()
+                                        && (!crossFileDirectoryScope || fInDir.getName().endsWith(".java"))) {
                                     VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(fInDir.getAbsolutePath());
                                     if (vf != null) result.add(vf);
                                 }
@@ -255,27 +261,22 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                     }
                 }
             }
+            if (crossFileDirectoryScope) {
+                return limitCrossFileDefaults(project, result, "current directory");
+            }
             return result;
         }
 
-        if ("Multiple Files".equals(selectedAnalysisButton)) {
-            if (filesPath == null || filesPath.isEmpty()) return result;
-            File filesDir = new File(filesPath);
-            if (!filesDir.isDirectory()) return result;
-            if (filesCheckboxes == null || filesCheckboxes.isEmpty()) return result;
+        if (SCOPE_MULTIPLE_FILES.equals(selectedAnalysisButton)) {
+            return collectExplicitSelectedFiles(filesPath, filesCheckboxes);
+        }
 
-            for (JCheckBox cb : filesCheckboxes) {
-                if (cb.isSelected()) {
-                    String singleName = cb.getText();
-                    String abs = filesPath + "/" + singleName;
-                    File f = new File(abs);
-                    if (f.isFile()) {
-                        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(f.getAbsolutePath());
-                        if (vf != null) result.add(vf);
-                    }
-                }
+        if (isCrossFileScope(selectedAnalysisButton)) {
+            result.addAll(collectExplicitSelectedFiles(filesPath, filesCheckboxes));
+            if (!result.isEmpty()) {
+                return result;
             }
-            return result;
+            return collectCrossFileDefaults(project, currentPsiFile);
         }
 
         // Fallback to current file if no option matched or not selected.
@@ -285,27 +286,108 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         return result;
     }
 
-    /**
-     * Build a Copilot prompt that enumerates project-relative file paths,
-     * so Copilot Chat can auto-load them as context.
-     */
-    private static String buildCopilotPrompt(Project project, List<VirtualFile> targets) {
-        StringBuilder promptBuilder = new StringBuilder();
-        promptBuilder.append("Please detect any clones across the following files and refactor them by Extract Method.\n")
-                .append("Keep behavior identical, use a clear intention-revealing method name, update all call sites,\n")
-                .append("and show the final version of the class or classes.\n\n");
+    private static List<VirtualFile> collectExplicitSelectedFiles(String filesPath, ArrayList<JCheckBox> filesCheckboxes) {
+        ArrayList<VirtualFile> result = new ArrayList<>();
+        if (filesPath == null || filesPath.isEmpty()) return result;
+        File filesDir = new File(filesPath);
+        if (!filesDir.isDirectory()) return result;
+        if (filesCheckboxes == null || filesCheckboxes.isEmpty()) return result;
 
-        if (targets != null && !targets.isEmpty()) {
-            promptBuilder.append("Files:\n");
-            for (VirtualFile vf : targets) {
-                String abs = vf.getPath();
-                promptBuilder.append("- ").append(toProjectRelative(project, abs)).append("\n");
+        for (JCheckBox cb : filesCheckboxes) {
+            if (cb.isSelected()) {
+                String singleName = cb.getText();
+                String abs = filesPath + "/" + singleName;
+                File f = new File(abs);
+                if (f.isFile()) {
+                    VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(f.getAbsolutePath());
+                    if (vf != null) result.add(vf);
+                }
             }
-            promptBuilder.append("\n");
-        } else {
-            promptBuilder.append("Files: (current editor file)\n\n");
         }
-        return promptBuilder.toString();
+        return result;
+    }
+
+    private static List<VirtualFile> collectCrossFileDefaults(Project project, @Nullable PsiFile currentPsiFile) {
+        java.util.LinkedHashMap<String, VirtualFile> filesByPath = new java.util.LinkedHashMap<>();
+        VirtualFile currentFile = currentPsiFile == null ? null : currentPsiFile.getVirtualFile();
+        addJavaFile(filesByPath, currentFile);
+
+        if (project != null && !project.isDisposed()) {
+            for (VirtualFile openFile : FileEditorManager.getInstance(project).getOpenFiles()) {
+                addJavaFile(filesByPath, openFile);
+            }
+        }
+
+        if (filesByPath.size() >= 2) {
+            return limitCrossFileDefaults(project, new ArrayList<>(filesByPath.values()), "open Java files");
+        }
+
+        VirtualFile parentDir = currentFile == null ? null : currentFile.getParent();
+        if (parentDir != null) {
+            File currDir = new File(parentDir.getPath());
+            File[] filesInDir = currDir.isDirectory() ? currDir.listFiles() : null;
+            if (filesInDir != null) {
+                for (File fInDir : filesInDir) {
+                    if (fInDir.isFile() && fInDir.getName().endsWith(".java")) {
+                        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(fInDir.getAbsolutePath());
+                        addJavaFile(filesByPath, vf);
+                    }
+                }
+            }
+        }
+
+        return limitCrossFileDefaults(project, new ArrayList<>(filesByPath.values()), "current directory");
+    }
+
+    private static void addJavaFile(Map<String, VirtualFile> out, VirtualFile file) {
+        if (out == null || file == null || !file.isValid() || file.isDirectory()) return;
+        String path = file.getPath();
+        if (path == null || !path.endsWith(".java")) return;
+        out.putIfAbsent(path, file);
+    }
+
+    private static List<VirtualFile> limitCrossFileDefaults(Project project,
+                                                            List<VirtualFile> files,
+                                                            String sourceDescription) {
+        if (files == null || files.isEmpty()) return new ArrayList<>();
+        ArrayList<VirtualFile> limited = new ArrayList<>();
+        int skipped = 0;
+        for (VirtualFile file : files) {
+            if (file == null || !file.isValid() || file.isDirectory()) {
+                skipped++;
+                continue;
+            }
+            boolean overFileLimit = limited.size() >= CROSS_FILE_DEFAULT_MAX_FILES;
+            if (overFileLimit) {
+                skipped++;
+                continue;
+            }
+            limited.add(file);
+        }
+        if (skipped > 0) {
+            warnCrossFileDefaultsLimited(project, sourceDescription, limited.size(), files.size());
+        }
+        return limited;
+    }
+
+    private static void warnCrossFileDefaultsLimited(Project project,
+                                                     String sourceDescription,
+                                                     int included,
+                                                     int total) {
+        String message = "Cross Files default selection from "
+                + (sourceDescription == null || sourceDescription.isBlank() ? "defaults" : sourceDescription)
+                + " was limited to " + included + " of " + total
+                + " Java file(s) (max " + CROSS_FILE_DEFAULT_MAX_FILES + ").";
+        LOG.warn(message);
+        if (project != null && !project.isDisposed()) {
+            Notification notification = new Notification(
+                    "AntiCopyPaster",
+                    "Cross Files selection limited",
+                    message,
+                    NotificationType.WARNING
+            );
+            Notifications.Bus.notify(notification, project);
+        }
     }
 
     /**
@@ -335,22 +417,14 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
         }
     }
 
-    /**
-     * Returns a project-relative path if possible, otherwise returns the original absolute path.
-     * This produces cleaner paths that Copilot Chat can often resolve within the current project.
-     */
-    private static String toProjectRelative(Project project, String absolutePath) {
-        if (project == null || absolutePath == null) return absolutePath;
-        String base = project.getBasePath();
-        if (base == null) return absolutePath;
-        if (absolutePath.startsWith(base)) {
-            String rel = absolutePath.substring(base.length());
-            if (rel.startsWith("/") || rel.startsWith("\\")) {
-                rel = rel.substring(1);
-            }
-            return rel.isEmpty() ? absolutePath : rel;
-        }
-        return absolutePath;
+    private static void notifyCopilot(Project project, String content) {
+        Notification notification = new Notification(
+                "AntiCopyPaster",
+                "Copilot",
+                content,
+                NotificationType.INFORMATION
+        );
+        Notifications.Bus.notify(notification, project);
     }
 
     private static void notify(Project project, String content) {
@@ -389,6 +463,7 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
     private void scheduleAiderWorkflow(Project project,
                                        List<VirtualFile> targets,
                                        String pastedText,
+                                       String selectedAnalysisButton,
                                        ProjectSettingsState.CloneMode cloneMode,
                                        String provider,
                                        String model,
@@ -423,11 +498,19 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
                                 }
                             }
                         } else {
-                            org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.run(
-                                    project,
-                                    targets,
-                                    pastedText
-                            );
+                            if (shouldRunAsCrossFileWorkflow(selectedAnalysisButton, cloneMode)) {
+                                org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.runCrossFiles(
+                                        project,
+                                        targets,
+                                        pastedText
+                                );
+                            } else {
+                                org.jetbrains.research.anticopypaster.workflow.CloneRefactorWorkflow.run(
+                                        project,
+                                        targets,
+                                        pastedText
+                                );
+                            }
                         }
                     } catch (Throwable t) {
                         ApplicationManager.getApplication().invokeLater(() ->
@@ -456,5 +539,25 @@ public class AntiCopyPastePreProcessor implements CopyPastePreProcessor {
             this.text = text;
             this.timestampMs = timestampMs;
         }
+    }
+
+    private static boolean requiresSelectedFileList(String selectedAnalysisButton) {
+        return SCOPE_MULTIPLE_FILES.equals(selectedAnalysisButton);
+    }
+
+    private static boolean isCrossFileScope(String selectedAnalysisButton) {
+        return SCOPE_CROSS_FILES.equals(selectedAnalysisButton);
+    }
+
+    private static boolean isCrossFileWorkflowScope(String selectedAnalysisButton) {
+        return isCrossFileScope(selectedAnalysisButton) || SCOPE_CURRENT_DIRECTORY_CROSS_FILES.equals(selectedAnalysisButton);
+    }
+
+    private static boolean shouldRunAsCrossFileWorkflow(String selectedAnalysisButton,
+                                                       ProjectSettingsState.CloneMode cloneMode) {
+        if (cloneMode != ProjectSettingsState.CloneMode.MULTI_AGENT) {
+            return false;
+        }
+        return isCrossFileWorkflowScope(selectedAnalysisButton);
     }
 }
