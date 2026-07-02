@@ -1500,8 +1500,10 @@ final class RefactoringSuggestionPanel {
 
         @Override
         protected @Nullable javax.swing.JComponent createCenterPanel() {
-            JPanel panel = new JPanel();
-            panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+            JPanel panel = new JPanel(new BorderLayout()); //originally no border layout
+
+            //panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+
             panel.setBorder(JBUI.Borders.empty(4, 8, 8, 8));
 
             // Icon + bold title
@@ -1510,14 +1512,22 @@ final class RefactoringSuggestionPanel {
             JLabel titleLabel = new JLabel("Select Clone Occurrence");
             titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, titleLabel.getFont().getSize2D() + 1.5f));
             titleRow.add(titleLabel);
-            panel.add(titleRow);
+            //panel.add(titleRow);
+            panel.add(titleRow, BorderLayout.NORTH);
+            //
 
-            panel.add(Box.createVerticalStrut(10));
+            //panel.add(Box.createVerticalStrut(10));
+            panel.add(Box.createVerticalStrut(10), BorderLayout.CENTER);
+
+            JPanel infoWrapper = new JPanel();
+            infoWrapper.setLayout(new BoxLayout(infoWrapper, BoxLayout.Y_AXIS));
 
             // "Clone occurrence: X/Y"
             JLabel countLabel = new JLabel("Clone occurrence: " + occurrenceIndex + "/" + occurrenceTotal);
             countLabel.setBorder(JBUI.Borders.emptyLeft(8));
-            panel.add(countLabel);
+            //panel.add(countLabel);
+            infoWrapper.add(countLabel);
+            //
 
             // "Occurrence N: MethodName [Lines: #-#]"
             JLabel detailLabel = new JLabel(
@@ -1525,18 +1535,29 @@ final class RefactoringSuggestionPanel {
                             + " [Lines: " + lineStart + "-" + lineEnd + "]"
             );
             detailLabel.setBorder(JBUI.Borders.emptyLeft(8));
-            panel.add(detailLabel);
+            //panel.add(detailLabel);
+            infoWrapper.add(detailLabel);
+            //
 
-            panel.add(Box.createVerticalStrut(12));
+            //panel.add(Box.createVerticalStrut(12));
+            infoWrapper.add(Box.createVerticalStrut(12));
+            //
 
             // Static description lines
             JLabel highlightedLabel = new JLabel("This clone occurrence has been highlighted.");
             highlightedLabel.setBorder(JBUI.Borders.emptyLeft(8));
-            panel.add(highlightedLabel);
+            //panel.add(highlightedLabel);
+            infoWrapper.add(highlightedLabel);
+            //
 
             JLabel questionLabel = new JLabel("Include this occurrence in the refactoring?");
             questionLabel.setBorder(JBUI.Borders.emptyLeft(8));
-            panel.add(questionLabel);
+            //panel.add(questionLabel);
+            infoWrapper.add(questionLabel);
+            //
+
+            //panel.add(infoWrapper);
+            panel.add(infoWrapper, BorderLayout.SOUTH);
 
             return panel;
         }
