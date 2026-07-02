@@ -143,7 +143,11 @@ final class CrossFileCloneRefactorWorkflow {
                 if (!continueDespiteMetrics) {
                     logStage(viewer, "METRICS", "stopped by user after metrics gate rejected all cross-file clone groups");
                     showNotification(project,
-                            "[Clone] Cross Files refactor skipped because the detected clones are below the current confidence requirement.",
+                            WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                    "Cross Files",
+                                    metricsGate == null ? null : metricsGate.metricsGate,
+                                    false
+                            ),
                             NotificationType.INFORMATION);
                     return;
                 }
@@ -170,11 +174,19 @@ final class CrossFileCloneRefactorWorkflow {
                     + " file(s): " + selectedClone.affectedPathSummary());
             if (selectedClonePassedMetrics) {
                 showNotification(project,
-                        "[Clone] Cross-file clone is worth refactoring in selected files.",
+                        WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                "Cross Files",
+                                metricsGate == null ? null : metricsGate.metricsGate,
+                                true
+                        ),
                         NotificationType.INFORMATION);
             } else {
                 showNotification(project,
-                        "[Clone] Cross-file clones detected in selected files.",
+                        WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                "Cross Files",
+                                metricsGate == null ? null : metricsGate.metricsGate,
+                                false
+                        ),
                         NotificationType.INFORMATION);
             }
 

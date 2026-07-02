@@ -474,7 +474,11 @@ public final class CloneRefactorWorkflow {
                         if (!continueDespiteAllMetricsRejected) {
                             logStage(viewer, "METRICS", "stopped by user after metrics gate rejected all clone groups");
                             showNotification(project,
-                                    "[Clone] Refactor skipped because the detected clones are below the current confidence requirement.",
+                                    WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                            fileName,
+                                            metricsGate,
+                                            false
+                                    ),
                                     NotificationType.INFORMATION);
                             return;
                         }
@@ -498,13 +502,19 @@ public final class CloneRefactorWorkflow {
                         if (!WorkflowCloneMetricsGate.confirmContinue(project, fileName, metricsGate, "the selected clone")) {
                             logStage(viewer, "METRICS", "stopped by user after selected clone failed metrics gate");
                             showNotification(project,
-                                    "[Clone] Refactor skipped because the selected clone is below the current confidence requirement.",
+                                    WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                            fileName,
+                                            metricsGate,
+                                            clone,
+                                            false
+                                    ),
                                     NotificationType.INFORMATION);
                             return;
                         }
                         logStage(viewer, "METRICS", "user chose to continue with selected clone despite metrics gate rejection");
                     }
 
+                    detection.DetectedClone selectedCloneForMetrics = clone;
                     clone = WorkflowCloneSelectionSupport.chooseCloneRangesToRefactor(project, vf, originalSource, clone, viewer);
                     if (clone == null) {
                         showNotification(project, "[Clone] Clone range selection cancelled for: " + fileName, NotificationType.WARNING);
@@ -512,10 +522,22 @@ public final class CloneRefactorWorkflow {
                     }
                     if (selectedClonePassedMetrics) {
                         showNotification(project,
-                                "[Clone] Clone is worth refactoring in: " + fileName,
+                                WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                        fileName,
+                                        metricsGate,
+                                        selectedCloneForMetrics,
+                                        true
+                                ),
                                 NotificationType.INFORMATION);
                     } else {
-                        showNotification(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
+                        showNotification(project,
+                                WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                        fileName,
+                                        metricsGate,
+                                        selectedCloneForMetrics,
+                                        false
+                                ),
+                                NotificationType.INFORMATION);
                     }
                 } finally {
                     logWorkflowStageEnd(viewer);

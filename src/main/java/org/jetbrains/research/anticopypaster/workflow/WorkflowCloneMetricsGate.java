@@ -36,17 +36,31 @@ final class WorkflowCloneMetricsGate {
         final float bestPrediction;
         final float threshold;
         final String details;
+        private final java.util.Map<detection.DetectedClone, Float> bestPredictionByClone;
 
         Result(List<detection.DetectedClone> passedClones,
                int evaluatedCloneCount,
                float bestPrediction,
                float threshold,
                String details) {
+            this(passedClones, evaluatedCloneCount, bestPrediction, threshold, details, null);
+        }
+
+        Result(List<detection.DetectedClone> passedClones,
+               int evaluatedCloneCount,
+               float bestPrediction,
+               float threshold,
+               String details,
+               java.util.Map<detection.DetectedClone, Float> bestPredictionByClone) {
             this.passedClones = passedClones == null ? java.util.Collections.emptyList() : passedClones;
             this.evaluatedCloneCount = evaluatedCloneCount;
             this.bestPrediction = bestPrediction;
             this.threshold = threshold;
             this.details = details == null ? "" : details;
+            this.bestPredictionByClone = new java.util.IdentityHashMap<>();
+            if (bestPredictionByClone != null) {
+                this.bestPredictionByClone.putAll(bestPredictionByClone);
+            }
         }
 
         boolean hasPassedClones() {
@@ -55,6 +69,12 @@ final class WorkflowCloneMetricsGate {
 
         boolean hasEvaluatedClones() {
             return evaluatedCloneCount > 0 && Float.isFinite(bestPrediction);
+        }
+
+        float bestPredictionFor(detection.DetectedClone clone) {
+            if (clone == null) return Float.NaN;
+            Float bestPrediction = bestPredictionByClone.get(clone);
+            return bestPrediction == null ? Float.NaN : bestPrediction;
         }
     }
 
@@ -110,6 +130,7 @@ final class WorkflowCloneMetricsGate {
         }
 
         java.util.ArrayList<detection.DetectedClone> passed = new java.util.ArrayList<>();
+        java.util.IdentityHashMap<detection.DetectedClone, Float> bestPredictionByClone = new java.util.IdentityHashMap<>();
         int evaluatedCloneCount = 0;
         float bestPrediction = Float.NEGATIVE_INFINITY;
         String bestDetails = "";
@@ -126,6 +147,7 @@ final class WorkflowCloneMetricsGate {
 
             if (decision.evaluated) {
                 evaluatedCloneCount++;
+                bestPredictionByClone.put(clone, decision.bestPrediction);
                 if (decision.bestPrediction > bestPrediction) {
                     bestPrediction = decision.bestPrediction;
                     bestDetails = decision.details;
@@ -158,7 +180,8 @@ final class WorkflowCloneMetricsGate {
                 evaluatedCloneCount,
                 bestPrediction == Float.NEGATIVE_INFINITY ? Float.NaN : bestPrediction,
                 threshold,
-                bestDetails
+                bestDetails,
+                bestPredictionByClone
         );
     }
 
@@ -207,6 +230,58 @@ final class WorkflowCloneMetricsGate {
             ApplicationManager.getApplication().invokeAndWait(ui);
         }
         return out.get() == Messages.YES;
+    }
+
+    static String buildExtractMethodRecommendationNotification(String fileName,
+                                                               Result metricsGate,
+                                                               boolean meetsThreshold) {
+        return buildExtractMethodRecommendationNotification(
+                fileName,
+                metricsGate,
+                null,
+                meetsThreshold,
+                "the detected clone groups",
+                meetsThreshold ? "meet" : "do not meet"
+        );
+    }
+
+    static String buildExtractMethodRecommendationNotification(String fileName,
+                                                               Result metricsGate,
+                                                               detection.DetectedClone clone,
+                                                               boolean meetsThreshold) {
+        return buildExtractMethodRecommendationNotification(
+                fileName,
+                metricsGate,
+                clone,
+                meetsThreshold,
+                "the selected clone group",
+                meetsThreshold ? "meets" : "does not meet"
+        );
+    }
+
+    private static String buildExtractMethodRecommendationNotification(String fileName,
+                                                                       Result metricsGate,
+                                                                       detection.DetectedClone clone,
+                                                                       boolean meetsThreshold,
+                                                                       String subject,
+                                                                       String thresholdVerb) {
+        String displayFileName = fileName == null || fileName.isBlank() ? "this file" : fileName;
+        float confidenceValue = Float.NaN;
+        if (metricsGate != null) {
+            confidenceValue = clone == null ? metricsGate.bestPrediction : metricsGate.bestPredictionFor(clone);
+            if (!Float.isFinite(confidenceValue)) {
+                confidenceValue = metricsGate.bestPrediction;
+            }
+        }
+        String confidence = Float.isFinite(confidenceValue) ? formatMetricPercent(confidenceValue) : "unknown";
+        String required = metricsGate != null && Float.isFinite(metricsGate.threshold)
+                ? formatMetricPercent(metricsGate.threshold)
+                : "unknown";
+
+        return "CLONE found duplicated code in " + displayFileName +
+                (meetsThreshold ? ", and " : ", but ") + subject + " " + thresholdVerb +
+                " the confidence threshold for an Extract Method recommendation." +
+                "\n\nConfidence: " + confidence + " (required: " + required + ")";
     }
 
     private static Decision evaluateClone(detection.DetectedClone clone,
