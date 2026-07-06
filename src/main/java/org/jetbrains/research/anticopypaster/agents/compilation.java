@@ -106,8 +106,9 @@ public class compilation {
             String file = mA.group(1);
             Integer line;
             try { line = Integer.parseInt(mA.group(2)); } catch (Exception e) { line = null; }
-            String msg = mA.group(3);
-            errors.add(new CompileError(file, line, msg, mA.group(0)));
+            String raw = expandJavacDiagnosticBlock(log, mA.end(), mA.group(0));
+            String msg = appendJavacDiagnosticDetails(mA.group(3), raw);
+            errors.add(new CompileError(file, line, msg, raw));
         }
         // Pattern B: Maven
         Pattern patB = Pattern.compile("\\[ERROR\\]\\s+(.*\\.java):\\[(\\d+),(\\d+)\\]\\s+(.*)");
@@ -130,6 +131,43 @@ public class compilation {
             errors.add(new CompileError(file, line, msg, mC.group(0)));
         }
         return errors;
+    }
+
+    private String expandJavacDiagnosticBlock(String log, int startOffset, String firstLine) {
+        if (log == null || firstLine == null) return firstLine == null ? "" : firstLine;
+        StringBuilder sb = new StringBuilder(firstLine);
+        int pos = startOffset;
+        int lines = 0;
+        while (pos < log.length() && lines < 6) {
+            int next = log.indexOf('\n', pos);
+            int end = next < 0 ? log.length() : next;
+            String line = log.substring(pos, end);
+            if (line.endsWith("\r")) line = line.substring(0, line.length() - 1);
+            String trimmed = line.trim();
+            if (lines > 0 && trimmed.matches(".*\\.java:\\d+:\\s*error:.*")) break;
+            if (trimmed.startsWith("[COMPILE]") || trimmed.startsWith("> Task ")) break;
+            if (!line.isEmpty()) {
+                sb.append("\n").append(line);
+            }
+            pos = next < 0 ? log.length() : next + 1;
+            lines++;
+            if (trimmed.startsWith("location:")) break;
+        }
+        return sb.toString();
+    }
+
+    private String appendJavacDiagnosticDetails(String message, String raw) {
+        String base = message == null ? "" : message.trim();
+        if (raw == null || raw.isBlank()) return base;
+        ArrayList<String> details = new ArrayList<>();
+        for (String line : raw.split("\\R")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("symbol:") || trimmed.startsWith("location:")) {
+                details.add(trimmed);
+            }
+        }
+        if (details.isEmpty()) return base;
+        return base + " (" + String.join("; ", details) + ")";
     }
 
     private boolean containsAny(String haystack, String... needles) {

@@ -9,38 +9,21 @@ import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.c
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.logStage;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.openLogWriter;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.openViewer;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.showDiffAndConfirmApply;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.showNotification;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.teeViewer;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.throwIfCancelled;
 
-import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiJavaFile;
-import com.intellij.psi.PsiManager;
-import com.intellij.psi.PsiClass;
-import com.intellij.psi.PsiCodeBlock;
-import com.intellij.psi.PsiFileFactory;
-import com.intellij.psi.SmartPointerManager;
-import com.intellij.psi.SmartPsiElementPointer;
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.event.DocumentListener;
-
-import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.fileEditor.OpenFileDescriptor;
-import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethod;
-import com.intellij.psi.PsiMethodCallExpression;
-import com.intellij.psi.PsiParameter;
-import com.intellij.psi.PsiStatement;
-import com.intellij.psi.util.PsiTreeUtil;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.lang.java.JavaLanguage;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 
@@ -57,6 +40,7 @@ import com.intellij.ui.content.ContentFactory;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.jetbrains.research.anticopypaster.agents.detection;
 import org.jetbrains.research.anticopypaster.agents.refactoring;
@@ -70,15 +54,8 @@ import org.jetbrains.research.anticopypaster.agents.PsiFallbackCloneDetector;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
-import java.util.function.Function;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
 import com.intellij.openapi.application.ModalityState;
@@ -87,14 +64,9 @@ import org.jetbrains.research.anticopypaster.llm.LlmClient;
 import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
 import org.jetbrains.research.anticopypaster.llm.LlmConfigurationNotifier;
 import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
-import org.jetbrains.research.anticopypaster.metrics.MetricCalculator;
-import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
-import org.jetbrains.research.anticopypaster.models.UserSettingsModel;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
-import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
-import org.jetbrains.research.anticopypaster.utils.MetricsGatherer;
 
 public final class CloneRefactorWorkflow {
     private static final String REFACTOR_RAG_DB_RESOURCE = "refactor_database.csv";
@@ -103,9 +75,6 @@ public final class CloneRefactorWorkflow {
     // RAG retrieval tuning
     private static final int REFACTOR_RAG_TOP_K = 5;
     private static final int REFACTOR_RAG_MAX_CHARS = 8000;
-
-    // Refactor proposal preview (console)
-    private static final int REFACTOR_PROPOSAL_PREVIEW_CHARS = 12000;
 
     // Hard-cancel support
     private static final AtomicReference<Thread> _CURRENT_WORKFLOW_THREAD = new AtomicReference<>();
@@ -171,13 +140,19 @@ public final class CloneRefactorWorkflow {
         }
     }
 
+    /** Cross-file entry: detect clones across the selected files and refactor them as one working set. */
+    public static void runCrossFiles(Project project, List<VirtualFile> targets, String pastedSnippet) {
+        CrossFileCloneRefactorWorkflow.run(project, targets, pastedSnippet);
+    }
+
     private static String readCurrentSource(VirtualFile vf, File ioFile) throws IOException {
         // Prefer in-memory content (includes unsaved edits) if available.
         try {
-            Document doc = FileDocumentManager.getInstance().getDocument(vf);
-            if (doc != null) {
-                return doc.getText();
-            }
+            String documentText = ReadAction.compute(() -> {
+                Document doc = FileDocumentManager.getInstance().getDocument(vf);
+                return doc == null ? null : doc.getText();
+            });
+            if (documentText != null) return documentText;
         } catch (Throwable ignored) {}
 
         // Fallback: read from disk.
@@ -199,6 +174,34 @@ public final class CloneRefactorWorkflow {
 
     private static void logWorkflowStageEnd(Consumer<String> viewer) {
         logStage(viewer, "STAGE", WORKFLOW_STAGE_SEPARATOR);
+    }
+
+    private static void showRejectedRefactorNotification(Project project,
+                                                         String fileName,
+                                                         int attempt,
+                                                         int maxAttempts,
+                                                         String reason,
+                                                         String details) {
+        boolean willRetry = maxAttempts <= 0 || attempt < maxAttempts;
+        StringBuilder message = new StringBuilder()
+                .append("[Clone] Refactor attempt rejected (attempt ")
+                .append(attempt)
+                .append(")\n")
+                .append("File: ")
+                .append(fileName == null || fileName.isBlank() ? "unknown" : fileName)
+                .append("\n\n")
+                .append(willRetry
+                        ? "The proposed change did not safely reduce the duplicated code, so AntiCopyPaster will revise it."
+                        : "The proposed change did not safely reduce the duplicated code, so AntiCopyPaster will not apply it.");
+
+        if (reason != null && !reason.isBlank()) {
+            message.append("\n\nCheck: ").append(reason);
+        }
+        if (details != null && !details.isBlank()) {
+            message.append("\n").append(details);
+        }
+
+        showNotification(project, message.toString(), NotificationType.WARNING);
     }
 
     private static String buildLlmSetupGuidance(Project project) {
@@ -290,7 +293,7 @@ public final class CloneRefactorWorkflow {
                 }
 
                 // Classify pasted snippet: whole-method vs fragment (best-effort).
-                PsiMethod wholeMethod = findWholeMethodCoveredBySnippet(project, vf, originalSource, pastedSnippet);
+                PsiMethod wholeMethod = WorkflowCloneRangeSupport.findWholeMethodCoveredBySnippet(project, vf, originalSource, pastedSnippet);
 
                 // Read settings used by the workflow
                 int maxAttempts = 3;
@@ -340,10 +343,10 @@ public final class CloneRefactorWorkflow {
                 compilation compileAgent = new compilation();
                 testing testAgent = new testing();
 
-                Function<String, String> llmCaller = prompt -> callDetectionLlm(prompt, viewer, project);
-                Function<String, String> refactorLlmCaller = prompt -> callRefactorLlm(prompt, viewer, project);
+                Function<String, String> llmCaller = prompt -> WorkflowLlmCallSupport.callDetection(LLM, prompt, viewer, project);
+                Function<String, String> refactorLlmCaller = prompt -> WorkflowLlmCallSupport.callRefactor(LLM, prompt, viewer, project);
                 LlmUsefulnessEvaluator.LabeledLlmCaller usefulnessLlmCaller =
-                        (label, prompt) -> callUsefulnessLlm(label, prompt, viewer, project);
+                        (label, prompt) -> WorkflowLlmCallSupport.callUsefulness(LLM, label, prompt, viewer, project);
 
                 /* ---------- Detection ---------- */
                 detection.DetectedClone clone;
@@ -377,16 +380,16 @@ public final class CloneRefactorWorkflow {
                                     for (Object cc : cands) {
                                         if (cc == null) continue;
 
-                                        int sLine = getIntField(cc, "startLine", "start", "fromLine", "start_line", "startline");
-                                        int eLine = getIntField(cc, "endLine", "end", "toLine", "end_line", "endline");
+                                        int sLine = WorkflowCloneRangeSupport.getIntField(cc, "startLine", "start", "fromLine", "start_line", "startline");
+                                        int eLine = WorkflowCloneRangeSupport.getIntField(cc, "endLine", "end", "toLine", "end_line", "endline");
                                         if (sLine <= 0) sLine = 1;
                                         if (eLine <= 0) eLine = sLine;
 
                                         detection.CloneRange range = new detection.CloneRange();
-                                        setIntField(range, sLine, "startLine", "start", "fromLine", "start_line", "startline");
-                                        setIntField(range, eLine, "endLine", "end", "toLine", "end_line", "endline");
+                                        WorkflowCloneRangeSupport.setIntField(range, sLine, "startLine", "start", "fromLine", "start_line", "startline");
+                                        WorkflowCloneRangeSupport.setIntField(range, eLine, "endLine", "end", "toLine", "end_line", "endline");
                                         psiClone.ranges.add(range);
-                                        String cloneCode = getStringField(cc, "cloneCode", "code", "snippet", "text");
+                                        String cloneCode = WorkflowCloneRangeSupport.getStringField(cc, "cloneCode", "code", "snippet", "text");
                                         psiClone.cloneCodes.add(cloneCode == null ? "" : cloneCode);
                                     }
                                     if (psiClone.cloneCodes.size() > 0) psiClone.cloneCodeA = psiClone.cloneCodes.get(0);
@@ -414,8 +417,8 @@ public final class CloneRefactorWorkflow {
                         }
                     }
 
-                    det.clones = resolveDetectedCloneRangesWithPsi(project, vf, originalSource, det.clones, viewer);
-                    det.clones = mergeOverlappingDetectedClones(originalSource, det.clones, viewer);
+                    det.clones = WorkflowCloneRangeSupport.resolveDetectedCloneRangesWithPsi(project, vf, originalSource, det.clones, viewer);
+                    det.clones = WorkflowCloneRangeSupport.mergeOverlappingDetectedClones(originalSource, det.clones, viewer);
                     det.clones = filterDetectedClonesByMetrics(project, vf, originalSource, det.clones, viewer);
                     if (det.clones == null || det.clones.isEmpty()) {
                         logStage(viewer, "METRICS", "stopped: no detected clone groups passed the metrics gate");
@@ -424,6 +427,20 @@ public final class CloneRefactorWorkflow {
                                         ", but none passed the metrics threshold for refactoring.",
                                 NotificationType.INFORMATION);
                         return;
+                    }
+                    WorkflowCloneMetricsGate.Result metricsGate = WorkflowCloneMetricsGate.filter(
+                            project,
+                            det.clones,
+                            viewer,
+                            cloneForMetrics -> WorkflowCloneSelectionSupport.getDetectedCloneCodes(cloneForMetrics, originalSource),
+                            (range, code) -> WorkflowCloneSelectionSupport.calculateCloneOccurrenceFeatures(project, vf, originalSource, range, code),
+                            WorkflowCloneSelectionSupport::summarizeCloneRanges
+                    );
+                    boolean continueDespiteAllMetricsRejected = false;
+                    if (metricsGate == null || !metricsGate.hasPassedClones()) {
+                        logStage(viewer, "METRICS", "no detected clone groups passed the metrics gate; will ask user before refactoring");
+                    } else if (metricsGate.passedClones.size() != det.clones.size()) {
+                        logStage(viewer, "METRICS", "some clone groups did not pass the metrics gate; keeping all clone groups for selection");
                     }
 
                     try {
@@ -462,33 +479,97 @@ public final class CloneRefactorWorkflow {
                         return;
                     }
 
-                    clone = chooseCloneToRefactor(project, vf, det.clones, viewer);
+                    if (metricsGate == null || !metricsGate.hasPassedClones()) {
+                        logStage(viewer, "METRICS", "asking user whether to continue after metrics gate rejected all clone groups");
+                        continueDespiteAllMetricsRejected = WorkflowCloneMetricsGate.confirmContinue(
+                                project,
+                                fileName,
+                                metricsGate,
+                                "the detected clone groups"
+                        );
+                        if (!continueDespiteAllMetricsRejected) {
+                            logStage(viewer, "METRICS", "stopped by user after metrics gate rejected all clone groups");
+                            showNotification(project,
+                                    WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                            fileName,
+                                            metricsGate,
+                                            false
+                                    ),
+                                    NotificationType.INFORMATION);
+                            return;
+                        }
+                        logStage(viewer, "METRICS", "user chose to continue despite metrics gate rejection");
+                    }
+
+                    clone = WorkflowCloneSelectionSupport.chooseCloneToRefactor(project, vf, det.clones, viewer);
                     if (clone == null) {
                         showNotification(project, "[Clone] Clone selection cancelled for: " + fileName, NotificationType.WARNING);
                         return;
                     }
+                    boolean selectedClonePassedMetrics = !continueDespiteAllMetricsRejected
+                            && metricsGate != null
+                            && metricsGate.hasPassedClones()
+                            && metricsGate.passedClones.contains(clone);
+                    if (!continueDespiteAllMetricsRejected
+                            && metricsGate != null
+                            && metricsGate.hasPassedClones()
+                            && !selectedClonePassedMetrics) {
+                        logStage(viewer, "METRICS", "selected clone did not pass metrics gate; asking user whether to continue");
+                        if (!WorkflowCloneMetricsGate.confirmContinue(project, fileName, metricsGate, "the selected clone")) {
+                            logStage(viewer, "METRICS", "stopped by user after selected clone failed metrics gate");
+                            showNotification(project,
+                                    WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                            fileName,
+                                            metricsGate,
+                                            clone,
+                                            false
+                                    ),
+                                    NotificationType.INFORMATION);
+                            return;
+                        }
+                        logStage(viewer, "METRICS", "user chose to continue with selected clone despite metrics gate rejection");
+                    }
 
-                    clone = chooseCloneRangesToRefactor(project, vf, originalSource, clone, viewer);
+                    detection.DetectedClone selectedCloneForMetrics = clone;
+                    clone = WorkflowCloneSelectionSupport.chooseCloneRangesToRefactor(project, vf, originalSource, clone, viewer);
                     if (clone == null) {
                         showNotification(project, "[Clone] Clone range selection cancelled for: " + fileName, NotificationType.WARNING);
                         return;
                     }
-                    showNotification(project, "[Clone] Clones detected in: " + fileName, NotificationType.INFORMATION);
+                    if (selectedClonePassedMetrics) {
+                        showNotification(project,
+                                WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                        fileName,
+                                        metricsGate,
+                                        selectedCloneForMetrics,
+                                        true
+                                ),
+                                NotificationType.INFORMATION);
+                    } else {
+                        showNotification(project,
+                                WorkflowCloneMetricsGate.buildExtractMethodRecommendationNotification(
+                                        fileName,
+                                        metricsGate,
+                                        selectedCloneForMetrics,
+                                        false
+                                ),
+                                NotificationType.INFORMATION);
+                    }
                 } finally {
                     logWorkflowStageEnd(viewer);
                 }
 
-                final java.util.List<CloneMethodSnapshot> watchedCloneMethods = captureCloneMethodSnapshots(project, vf, clone, viewer);
+                final java.util.List<WorkflowMethodSnapshotSupport.CloneMethodSnapshot> watchedCloneMethods = WorkflowMethodSnapshotSupport.captureCloneMethodSnapshots(project, vf, clone, viewer);
                 final java.util.List<usefulnessChecker.TargetMethodHint> targetMethodHints =
-                        buildUsefulnessTargetMethodHints(wholeMethod, watchedCloneMethods, viewer);
-                trackedDocument = FileDocumentManager.getInstance().getDocument(vf);
+                        WorkflowMethodSnapshotSupport.buildUsefulnessTargetMethodHints(wholeMethod, watchedCloneMethods, viewer);
+                trackedDocument = ReadAction.compute(() -> FileDocumentManager.getInstance().getDocument(vf));
                 if (trackedDocument != null && watchedCloneMethods != null && !watchedCloneMethods.isEmpty()) {
-                    final java.util.List<CloneMethodSnapshot> listenerSnapshots = watchedCloneMethods;
+                    final java.util.List<WorkflowMethodSnapshotSupport.CloneMethodSnapshot> listenerSnapshots = watchedCloneMethods;
                     cloneMethodChangeListener = new DocumentListener() {
                         @Override
                         public void documentChanged(DocumentEvent event) {
                             if (isCancelled()) return;
-                            String changedMethod = findModifiedCloneMethod(project, vf, listenerSnapshots);
+                            String changedMethod = WorkflowMethodSnapshotSupport.findModifiedCloneMethod(project, vf, listenerSnapshots);
                             if (changedMethod != null) {
                                 showNotification(project,
                                         "[Clone] Stopped because a cloned method was modified by the user: " + changedMethod,
@@ -543,7 +624,7 @@ public final class CloneRefactorWorkflow {
                             return;
                         }
 
-                    String changedMethodAtAttemptStart = findModifiedCloneMethod(project, vf, watchedCloneMethods);
+                    String changedMethodAtAttemptStart = WorkflowMethodSnapshotSupport.findModifiedCloneMethod(project, vf, watchedCloneMethods);
                         if (changedMethodAtAttemptStart != null) {
                             logStage(viewer, "WATCH", "stopped before attempt because cloned method changed: " + changedMethodAtAttemptStart);
                             showNotification(project,
@@ -647,8 +728,6 @@ public final class CloneRefactorWorkflow {
                             // ===== Show proposed refactored code (for debugging / transparency) =====
                             if (viewer != null) {
                                 String src = proposedSource == null ? "" : proposedSource;
-//                                int maxChars = REFACTOR_PROPOSAL_PREVIEW_CHARS; // keep console usable
-//                                String shown = src.length() > maxChars ? (src.substring(0, maxChars) + "\n...<truncated>...") : src;
                                 viewer.accept("[REFACTOR_CODE] proposedSource:" + src);
                             }
 
@@ -694,7 +773,7 @@ public final class CloneRefactorWorkflow {
 
                             try {
                                 LlmUsefulnessEvaluator.UsefulnessInput llmUsefulnessInput =
-                                        buildLlmUsefulnessInput(
+                                        WorkflowUsefulnessFeedbackSupport.buildLlmUsefulnessInput(
                                                 project,
                                                 fileName,
                                                 clone,
@@ -707,7 +786,7 @@ public final class CloneRefactorWorkflow {
                                         llmUsefulnessInput,
                                         usefulnessLlmCaller
                                 );
-                                llmUsefulnessFeedbackSection = buildLlmUsefulnessFeedbackSection(llmUsefulnessResult);
+                                llmUsefulnessFeedbackSection = WorkflowUsefulnessFeedbackSupport.buildLlmUsefulnessFeedbackSection(llmUsefulnessResult);
 
                                 if (llmUsefulnessResult != null
                                         && llmUsefulnessResult.available
@@ -764,7 +843,7 @@ public final class CloneRefactorWorkflow {
                                     String reasonDefinition = "The PSI usefulness checker could not validate the proposed source. "
                                             + "This usually means the proposal is still syntactically invalid or structurally inconsistent, "
                                             + "so it cannot proceed to compilation.";
-                                    String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+                                    String focusedProposedCode = WorkflowUsefulnessFeedbackSupport.buildFocusedFeedbackRefactoredCode(
                                             project,
                                             fileName,
                                             currentSource,
@@ -774,7 +853,7 @@ public final class CloneRefactorWorkflow {
                                     String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
                                             ? ""
                                             : ("\n\n" + llmUsefulnessFeedbackSection);
-                                    String revisionInstruction = mergeRevisionInstructions(
+                                    String revisionInstruction = WorkflowUsefulnessFeedbackSupport.mergeRevisionInstructions(
                                             llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
                                                     ? llmUsefulnessResult.curatorResult.feedback
                                                     : "",
@@ -792,13 +871,13 @@ public final class CloneRefactorWorkflow {
                                                     ? "LLM curator rejected proposal and PSI usefulness was unavailable"
                                                     : "PSI usefulness check could not validate the proposal"
                                     );
-                                    showNotification(project,
-                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
-                                                    "for: " + fileName + "\n \n" +
-                                                    "Reason:\n" +
-                                                    reasonsText + "\n" +
-                                                    reasonDefinition,
-                                            NotificationType.WARNING);
+                                    showRejectedRefactorNotification(
+                                            project,
+                                            fileName,
+                                            attempt,
+                                            maxAttempts,
+                                            reasonsText,
+                                            reasonDefinition);
 
                                     feedback = """
 Your previous refactoring attempt was rejected by the usefulness checks.
@@ -830,7 +909,7 @@ Your previous refactoring attempt was rejected by the usefulness checks.
                                         if (containsReasonName(urBeforeCompile.reasons, "EXTRACT_METHOD_NOT_FOUND")) {
                                             String[] wrappers = parseWrapperNamesFromUsefulnessDebug(extractUsefulnessDebugText(urBeforeCompile));
                                             if (wrappers != null && wrappers.length == 2
-                                                    && looksLikeValidExtractMethodDelegation(currentSource, proposedSource, wrappers[0], wrappers[1])) {
+                                                    && WorkflowUsefulnessFeedbackSupport.looksLikeValidExtractMethodDelegation(currentSource, proposedSource, wrappers[0], wrappers[1])) {
                                                 overridden = true;
                                                 isUseful = true;
                                                 logStage(viewer, "USEFUL", "override: both wrappers delegate to the same extracted helper");
@@ -844,22 +923,22 @@ Your previous refactoring attempt was rejected by the usefulness checks.
                                         isUseful = false;
                                         String msg = "Not useful refactoring proposal: reasons=" + urBeforeCompile.reasons;
                                         logStage(viewer, "USEFUL", "PSI rejected proposal: " + msg);
-                                        showNotification(project,
-                                                "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
-                                                        "for: " + fileName + "\n \n" +
-                                                        "Reason:\n" +
-                                                        urBeforeCompile.reasons + "\n" +
-                                                        definitionForReason(urBeforeCompile.reasons),
-                                                NotificationType.WARNING);
+                                        showRejectedRefactorNotification(
+                                                project,
+                                                fileName,
+                                                attempt,
+                                                maxAttempts,
+                                                String.valueOf(urBeforeCompile.reasons),
+                                                definitionForReason(urBeforeCompile.reasons));
 
-                                        String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+                                        String focusedProposedCode = WorkflowUsefulnessFeedbackSupport.buildFocusedFeedbackRefactoredCode(
                                                 project,
                                                 fileName,
                                                 currentSource,
                                                 proposedSource,
                                                 watchedCloneMethods
                                         );
-                                        String feedbackPrompt = buildUsefulnessFeedbackPrompt(
+                                        String feedbackPrompt = WorkflowUsefulnessFeedbackSupport.buildUsefulnessFeedbackPrompt(
                                                 project,
                                                 fileName,
                                                 proposedSource,
@@ -874,7 +953,7 @@ Your previous refactoring attempt was rejected by the usefulness checks.
                                         String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
                                                 ? ""
                                                 : ("\n\n" + llmUsefulnessFeedbackSection);
-                                        String revisionInstruction = mergeRevisionInstructions(
+                                        String revisionInstruction = WorkflowUsefulnessFeedbackSupport.mergeRevisionInstructions(
                                                 llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
                                                         ? llmUsefulnessResult.curatorResult.feedback
                                                         : "",
@@ -929,10 +1008,10 @@ Your previous refactoring attempt was rejected by the usefulness checks.
                                         ? new FragmentUsefulnessAnalyzer.LineRange(1, 1)
                                         : new FragmentUsefulnessAnalyzer.LineRange(rB.startLine, rB.endLine);
 
-                                String[] ab = extractCloneCodeABFromReason(clone.reason);
-                                java.util.List<String> cloneCodes = getDetectedCloneCodes(clone, currentSource);
-                                String codeA = cloneCodes.size() > 0 ? firstNonBlank(cloneCodes.get(0), ab[0]) : ab[0];
-                                String codeB = cloneCodes.size() > 1 ? firstNonBlank(cloneCodes.get(1), ab[1]) : ab[1];
+                                String[] ab = WorkflowCloneSelectionSupport.extractCloneCodeABFromReason(clone.reason);
+                                java.util.List<String> cloneCodes = WorkflowCloneSelectionSupport.getDetectedCloneCodes(clone, currentSource);
+                                String codeA = cloneCodes.size() > 0 ? WorkflowCloneSelectionSupport.firstNonBlank(cloneCodes.get(0), ab[0]) : ab[0];
+                                String codeB = cloneCodes.size() > 1 ? WorkflowCloneSelectionSupport.firstNonBlank(cloneCodes.get(1), ab[1]) : ab[1];
 
                                 // Fallbacks: if detection didn't embed code blocks, use the pasted snippet as A.
                                 if (codeA == null || codeA.isBlank()) codeA = pastedSnippet == null ? "" : pastedSnippet;
@@ -970,15 +1049,15 @@ Your previous refactoring attempt was rejected by the usefulness checks.
                                         String msg = "Not useful refactoring proposal: strategy=" + strategyText +
                                                 ", reasons=" + reasonsText;
                                         logStage(viewer, "USEFUL", "PSI rejected fragment proposal: " + msg);
-                                        showNotification(project,
-                                                "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
-                                                        "for: " + fileName + "\n \n" +
-                                                        "Reason:\n" +
-                                                        strategyText + "\n" +
-                                                        reasonDefinition,
-                                                NotificationType.WARNING);
+                                        showRejectedRefactorNotification(
+                                                project,
+                                                fileName,
+                                                attempt,
+                                                maxAttempts,
+                                                strategyText,
+                                                reasonDefinition);
 
-                                        String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+                                        String focusedProposedCode = WorkflowUsefulnessFeedbackSupport.buildFocusedFeedbackRefactoredCode(
                                                 project,
                                                 fileName,
                                                 currentSource,
@@ -988,7 +1067,7 @@ Your previous refactoring attempt was rejected by the usefulness checks.
                                         String llmFeedbackText = llmUsefulnessFeedbackSection.isBlank()
                                                 ? ""
                                                 : ("\n\n" + llmUsefulnessFeedbackSection);
-                                        String fragmentRevisionInstruction = mergeRevisionInstructions(
+                                        String fragmentRevisionInstruction = WorkflowUsefulnessFeedbackSupport.mergeRevisionInstructions(
                                                 llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
                                                         ? llmUsefulnessResult.curatorResult.feedback
                                                         : "",
@@ -1043,7 +1122,7 @@ Your previous refactoring attempt was rejected by the usefulness checks.
                                     }
                                 } catch (Throwable t) {
                                     isUseful = false;
-                                    String focusedProposedCode = buildFocusedFeedbackRefactoredCode(
+                                    String focusedProposedCode = WorkflowUsefulnessFeedbackSupport.buildFocusedFeedbackRefactoredCode(
                                             project,
                                             fileName,
                                             currentSource,
@@ -1054,7 +1133,7 @@ Your previous refactoring attempt was rejected by the usefulness checks.
                                             ? ""
                                             : ("\n\n" + llmUsefulnessFeedbackSection);
                                     String notesText = "\n\n[USEFULNESS_NOTES]\n" + t.getMessage();
-                                    String revisionInstruction = mergeRevisionInstructions(
+                                    String revisionInstruction = WorkflowUsefulnessFeedbackSupport.mergeRevisionInstructions(
                                             llmUsefulnessResult != null && llmUsefulnessResult.curatorResult != null
                                                     ? llmUsefulnessResult.curatorResult.feedback
                                                     : "",
@@ -1066,13 +1145,13 @@ Your previous refactoring attempt was rejected by the usefulness checks.
                                     }
 
                                     logStage(viewer, "USEFUL", "fragment usefulness check failed (before compile): " + t.getMessage());
-                                    showNotification(project,
-                                            "[Clone] Refactor NOT recommended (attempt " + attempt + ")\n" +
-                                                    "for: " + fileName + "\n \n" +
-                                                    "Reason:\n" +
-                                                    "FRAGMENT_ANALYZER_ERROR\n" +
-                                                    "The fragment usefulness analyzer failed before compilation.",
-                                            NotificationType.WARNING);
+                                    showRejectedRefactorNotification(
+                                            project,
+                                            fileName,
+                                            attempt,
+                                            maxAttempts,
+                                            "FRAGMENT_ANALYZER_ERROR",
+                                            "The fragment usefulness analyzer failed before compilation.");
 
                                     feedback = """
 Your previous refactoring attempt was rejected by the usefulness checks.
@@ -1115,7 +1194,7 @@ The fragment usefulness analyzer failed before compilation.%s
                         useFeedbackOnlyPrompt = false;
                         // ===== End usefulness check =====
 
-                        String changedMethodBeforeCompile = findModifiedCloneMethod(project, vf, watchedCloneMethods);
+                        String changedMethodBeforeCompile = WorkflowMethodSnapshotSupport.findModifiedCloneMethod(project, vf, watchedCloneMethods);
                         if (changedMethodBeforeCompile != null) {
                             logStage(viewer, "WATCH", "stopped before compile because cloned method changed: " + changedMethodBeforeCompile);
                             showNotification(project,
@@ -1189,7 +1268,7 @@ The fragment usefulness analyzer failed before compilation.%s
                                 }
 
                                 compilation.CompileResult adjustedCompileResult =
-                                        ignoreBaselineCompileErrors(fileName, cr, baselineCompileResult);
+                                        WorkflowUsefulnessFeedbackSupport.ignoreBaselineCompileErrors(fileName, cr, baselineCompileResult);
                                 if (adjustedCompileResult != null
                                         && "compile_ok".equals(adjustedCompileResult.status)
                                         && proposalCompileAttempt != null
@@ -1284,7 +1363,7 @@ The fragment usefulness analyzer failed before compilation.%s
                                             false
                                     );
 
-                            String changedMethodBeforeTest = findModifiedCloneMethod(project, vf, watchedCloneMethods);
+                            String changedMethodBeforeTest = WorkflowMethodSnapshotSupport.findModifiedCloneMethod(project, vf, watchedCloneMethods);
                             if (changedMethodBeforeTest != null) {
                                 logStage(viewer, "WATCH", "stopped before test because cloned method changed: " + changedMethodBeforeTest);
                                 showNotification(project,
@@ -1333,7 +1412,7 @@ The fragment usefulness analyzer failed before compilation.%s
                         }
 
                         if (testsPassed) {
-                            String changedMethodBeforeApply = findModifiedCloneMethod(project, vf, watchedCloneMethods);
+                            String changedMethodBeforeApply = WorkflowMethodSnapshotSupport.findModifiedCloneMethod(project, vf, watchedCloneMethods);
                             if (changedMethodBeforeApply != null) {
                                 logStage(viewer, "WATCH", "stopped before apply because cloned method changed: " + changedMethodBeforeApply);
                                 showNotification(project,
@@ -1436,240 +1515,12 @@ The fragment usefulness analyzer failed before compilation.%s
         });
     }
 
-    // ---- Snippet classification helpers (whole method vs fragment) ----
-
-    /** Normalize code text for robust matching (ignore whitespace, line endings, and outer braces). */
-    private static String normalizeForMatch(String s) {
-        if (s == null) return "";
-        // Unify newlines and trim
-        String t = s.replace("\r\n", "\n").replace("\r", "\n").trim();
-        // Collapse whitespace to single spaces
-        t = t.replaceAll("\\s+", " ");
-        return t;
-    }
-
-    /** If text looks like a Java block `{ ... }`, strip the outer braces (best-effort). */
-    private static String stripOuterBraces(String s) {
-        if (s == null) return "";
-        String t = s.trim();
-        if (t.startsWith("{") && t.endsWith("}")) {
-            // Remove only the first and last char; keep inner formatting.
-            t = t.substring(1, t.length() - 1).trim();
-        }
-        return t;
-    }
-
-    private static int[] findSnippetLineRangeInText(String fileSource, String pastedSnippet) {
-        try {
-            if (fileSource == null || pastedSnippet == null) return null;
-            if (pastedSnippet.isBlank()) return null;
-
-            int idx = fileSource.indexOf(pastedSnippet);
-            if (idx < 0) return null;
-
-            int startLine = 1;
-            for (int i = 0; i < idx; i++) {
-                if (fileSource.charAt(i) == '\n') startLine++;
-            }
-
-            int endIdx = Math.min(fileSource.length(), idx + pastedSnippet.length());
-            int endLine = startLine;
-            for (int i = idx; i < endIdx; i++) {
-                if (fileSource.charAt(i) == '\n') endLine++;
-            }
-
-            return new int[]{startLine, endLine};
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    /** Returns 1-based {startLine,endLine} for a PSI element using the file document, or null on failure. */
-    private static int[] elementLineRange(Project project, VirtualFile vf, PsiElement el) {
-        try {
-            if (project == null || project.isDisposed() || vf == null || el == null) return null;
-            Document doc = FileDocumentManager.getInstance().getDocument(vf);
-            if (doc == null) return null;
-
-            int startOffset = Math.max(0, el.getTextRange().getStartOffset());
-            int endOffset = Math.max(startOffset, el.getTextRange().getEndOffset());
-
-            int startLine = doc.getLineNumber(startOffset) + 1;
-            int endLine = doc.getLineNumber(Math.max(0, endOffset - 1)) + 1;
-
-            return new int[]{startLine, endLine};
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    private static int getIntField(Object obj, String... names) {
-        if (obj == null || names == null) return -1;
-        Class<?> cls = obj.getClass();
-        for (String n : names) {
-            if (n == null || n.isBlank()) continue;
-            // public field
-            try {
-                java.lang.reflect.Field f = cls.getField(n);
-                Object v = f.get(obj);
-                if (v instanceof Number) return ((Number) v).intValue();
-            } catch (Throwable ignored) {}
-            // declared field
-            try {
-                java.lang.reflect.Field f = cls.getDeclaredField(n);
-                f.setAccessible(true);
-                Object v = f.get(obj);
-                if (v instanceof Number) return ((Number) v).intValue();
-            } catch (Throwable ignored) {}
-            // getter
-            try {
-                String mname = "get" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
-                java.lang.reflect.Method m = cls.getMethod(mname);
-                Object v = m.invoke(obj);
-                if (v instanceof Number) return ((Number) v).intValue();
-            } catch (Throwable ignored) {}
-        }
-        return -1;
-    }
-
-    private static String getStringField(Object obj, String... names) {
-        if (obj == null || names == null) return null;
-        Class<?> cls = obj.getClass();
-        for (String n : names) {
-            if (n == null || n.isBlank()) continue;
-            try {
-                java.lang.reflect.Field f = cls.getField(n);
-                Object v = f.get(obj);
-                if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {}
-            try {
-                java.lang.reflect.Field f = cls.getDeclaredField(n);
-                f.setAccessible(true);
-                Object v = f.get(obj);
-                if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {}
-            try {
-                String mname = "get" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
-                java.lang.reflect.Method m = cls.getMethod(mname);
-                Object v = m.invoke(obj);
-                if (v != null) return String.valueOf(v);
-            } catch (Throwable ignored) {}
-        }
-        return null;
-    }
-
-    private static void setIntField(Object obj, int value, String... names) {
-        if (obj == null || names == null) return;
-        Class<?> cls = obj.getClass();
-        for (String n : names) {
-            if (n == null || n.isBlank()) continue;
-            // public field
-            try {
-                java.lang.reflect.Field f = cls.getField(n);
-                if (f.getType() == int.class || f.getType() == Integer.class) {
-                    f.set(obj, value);
-                    return;
-                }
-            } catch (Throwable ignored) {}
-            // declared field
-            try {
-                java.lang.reflect.Field f = cls.getDeclaredField(n);
-                f.setAccessible(true);
-                if (f.getType() == int.class || f.getType() == Integer.class) {
-                    f.set(obj, value);
-                    return;
-                }
-            } catch (Throwable ignored) {}
-            // setter
-            try {
-                String mname = "set" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
-                java.lang.reflect.Method m = cls.getMethod(mname, int.class);
-                m.invoke(obj, value);
-                return;
-            } catch (Throwable ignored) {}
-            try {
-                String mname = "set" + Character.toUpperCase(n.charAt(0)) + n.substring(1);
-                java.lang.reflect.Method m = cls.getMethod(mname, Integer.class);
-                m.invoke(obj, value);
-                return;
-            } catch (Throwable ignored) {}
-        }
-    }
-
-    /**
-     * Determine whether the pasted snippet covers an entire method.
-     * Returns the host PsiMethod if the snippet matches a method (body or full), else null.
-     */
-    private static PsiMethod findWholeMethodCoveredBySnippet(Project project, VirtualFile vf, String fileSource, String pastedSnippet) {
-        try {
-            if (project == null || project.isDisposed() || vf == null) return null;
-            if (pastedSnippet == null || pastedSnippet.isBlank()) return null;
-
-            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-            if (!(psiFile instanceof PsiJavaFile)) return null;
-
-            String pNorm = normalizeForMatch(pastedSnippet);
-            String pNormNoBraces = normalizeForMatch(stripOuterBraces(pastedSnippet));
-
-            for (PsiMethod m : PsiTreeUtil.findChildrenOfType(psiFile, PsiMethod.class)) {
-                if (m == null) continue;
-
-                // 1) Full method text match
-                String mText = m.getText();
-                if (!mText.isBlank()) {
-                    String mNorm = normalizeForMatch(mText);
-                    if (!pNorm.isBlank() && mNorm.equals(pNorm)) return m;
-                    if (!pNormNoBraces.isBlank() && mNorm.equals(pNormNoBraces)) return m;
-                }
-
-                // 2) Method body match
-                PsiElement body = m.getBody();
-                if (body == null) continue;
-                String bodyText = body.getText();
-                if (bodyText == null) bodyText = "";
-
-                String bodyNorm = normalizeForMatch(bodyText);
-                String bodyNoBracesNorm = normalizeForMatch(stripOuterBraces(bodyText));
-
-                // Common case: pasted == body without braces
-                if (!pNorm.isBlank() && (bodyNorm.equals(pNorm) || bodyNoBracesNorm.equals(pNorm))) return m;
-                if (!pNormNoBraces.isBlank() && (bodyNorm.equals(pNormNoBraces) || bodyNoBracesNorm.equals(pNormNoBraces))) return m;
-            }
-
-            // --- Fallback: old line-range coverage logic (best-effort) ---
-            // This is less reliable because it depends on exact substring search.
-            int[] sn = findSnippetLineRangeInText(fileSource, pastedSnippet);
-            if (sn == null) return null;
-
-            int idx = (fileSource == null) ? -1 : fileSource.indexOf(pastedSnippet);
-            if (idx < 0) return null;
-
-            PsiElement at = psiFile.findElementAt(Math.min(idx, Math.max(0, psiFile.getTextLength() - 1)));
-            PsiMethod host = PsiTreeUtil.getParentOfType(at, PsiMethod.class, false);
-            if (host == null) return null;
-
-            int[] mr = elementLineRange(project, vf, host);
-            if (mr == null) return null;
-
-            int snippetStart = sn[0];
-            int snippetEnd = sn[1];
-            int methodStart = mr[0];
-            int methodEnd = mr[1];
-
-            if (snippetStart <= methodStart && snippetEnd >= methodEnd) {
-                return host;
-            }
-            return null;
-        } catch (Throwable t) {
-            return null;
-        }
-    }
 
     // NOTE: RAG retrieval uses clone code (via buildRefactorRagQueryText) when available; ranges here are only for agent context.
     private static refactoring.DetectedClone convertClone(detection.DetectedClone c) {
         String representative = "";
         if (c != null) {
-            java.util.List<String> cloneCodes = getDetectedCloneCodes(c, null);
+            java.util.List<String> cloneCodes = WorkflowCloneSelectionSupport.getDetectedCloneCodes(c, null);
             if (!cloneCodes.isEmpty() && cloneCodes.get(0) != null && !cloneCodes.get(0).isBlank()) {
                 representative = cloneCodes.get(0);
             } else if (c.cloneCodeA != null && !c.cloneCodeA.isBlank()) {
@@ -1686,7 +1537,7 @@ The fragment usefulness analyzer failed before compilation.%s
                 c.refactorType,
                 c.reason,
                 representative,
-                getDetectedCloneCodes(c, null),
+                WorkflowCloneSelectionSupport.getDetectedCloneCodes(c, null),
                 c.cloneCodeA,
                 c.cloneCodeB
         );

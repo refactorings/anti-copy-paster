@@ -86,6 +86,8 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
 
     public String apiVersion = "";
 
+    public String copilotCliPath = "copilot";
+
     public ArrayList<JCheckBox> allFilesCheckboxes = new ArrayList<>();
 
     public String selectedAnalysisButton;
@@ -185,6 +187,10 @@ public final class ProjectSettingsState implements PersistentStateComponent<Proj
     public String getApiVersion() { return apiVersion; }
 
     public void setApiVersion(String version) { this.apiVersion = version; }
+
+    public String getCopilotCliPath() { return copilotCliPath == null || copilotCliPath.isBlank() ? "copilot" : copilotCliPath; }
+
+    public void setCopilotCliPath(String path) { this.copilotCliPath = path == null || path.isBlank() ? "copilot" : path.trim(); }
 
     public void setOllamaName(String model) { this.ollamaModelName = model; }
 
