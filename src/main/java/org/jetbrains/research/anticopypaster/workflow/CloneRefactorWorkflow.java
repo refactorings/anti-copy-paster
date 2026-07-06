@@ -1,4 +1,9 @@
 package org.jetbrains.research.anticopypaster.workflow;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowCloneRangeSupport.elementLineRange;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowCloneRangeSupport.findSnippetLineRangeInText;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowCloneRangeSupport.findWholeMethodCoveredBySnippet;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowCloneRangeSupport.normalizeForMatch;
+import static org.jetbrains.research.anticopypaster.workflow.WorkflowCloneRangeSupport.stripOuterBraces;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.containsReasonName;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.definitionForReason;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowReasonSupport.extractUsefulnessDebugText;
@@ -14,11 +19,28 @@ import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.s
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.teeViewer;
 import static org.jetbrains.research.anticopypaster.workflow.WorkflowUiSupport.throwIfCancelled;
 
+import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.ScrollType;
 import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiFileFactory;
+import com.intellij.psi.PsiJavaFile;
 import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiStatement;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
+import com.intellij.psi.util.PsiTreeUtil;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -55,6 +77,9 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
@@ -64,9 +89,15 @@ import org.jetbrains.research.anticopypaster.llm.LlmClient;
 import org.jetbrains.research.anticopypaster.llm.LlmClientFactory;
 import org.jetbrains.research.anticopypaster.llm.LlmConfigurationNotifier;
 import org.jetbrains.research.anticopypaster.llm.NoopLlmClient;
+import org.jetbrains.research.anticopypaster.metrics.MetricCalculator;
+import org.jetbrains.research.anticopypaster.metrics.features.FeaturesVector;
+import org.jetbrains.research.anticopypaster.models.UserSettingsModel;
 import org.jetbrains.research.anticopypaster.rag.RagService;
 import org.jetbrains.research.anticopypaster.config.ProjectSettingsState;
+import org.jetbrains.research.anticopypaster.statistics.AntiCopyPasterUsageStatistics;
 import org.jetbrains.research.anticopypaster.statistics.CloneUsageStatistics;
+import org.jetbrains.research.anticopypaster.utils.MetricsGatherer;
+import org.jetbrains.research.anticopypaster.workflow.WorkflowMethodSnapshotSupport.CloneMethodSnapshot;
 
 public final class CloneRefactorWorkflow {
     private static final String REFACTOR_RAG_DB_RESOURCE = "refactor_database.csv";
@@ -4077,32 +4108,6 @@ Follow the required output format for the refactoring task.
             return out.exists() ? out : null;
         } catch (Throwable ignored) {
             return null;
-        }
-    }
-
-    private static final class CloneMethodSnapshot {
-        final SmartPsiElementPointer<PsiMethod> pointer;
-        final String className;
-        final String methodName;
-        final int parameterCount;
-        final String methodKey;
-        final String baselineBodyText;
-        final String displayName;
-
-        CloneMethodSnapshot(SmartPsiElementPointer<PsiMethod> pointer,
-                            String className,
-                            String methodName,
-                            int parameterCount,
-                            String methodKey,
-                            String baselineBodyText,
-                            String displayName) {
-            this.pointer = pointer;
-            this.className = className == null ? "<no-class>" : className;
-            this.methodName = methodName == null ? "<unknown>" : methodName;
-            this.parameterCount = parameterCount;
-            this.methodKey = methodKey == null ? "" : methodKey;
-            this.baselineBodyText = baselineBodyText == null ? "" : baselineBodyText;
-            this.displayName = displayName == null ? "<unknown>" : displayName;
         }
     }
 
