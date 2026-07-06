@@ -1364,6 +1364,13 @@ The fragment usefulness analyzer failed before compilation.%s
                                 Files.writeString(ioFile.toPath(), currentSource, StandardCharsets.UTF_8);
                                 logStage(viewer, "REFACTOR", "applied after verification");
                                 showNotification(project, "[Clone] Tests passed. Refactor applied for: " + fileName, NotificationType.INFORMATION);
+                            } else if (userDecision.choice == RefactoringSuggestionDialog.Choice.EDIT_CODE) {
+                                AntiCopyPasterUsageStatistics.getInstance(project).refactoringApplied();
+                                CloneUsageStatistics.getInstance(project).refactoringAccepted();
+                                currentSource = userDecision.editedCode;
+                                Files.writeString(ioFile.toPath(), currentSource, StandardCharsets.UTF_8);
+                                logStage(viewer, "REFACTOR", "applied user-edited code");
+                                showNotification(project, "[Clone] User-edited refactor applied for: " + fileName, NotificationType.INFORMATION);
                             } else if (userDecision.choice == RefactoringSuggestionDialog.Choice.EDIT) {
                                 logStage(viewer, "REFACTOR", "user requested edit/regeneration: " + previewOneLine(userDecision.editInstructions, 320));
                                 feedback = buildUserEditFeedback(userDecision.editInstructions, currentSource, proposedSource, watchedCloneMethods, project, fileName);
