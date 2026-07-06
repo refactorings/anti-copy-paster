@@ -86,7 +86,7 @@ final class RefactoringSuggestionPanel {
     private static final String TOOL_WINDOW_ID = "AntiCopyPaster";
     private static final String CONTENT_TITLE = "Refactoring Suggestion";
     private static final String HELP_URL =
-            "https://github.com/JetBrains-Research/anti-copy-paster#refactoring-suggestion-panel";
+            "https://se4airesearch.github.io/AntiCopyPaster-Website/"; //replaced https://github.com/JetBrains-Research/anti-copy-paster#refactoring-suggestion-panel
     private static final Map<String, SuggestionToolPanel> PANELS_BY_PROJECT = new ConcurrentHashMap<>();
 
     private RefactoringSuggestionPanel() {
@@ -138,7 +138,7 @@ final class RefactoringSuggestionPanel {
                 SuggestionToolPanel panel = ensurePanel(project, false);
                 panel.setVerificationStatus(
                         message == null || message.isBlank()
-                                ? "Verification failed. AntiCopyPaster will retry if attempts remain."
+                                ? "Verification failed. CLONE will retry if attempts remain." //Replaced AntiCopyPaster with CLONE
                                 : message
                 );
             } catch (Throwable ignored) {
@@ -332,7 +332,7 @@ final class RefactoringSuggestionPanel {
             panel.setBorder(JBUI.Borders.empty(16, 18, 16, 18));
 
             JPanel header = new JPanel(new BorderLayout(8, 0));
-            JLabel title = new JLabel("[AntiCopyPaster] Refactoring Suggestion");
+            JLabel title = new JLabel("[CLONE] Refactoring Suggestion"); //AntiCopyPaster replaced with CLONE
             title.setFont(title.getFont().deriveFont(Font.BOLD, title.getFont().getSize2D() + 2.0f));
             header.add(new JLabel(loadHeaderIcon()), BorderLayout.WEST);
             header.add(title, BorderLayout.CENTER);
@@ -383,6 +383,12 @@ final class RefactoringSuggestionPanel {
             content.add(createBottomPanel(safeInfo));
 
             JScrollPane scrollPane = new JScrollPane(content);
+            scrollPane.getVerticalScrollBar().setUnitIncrement(20);//wheel and arrow
+            scrollPane.getVerticalScrollBar().setBlockIncrement(100);//page up down
+            scrollPane.getHorizontalScrollBar().setUnitIncrement(20);//wheel and arrow
+            scrollPane.getHorizontalScrollBar().setBlockIncrement(100);//page up down
+
+
             add(scrollPane, BorderLayout.CENTER);
 
             setDecisionButtonsEnabled(decisionEnabled);
@@ -484,8 +490,8 @@ final class RefactoringSuggestionPanel {
             wrapper.add(Box.createVerticalStrut(8));
             wrapper.add(createMetadataPanel(info));
             wrapper.add(Box.createVerticalStrut(8));
-            //wrapper.add(createEditPanel());
-            //wrapper.add(Box.createVerticalStrut(8));
+            wrapper.add(createEditPanel()); //TEST
+            wrapper.add(Box.createVerticalStrut(8));
             wrapper.add(createActionPanel());
             //JComponent action = createActionPanel();
             //wrapper.add(action);
@@ -685,7 +691,7 @@ final class RefactoringSuggestionPanel {
                     message = "The AI Trust Score is unavailable because "
                             + "one or more validation stages failed.";
                 } else {
-                    message = "AntiCopyPaster is still validating this "
+                    message = "CLONE is still validating this " //replaced AntiCopyPaster with ClONE
                             + "refactoring suggestion.";
                 }
 
