@@ -3,8 +3,8 @@
     <name>AntiCopyPaster</name>
     <vendor>JetBrains</vendor>
 
-    <idea-version since-build="261.0"/>
-<!--    compatible with IntelliJ IDEA 2026.1 and later-->
+    <idea-version since-build="241.0"/>
+<!--    compatible with IntelliJ IDEA 2024.1 and later-->
 
     <description><![CDATA[
     Tracks the copying and pasting actions and suggests extracting duplicates into a new method. Based on imbalanced-pruned experiment.
