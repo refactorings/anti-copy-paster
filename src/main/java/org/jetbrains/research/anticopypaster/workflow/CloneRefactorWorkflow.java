@@ -2802,7 +2802,7 @@ Revise the Extract Method refactoring according to the user's instructions. Pres
             if (addedKeys.isEmpty()) return names;
 
             java.util.LinkedHashSet<String> targetKeys = collectTargetMethodUsefulnessKeys(snapshots);
-            java.util.LinkedHashSet<String> helperKeys = collectRelevantHelperMethodKeys(afterMethods, targetKeys, addedKeys);
+            java.util.LinkedHashSet<String> helperKeys = collectRelevantHelperMethodKeys(afterMethods, targetKeys, addedKeys, snapshots);
             if (helperKeys.isEmpty()) {
                 helperKeys.addAll(addedKeys);
             }
@@ -2984,7 +2984,7 @@ Revise the Extract Method refactoring according to the user's instructions. Pres
             java.util.LinkedHashSet<String> addedKeys = new java.util.LinkedHashSet<>(afterMethods.keySet());
             addedKeys.removeAll(beforeMethods.keySet());
 
-            java.util.LinkedHashSet<String> helperKeys = collectRelevantHelperMethodKeys(afterMethods, targetKeys, addedKeys);
+            java.util.LinkedHashSet<String> helperKeys = collectRelevantHelperMethodKeys(afterMethods, targetKeys, addedKeys, snapshots);
 
             StringBuilder sb = new StringBuilder();
             appendFocusedMethodSection(sb, "Target clone methods", targetKeys, afterMethods, snapshots, false);
@@ -3377,11 +3377,11 @@ Follow the required output format for the refactoring task.
 
         for (String key : keys) {
             if (key == null || key.isBlank()) continue;
-            PsiMethod method = afterMethods == null ? null : afterMethods.get(key);
+            PsiMethod method = WorkflowUsefulnessFeedbackSupport.findMethodByUsefulnessKey(afterMethods, snapshots, key);
             if (method == null) {
                 if (!helperSection) {
                     String displayName = findSnapshotDisplayName(snapshots, key);
-                    sb.append("// Missing in proposed source: ").append(displayName == null ? key : displayName).append("\n");
+                    sb.append("// Missing target method: ").append(displayName == null ? key : displayName).append("\n");
                 }
                 continue;
             }
@@ -3424,7 +3424,7 @@ Follow the required output format for the refactoring task.
             java.util.LinkedHashMap<String, PsiMethod> afterMethods = collectAllMethodsByUsefulnessKey(afterPsi);
             for (String key : targetKeys) {
                 if (key == null || key.isBlank()) continue;
-                if (afterMethods.containsKey(key)) continue;
+                if (WorkflowUsefulnessFeedbackSupport.findMethodByUsefulnessKey(afterMethods, snapshots, key) != null) continue;
                 String displayName = findSnapshotDisplayName(snapshots, key);
                 out.add((displayName == null || displayName.isBlank()) ? key : displayName);
             }
@@ -3435,7 +3435,8 @@ Follow the required output format for the refactoring task.
 
     private static java.util.LinkedHashSet<String> collectRelevantHelperMethodKeys(java.util.Map<String, PsiMethod> afterMethods,
                                                                                    java.util.Set<String> targetKeys,
-                                                                                   java.util.Set<String> addedKeys) {
+                                                                                   java.util.Set<String> addedKeys,
+                                                                                   java.util.List<CloneMethodSnapshot> snapshots) {
         java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
         if (afterMethods == null || afterMethods.isEmpty() || targetKeys == null || targetKeys.isEmpty()
                 || addedKeys == null || addedKeys.isEmpty()) {
@@ -3443,7 +3444,7 @@ Follow the required output format for the refactoring task.
         }
 
         for (String targetKey : targetKeys) {
-            PsiMethod targetMethod = afterMethods.get(targetKey);
+            PsiMethod targetMethod = WorkflowUsefulnessFeedbackSupport.findMethodByUsefulnessKey(afterMethods, snapshots, targetKey);
             if (targetMethod == null) continue;
             out.addAll(collectCalledAddedMethodKeys(targetMethod, addedKeys));
         }
