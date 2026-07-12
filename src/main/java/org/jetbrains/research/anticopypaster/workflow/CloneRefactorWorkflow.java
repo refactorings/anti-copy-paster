@@ -2659,8 +2659,10 @@ The fragment usefulness analyzer failed before compilation.%s
                 + "CLONE is checking usefulness, isolated compilation, and tests.\n"
                 + "The Apply button will stay disabled until verification passes.";
 
-        String beforeDiffText = buildFocusedFeedbackRefactoredCode(project, fileName, before, before, snapshots);
-        String afterDiffText = buildFocusedFeedbackRefactoredCode(project, fileName, before, after, snapshots);
+        String beforeDiffText = WorkflowUsefulnessFeedbackSupport.buildFocusedDiffViewerCode(
+                project, fileName, before, before, snapshots);
+        String afterDiffText = WorkflowUsefulnessFeedbackSupport.buildFocusedDiffViewerCode(
+                project, fileName, before, after, snapshots);
         if (beforeDiffText == null || beforeDiffText.isBlank()) beforeDiffText = before == null ? "" : before;
         if (afterDiffText == null || afterDiffText.isBlank()) afterDiffText = after == null ? "" : after;
 
@@ -2964,37 +2966,8 @@ Revise the Extract Method refactoring according to the user's instructions. Pres
                                                              String beforeSource,
                                                              String afterSource,
                                                              java.util.List<CloneMethodSnapshot> snapshots) {
-        String fullSource = afterSource == null ? "" : afterSource;
-        try {
-            if (project == null || project.isDisposed() || fullSource.isBlank()) return fullSource;
-
-            PsiJavaFile afterPsi = parseInMemoryJavaFile(project, fileName, fullSource);
-            if (afterPsi == null) return fullSource;
-            PsiJavaFile beforePsi = parseInMemoryJavaFile(project, fileName, beforeSource == null ? "" : beforeSource);
-
-            java.util.LinkedHashMap<String, PsiMethod> afterMethods = collectAllMethodsByUsefulnessKey(afterPsi);
-            if (afterMethods.isEmpty()) return fullSource;
-
-            java.util.LinkedHashMap<String, PsiMethod> beforeMethods =
-                    beforePsi == null ? new java.util.LinkedHashMap<>() : collectAllMethodsByUsefulnessKey(beforePsi);
-
-            java.util.LinkedHashSet<String> targetKeys = collectTargetMethodUsefulnessKeys(snapshots);
-            if (targetKeys.isEmpty()) return fullSource;
-
-            java.util.LinkedHashSet<String> addedKeys = new java.util.LinkedHashSet<>(afterMethods.keySet());
-            addedKeys.removeAll(beforeMethods.keySet());
-
-            java.util.LinkedHashSet<String> helperKeys = collectRelevantHelperMethodKeys(afterMethods, targetKeys, addedKeys, snapshots);
-
-            StringBuilder sb = new StringBuilder();
-            appendFocusedMethodSection(sb, "Target clone methods", targetKeys, afterMethods, snapshots, false);
-            appendFocusedMethodSection(sb, "New helper methods", helperKeys, afterMethods, snapshots, true);
-
-            String focused = sb.toString().trim();
-            return focused.isEmpty() ? fullSource : focused;
-        } catch (Throwable t) {
-            return fullSource;
-        }
+        return WorkflowUsefulnessFeedbackSupport.buildFocusedFeedbackRefactoredCode(
+                project, fileName, beforeSource, afterSource, snapshots);
     }
 
     private static String buildUsefulnessFeedbackPrompt(Project project,

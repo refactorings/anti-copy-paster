@@ -61,6 +61,18 @@ final class WorkflowUsefulnessFeedbackSupport {
         }
     }
 
+    static String buildFocusedDiffViewerCode(com.intellij.openapi.project.Project project,
+                                             String fileName,
+                                             String beforeSource,
+                                             String displayedSource,
+                                             java.util.List<WorkflowMethodSnapshotSupport.CloneMethodSnapshot> snapshots) {
+        String fullSource = displayedSource == null ? "" : displayedSource;
+        if (!findMissingTargetMethodDisplayNames(project, fileName, fullSource, snapshots).isEmpty()) {
+            return fullSource;
+        }
+        return buildFocusedFeedbackRefactoredCode(project, fileName, beforeSource, fullSource, snapshots);
+    }
+
     static String buildUsefulnessFeedbackPrompt(com.intellij.openapi.project.Project project,
                                                 String fileName,
                                                 String proposedSource,
