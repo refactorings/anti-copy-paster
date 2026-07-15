@@ -1040,7 +1040,7 @@ final class RefactoringSuggestionPanel {
 
             JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
             JButton helpButton = new JButton("");
-            helpButton.setIcon(Messages.getQuestionIcon());
+            helpButton.setIcon(IconUtil.scale(Messages.getQuestionIcon(), helpButton, 0.55f));
             helpButton.setToolTipText("Help and feedback");
             helpButton.addActionListener(e -> openHelp());
 
