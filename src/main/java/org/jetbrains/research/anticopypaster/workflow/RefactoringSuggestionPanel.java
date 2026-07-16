@@ -680,8 +680,8 @@ final class RefactoringSuggestionPanel {
 
                 if (verified) {
                     message = "AI Trust Score: " + overallScore + "%\n\n"
-                            + "Clone Detection: 100%\n"
-                            + "Refactoring Agent: 100%\n"
+                            + "Detection: 100%\n" //removed "Clone"
+                            + "Refactoring: 100%\n" //removed "Agent"
                             + "Refactoring Usefulness: 100%\n"
                             + "Compilation Result: 100%\n"
                             + "Test / Behavior Preservation: 100%\n\n"
@@ -716,7 +716,7 @@ final class RefactoringSuggestionPanel {
 
             stageRow.add(
                     createCompactTrustCard(
-                            "Clone Detection",
+                            "Detection", ////removed "Clone"
                             cloneDetectionScore,
                             verified,
                             failed
@@ -725,7 +725,7 @@ final class RefactoringSuggestionPanel {
 
             stageRow.add(
                     createCompactTrustCard(
-                            "Refactoring Agent",
+                            "Refactoring", //removed "Agent"
                             refactoringAgentScore,
                             verified,
                             failed
