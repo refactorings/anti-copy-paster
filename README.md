@@ -185,89 +185,87 @@ If the response takes longer than 30 seconds, consider using a smaller model or 
 
 ## CLONE UI Panel
 
-The UI focuses on providing developers with clearer explanations, stronger validation feedback, and greater control before applying any changes.
+> **CLONE** is the recommendation and review interface within AntiCopyPaster. It extends the existing duplicate-detection workflow with transparent validation and developer-controlled refactoring.
 
-### Overview
+![Annotated CLONE UI Panel](images/clone-ui-overview.png)
 
-The CLONE UI Panel appears after the plugin detects duplicated Java code and generates a possible Extract Method refactoring. The panel is designed to help the developer answer four main questions:
+*The CLONE panel helps developers review the explanation, diff preview, validation evidence, and available actions before applying a refactoring.*
 
-1. **What duplicated code was detected?**
-2. **Where is the duplicated code located?**
-3. **What refactoring is being suggested?**
-4. **How much should I trust this suggestion before applying it?**
+### Review Workflow
 
-To support this workflow, the UI includes several sections.
+The CLONE UI Panel appears after AntiCopyPaster detects duplicated Java code and generates a possible Extract Method refactoring. The panel is organized around the questions a developer needs to answer before changing the source code.
 
-### Explanation Section
+| Developer Question | Where to Look | What the Developer Can Do |
+|---|---|---|
+| What was detected? | Explanation and occurrence list | Inspect clone type, locations, code ranges, and rationale |
+| What will change? | Diff preview | Compare the original code with the extracted method and replacement calls |
+| What evidence is available? | Validation and provenance | Review detection, refactoring, usefulness, compilation, and test states |
+| Who decides? | Actions and occurrence controls | Include/exclude occurrences; edit, regenerate, apply, or cancel |
 
-The explanation section provides a clear summary of the detected clone and the proposed refactoring. It includes information such as:
+### Terminology
 
-- the detected clone type,
-- the original clone location,
-- the pasted code location,
-- the affected file, method names, and line ranges,
-- the suggested extracted method,
-- and a short explanation of why the refactoring is being recommended.
+| Term | Meaning |
+|---|---|
+| Clone | A duplicated or highly similar code fragment detected after copy/paste |
+| Occurrence | One specific location where duplicated code appears |
+| Pasted location | The location where the new copied code was inserted |
+| Original clone | The existing code that matches the pasted fragment |
+| Target method | The method or code region involved in the proposed refactoring |
+| Extracted method | The helper method generated to replace duplicated logic |
 
-This makes the suggestion easier to understand before the user reviews the actual code changes.
+### Multiple Clone Occurrences
 
-### Multiple Clone Support
+When more than one clone occurrence is detected, CLONE displays the occurrences separately instead of forcing a single all-or-nothing decision. The developer can inspect each occurrence, compare its location, and decide whether it should be included in the refactoring.
 
-The UI supports cases where more than one clone occurrence is detected. Instead of presenting all clone results as one unclear suggestion, CLONE can display each clone occurrence separately so the developer can inspect them individually.
+This is useful when several code blocks look similar but not all of them should be changed in the same way. For example, a developer may include two duplicate blocks that represent the same behavior while excluding another block that is intentionally separate.
 
-This allows users to:
+![Clone Occurrence Selection](images/clone-occurrence-selection.png)
 
-- review each clone occurrence,
-- compare clone locations,
-- include or exclude specific clones,
-- and make a more controlled decision about what should be refactored.
-
-This is useful in larger files or projects where some duplicated fragments may be appropriate to refactor while others may not.
+*The occurrence selection view lets the developer include, exclude, or inspect detected clone occurrences before continuing.*
 
 ### Diff Preview
 
-The panel includes a before-and-after diff preview that shows the exact change being proposed before it is applied. The developer can compare the original duplicated code with the suggested refactored version, including the extracted method and replacement call sites.
+The diff preview shows the proposed source-code change before it is applied. It compares the duplicated code with the proposed Extract Method refactoring, including the new helper method and the replacement call sites.
 
-This helps users verify that the proposed refactoring preserves the intended behavior and improves readability before modifying the source file.
+This helps the developer assess whether the intended behavior is preserved and whether the resulting code is easier to maintain before modifying the source file.
 
-### AI Trust and Validation Panel
+### Validation and Developer Control
 
-The UI includes an AI Trust and Validation section that summarizes evidence from the refactoring workflow. Instead of requiring the developer to blindly trust the AI's suggestion, the panel displays validation information tied to the tool's internal process.
+The AI Trust and Validation section summarizes evidence from the refactoring workflow. These signals do not guarantee correctness; they show whether the suggestion is supported by the available validation evidence under the configured validation policy.
 
-The trust information can include:
+| Validation Signal | What It Means | Apply Impact |
+|---|---|---|
+| Clone Detection | A duplicated code fragment was detected and matched to one or more occurrences | Required before a proposal can be reviewed |
+| Refactoring Output | A candidate Extract Method refactoring was generated | Required before a proposal can be reviewed |
+| Usefulness Check | The suggestion was evaluated for whether it is meaningful and worth applying | May gate Apply depending on configuration |
+| Compilation Result | The refactored project or file was checked for compilation errors | Usually gates Apply |
+| Test Results / Behavior Checks | Tests and any configured behavior-preservation checks were run or reported | May gate Apply depending on configuration |
 
-- clone detection status,
-- refactoring agent output,
-- usefulness checking,
-- compilation result,
-- and test or behavior preservation status.
+Apply is enabled only when the required validation steps pass under the configured validation policy. If a required step fails or remains incomplete, the suggestion is not yet ready to apply. The developer can then edit the proposal, regenerate it when retry attempts remain, inspect more details, or cancel without changing the source file.
 
-These validation signals help developers understand whether a suggestion is reliable, incomplete, still being checked, or unsafe to apply.
+### Developer Actions
+
+CLONE keeps the developer in control of the final decision.
+
+| Action | Purpose |
+|---|---|
+| Inspect | Jump to or highlight a detected clone occurrence in the editor |
+| Include / Exclude | Decide which clone occurrences should be part of the refactoring |
+| Edit | Provide feedback or revise the suggested change before applying it |
+| Regenerate | Request an updated proposal after edits or feedback, when retry attempts remain |
+| Apply | Write the validated refactoring to the source file |
+| Cancel | Close the suggestion without modifying the file |
+| Help | Open guidance about the panel and available actions |
 
 ### Details and Provenance
 
-For users who want more technical information, the panel includes an expandable details and provenance section. This section records additional information about the detected clone and the generated refactoring, such as selected code ranges, detection reasoning, target methods, and verification status.
+For users who want more technical information, CLONE includes an expandable details and provenance area. This section can record information such as selected code ranges, detection rationale, target methods, generated method names, validation status, and workflow evidence.
 
-Keeping this information expandable allows the main UI to remain clean while still providing transparency for advanced users.
+Keeping this information expandable allows the main panel to stay focused on the primary decision while still making audit details available when needed.
 
-### Developer Control
+### Layout and Usability
 
-The UI keeps the developer in control of the final decision. Depending on the validation state and available actions, the developer can:
-
-- apply the refactoring,
-- edit the suggested change,
-- reject or cancel the suggestion,
-- view more details,
-- or inspect individual clone occurrences.
-
-The Apply action can be disabled when the refactoring has not passed validation, reducing the chance of applying an unsafe or incomplete suggestion.
-
-### Layout and Usability 
-
-Several layout improvements were also added to make the panel easier to use inside IntelliJ IDEA. These include cleaner spacing, improved alignment, scrollable panels, clearer action placement, IntelliJ-style dropdown icons, and updated CLONE branding.
-
-Together, these changes make the plugin interface more readable, more consistent with IntelliJ, and easier to use during real development.
-
+The panel follows IntelliJ conventions, keeps the proposed code and validation evidence visible together, and uses scrollable sections so that detailed provenance remains available without obscuring the primary decision.
 ---
 
 ### Using Aider for Naming Suggestions
