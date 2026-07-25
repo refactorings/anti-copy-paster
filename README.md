@@ -187,7 +187,7 @@ If the response takes longer than 30 seconds, consider using a smaller model or 
 
 > **CLONE** is the recommendation and review interface within AntiCopyPaster. It extends the existing duplicate-detection workflow with transparent validation and developer-controlled refactoring.
 
-![Annotated CLONE UI Panel](images/clone-ui-overview.png)
+![Full CLONE Panel](images/full-clone-panel.png)
 
 *The CLONE panel helps developers review the explanation, diff preview, validation evidence, and available actions before applying a refactoring.*
 
@@ -219,9 +219,9 @@ When more than one clone occurrence is detected, CLONE displays the occurrences 
 
 This is useful when several code blocks look similar but not all of them should be changed in the same way. For example, a developer may include two duplicate blocks that represent the same behavior while excluding another block that is intentionally separate.
 
-![Clone Occurrence Selection](images/clone-occurrence-selection.png)
+![Clone Occurrence Dialog](images/clone-occurrence-dialog.png)
 
-*The occurrence selection view lets the developer include, exclude, or inspect detected clone occurrences before continuing.*
+*The occurrence dialog lets the developer include, exclude, or inspect detected clone occurrences before continuing.*
 
 ### Diff Preview
 
@@ -229,9 +229,17 @@ The diff preview shows the proposed source-code change before it is applied. It 
 
 This helps the developer assess whether the intended behavior is preserved and whether the resulting code is easier to maintain before modifying the source file.
 
+![Diff Preview](images/diff-preview.png)
+
+*The diff preview shows the original duplicated code and the proposed Extract Method refactoring.*
+
 ### Validation and Developer Control
 
 The AI Trust and Validation section summarizes evidence from the refactoring workflow. These signals do not guarantee correctness; they show whether the suggestion is supported by the available validation evidence under the configured validation policy.
+
+![AI Trust Validation](images/ai-trust-validation.png)
+
+*The validation area shows evidence from clone detection, refactoring, usefulness, compilation, and tests.*
 
 | Validation Signal | What It Means | Apply Impact |
 |---|---|---|
@@ -266,6 +274,7 @@ Keeping this information expandable allows the main panel to stay focused on the
 ### Layout and Usability
 
 The panel follows IntelliJ conventions, keeps the proposed code and validation evidence visible together, and uses scrollable sections so that detailed provenance remains available without obscuring the primary decision.
+
 ---
 
 ### Using Aider for Naming Suggestions
