@@ -353,7 +353,7 @@ final class RefactoringSuggestionPanel {
             revalidate();
             repaint();
         }
-
+        
         private void showSuggestion(RefactoringSuggestionDialog.SuggestionInfo info,
                                     Consumer<RefactoringSuggestionDialog.Decision> onDecision,
                                     boolean decisionEnabled,
@@ -471,10 +471,19 @@ final class RefactoringSuggestionPanel {
                 panel.add(compactDescriptionArea(info.usefulnessExplanation));
             }
 
-            panel.add(Box.createVerticalStrut(4));
             JLabel diffTitle = new JLabel("Diff: " + (info.diffTitle.isBlank() ? "Extract Method" : info.diffTitle));
             diffTitle.setFont(diffTitle.getFont().deriveFont(Font.BOLD));
-            panel.add(diffTitle);
+            //diffTitle.setBorder(BorderFactory.createLineBorder(Color.RED));//new
+            //panel.add(diffTitle);
+
+
+            panel.add(Box.createVerticalStrut(4));
+            JPanel testerPanel = new JPanel(new BorderLayout());
+            testerPanel.add(diffTitle, BorderLayout.WEST);
+            //testerPanel.setBorder(BorderFactory.createLineBorder(Color.RED));
+            panel.add(testerPanel);
+
+
             panel.add(Box.createVerticalStrut(3));
 
             return panel;
