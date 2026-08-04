@@ -1,0 +1,52 @@
+[LOG] writing to .anticopypaster/logs for file=RefactoringSuggestionPanel.java, model=gemini-3-flash-preview
+
+[START] RefactoringSuggestionPanel.java
+
+[PASTE] snippet provided (chars=42): private static final String TOOL_WINDOW_ID
+
+[SETTINGS] maxAttempts=3, minimumCloneCount=2
+
+[LLM_SETTINGS] provider=Google, model=gemini-3-flash-preview, apiKey=AQ....bYg
+
+[START] RefactoringSuggestionPanel.java
+
+[STAGE] DETECTION STAGE
+
+[LLM_DETECTION] [Detection Panelist 1] request sent
+[LLM_DETECTION] [Detection Panelist 1] exception: RuntimeException: Gemini error 503: {
+  "error": {
+    "code": 503,
+    "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+    "status": "UNAVAILABLE"
+  }
+}
+[LLM_DETECTION] [Detection Panelist 2] request sent
+[LLM_DETECTION] [Detection Panelist 2] exception: RuntimeException: Gemini error 503: {
+  "error": {
+    "code": 503,
+    "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+    "status": "UNAVAILABLE"
+  }
+}
+[LLM_DETECTION] [Detection Panelist 3] request sent
+[LLM_DETECTION] [Detection Panelist 3] exception: RuntimeException: Gemini error 503: {
+  "error": {
+    "code": 503,
+    "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+    "status": "UNAVAILABLE"
+  }
+}
+[LLM_DETECTION] [Detection Curator] request sent
+[LLM_DETECTION] [Detection Curator] exception: RuntimeException: Gemini error 503: {
+  "error": {
+    "code": 503,
+    "message": "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+    "status": "UNAVAILABLE"
+  }
+}
+
+[DETECTION] no clones from LLM; trying PSI fallback (same-file)
+[DETECTION] PSI fallback candidates=0
+[DETECTION] no clones (after PSI fallback)
+
+[STAGE] ————————————

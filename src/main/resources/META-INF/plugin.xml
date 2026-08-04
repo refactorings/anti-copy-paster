@@ -25,6 +25,10 @@
                 id="Extract Method suggestion"
                 displayType="TOOL_WINDOW"
                 isLogByDefault="true"/>
+        <toolWindow
+                id="AntiCopyPaster"
+                anchor="right"
+                factoryClass="org.jetbrains.research.anticopypaster.workflow.RefactoringSuggestionToolWindowFactory"/>
         <projectConfigurable
                 parentId="tools"
                 instance="org.jetbrains.research.anticopypaster.config.ProjectSettingsConfigurable"

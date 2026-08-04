@@ -37,4 +37,18 @@ class AntiCopyPasterUsageStatisticsTest {
         assertEquals(3, state.pasteCount);
         assertEquals(2, state.notificationCount);
     }
+
+    @Test
+    void refactoringPanelCountersTrackEditAndHelpActions() {
+        AntiCopyPasterUsageStatistics statistics = new AntiCopyPasterUsageStatistics();
+
+        statistics.refactoringEdited();
+        statistics.refactoringHelpOpened();
+        statistics.refactoringHelpOpened();
+
+        AntiCopyPasterUsageStatistics.PluginState state = statistics.getState();
+        assertNotNull(state);
+        assertEquals(1, state.getEditCount());
+        assertEquals(2, state.getHelpCount());
+    }
 }

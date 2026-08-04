@@ -183,6 +183,100 @@ If the response takes longer than 30 seconds, consider using a smaller model or 
 
 ---
 
+## CLONE UI Panel
+
+> **CLONE** is the recommendation and review interface within AntiCopyPaster. It extends the existing duplicate-detection workflow with transparent validation and developer-controlled refactoring.
+
+![Full CLONE Panel](images/full-clone-panel.png)
+
+*The CLONE panel helps developers review the explanation, diff preview, validation evidence, and available actions before applying a refactoring.*
+
+### Review Workflow
+
+The CLONE UI Panel appears after AntiCopyPaster detects duplicated Java code and generates a possible Extract Method refactoring. The panel is organized around the questions a developer needs to answer before changing the source code.
+
+| Developer Question | Where to Look | What the Developer Can Do |
+|---|---|---|
+| What was detected? | Explanation and occurrence list | Inspect clone type, locations, code ranges, and rationale |
+| What will change? | Diff preview | Compare the original code with the extracted method and replacement calls |
+| What evidence is available? | Validation and provenance | Review detection, refactoring, usefulness, compilation, and test states |
+| Who decides? | Actions and occurrence controls | Include/exclude occurrences; edit, regenerate, apply, or cancel |
+
+### Terminology
+
+| Term | Meaning |
+|---|---|
+| Clone | A duplicated or highly similar code fragment detected after copy/paste |
+| Occurrence | One specific location where duplicated code appears |
+| Pasted location | The location where the new copied code was inserted |
+| Original clone | The existing code that matches the pasted fragment |
+| Target method | The method or code region involved in the proposed refactoring |
+| Extracted method | The helper method generated to replace duplicated logic |
+
+### Multiple Clone Occurrences
+
+When more than one clone occurrence is detected, CLONE displays the occurrences separately instead of forcing a single all-or-nothing decision. The developer can inspect each occurrence, compare its location, and decide whether it should be included in the refactoring.
+
+This is useful when several code blocks look similar but not all of them should be changed in the same way. For example, a developer may include two duplicate blocks that represent the same behavior while excluding another block that is intentionally separate.
+
+![Clone Occurrence Dialog](images/clone-occurrence-dialog.png)
+
+*The occurrence dialog lets the developer include, exclude, or inspect detected clone occurrences before continuing.*
+
+### Diff Preview
+
+The diff preview shows the proposed source-code change before it is applied. It compares the duplicated code with the proposed Extract Method refactoring, including the new helper method and the replacement call sites.
+
+This helps the developer assess whether the intended behavior is preserved and whether the resulting code is easier to maintain before modifying the source file.
+
+![Diff Preview](images/diff-preview.png)
+
+*The diff preview shows the original duplicated code and the proposed Extract Method refactoring.*
+
+### Validation and Developer Control
+
+The AI Trust and Validation section summarizes evidence from the refactoring workflow. These signals do not guarantee correctness; they show whether the suggestion is supported by the available validation evidence under the configured validation policy.
+
+![AI Trust Validation](images/ai-trust-validation.png)
+
+*The validation area shows evidence from clone detection, refactoring, usefulness, compilation, and tests.*
+
+| Validation Signal | What It Means | Apply Impact |
+|---|---|---|
+| Clone Detection | A duplicated code fragment was detected and matched to one or more occurrences | Required before a proposal can be reviewed |
+| Refactoring Output | A candidate Extract Method refactoring was generated | Required before a proposal can be reviewed |
+| Usefulness Check | The suggestion was evaluated for whether it is meaningful and worth applying | May gate Apply depending on configuration |
+| Compilation Result | The refactored project or file was checked for compilation errors | Usually gates Apply |
+| Test Results / Behavior Checks | Tests and any configured behavior-preservation checks were run or reported | May gate Apply depending on configuration |
+
+Apply is enabled only when the required validation steps pass under the configured validation policy. If a required step fails or remains incomplete, the suggestion is not yet ready to apply. The developer can then edit the proposal, regenerate it when retry attempts remain, inspect more details, or cancel without changing the source file.
+
+### Developer Actions
+
+CLONE keeps the developer in control of the final decision.
+
+| Action | Purpose |
+|---|---|
+| Inspect | Jump to or highlight a detected clone occurrence in the editor |
+| Include / Exclude | Decide which clone occurrences should be part of the refactoring |
+| Edit | Provide feedback or revise the suggested change before applying it |
+| Regenerate | Request an updated proposal after edits or feedback, when retry attempts remain |
+| Apply | Write the validated refactoring to the source file |
+| Cancel | Close the suggestion without modifying the file |
+| Help | Open guidance about the panel and available actions |
+
+### Details and Provenance
+
+For users who want more technical information, CLONE includes an expandable details and provenance area. This section can record information such as selected code ranges, detection rationale, target methods, generated method names, validation status, and workflow evidence.
+
+Keeping this information expandable allows the main panel to stay focused on the primary decision while still making audit details available when needed.
+
+### Layout and Usability
+
+The panel follows IntelliJ conventions, keeps the proposed code and validation evidence visible together, and uses scrollable sections so that detailed provenance remains available without obscuring the primary decision.
+
+---
+
 ### Using Aider for Naming Suggestions
 
 1. In **AntiCopyPaster Settings**, set **Aider** as the *Name recommendation model*.

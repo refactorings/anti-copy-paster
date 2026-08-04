@@ -48,7 +48,7 @@ final class WorkflowUsefulnessFeedbackSupport {
             java.util.LinkedHashSet<String> addedKeys = new java.util.LinkedHashSet<>(afterMethods.keySet());
             addedKeys.removeAll(beforeMethods.keySet());
 
-            java.util.LinkedHashSet<String> helperKeys = collectRelevantHelperMethodKeys(afterMethods, targetKeys, addedKeys);
+            java.util.LinkedHashSet<String> helperKeys = collectRelevantHelperMethodKeys(afterMethods, targetKeys, addedKeys, snapshots);
 
             StringBuilder sb = new StringBuilder();
             appendFocusedMethodSection(sb, "Target clone methods", targetKeys, afterMethods, snapshots, false);
@@ -59,6 +59,18 @@ final class WorkflowUsefulnessFeedbackSupport {
         } catch (Throwable t) {
             return fullSource;
         }
+    }
+
+    static String buildFocusedDiffViewerCode(com.intellij.openapi.project.Project project,
+                                             String fileName,
+                                             String beforeSource,
+                                             String displayedSource,
+                                             java.util.List<WorkflowMethodSnapshotSupport.CloneMethodSnapshot> snapshots) {
+        String fullSource = displayedSource == null ? "" : displayedSource;
+        if (!findMissingTargetMethodDisplayNames(project, fileName, fullSource, snapshots).isEmpty()) {
+            return fullSource;
+        }
+        return buildFocusedFeedbackRefactoredCode(project, fileName, beforeSource, fullSource, snapshots);
     }
 
     static String buildUsefulnessFeedbackPrompt(com.intellij.openapi.project.Project project,
@@ -295,11 +307,11 @@ Follow the required output format for the refactoring task.
 
         for (String key : keys) {
             if (key == null || key.isBlank()) continue;
-            PsiMethod method = afterMethods == null ? null : afterMethods.get(key);
+            PsiMethod method = findMethodByUsefulnessKey(afterMethods, snapshots, key);
             if (method == null) {
                 if (!helperSection) {
                     String displayName = findSnapshotDisplayName(snapshots, key);
-                    sb.append("// Missing in proposed source: ").append(displayName == null ? key : displayName).append("\n");
+                    sb.append("// Missing target method: ").append(displayName == null ? key : displayName).append("\n");
                 }
                 continue;
             }
@@ -345,7 +357,7 @@ Follow the required output format for the refactoring task.
             java.util.LinkedHashMap<String, PsiMethod> afterMethods = collectAllMethodsByUsefulnessKey(afterPsi);
             for (String key : targetKeys) {
                 if (key == null || key.isBlank()) continue;
-                if (afterMethods.containsKey(key)) continue;
+                if (findMethodByUsefulnessKey(afterMethods, snapshots, key) != null) continue;
                 String displayName = findSnapshotDisplayName(snapshots, key);
                 out.add((displayName == null || displayName.isBlank()) ? key : displayName);
             }
@@ -357,7 +369,8 @@ Follow the required output format for the refactoring task.
     static java.util.LinkedHashSet<String> collectRelevantHelperMethodKeys(
             Map<String, PsiMethod> afterMethods,
             java.util.Set<String> targetKeys,
-            java.util.Set<String> addedKeys) {
+            java.util.Set<String> addedKeys,
+            java.util.List<WorkflowMethodSnapshotSupport.CloneMethodSnapshot> snapshots) {
         java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
         if (afterMethods == null || afterMethods.isEmpty() || targetKeys == null || targetKeys.isEmpty()
                 || addedKeys == null || addedKeys.isEmpty()) {
@@ -365,7 +378,7 @@ Follow the required output format for the refactoring task.
         }
 
         for (String targetKey : targetKeys) {
-            PsiMethod targetMethod = afterMethods.get(targetKey);
+            PsiMethod targetMethod = findMethodByUsefulnessKey(afterMethods, snapshots, targetKey);
             if (targetMethod == null) continue;
             out.addAll(collectCalledAddedMethodKeys(targetMethod, addedKeys));
         }
@@ -383,6 +396,115 @@ Follow the required output format for the refactoring task.
             }
         }
         return out;
+    }
+
+    static PsiMethod findMethodByUsefulnessKey(Map<String, PsiMethod> methods,
+                                               java.util.List<WorkflowMethodSnapshotSupport.CloneMethodSnapshot> snapshots,
+                                               String targetKey) {
+        if (methods == null || methods.isEmpty() || targetKey == null || targetKey.isBlank()) return null;
+
+        PsiMethod exact = methods.get(targetKey);
+        if (exact != null) return exact;
+
+        WorkflowMethodSnapshotSupport.CloneMethodSnapshot snapshot = findSnapshot(snapshots, targetKey);
+        String expectedClass = snapshot == null ? extractClassNameFromUsefulnessKey(targetKey) : snapshot.className;
+        String expectedMethod = snapshot == null ? extractMethodNameFromUsefulnessKey(targetKey) : snapshot.methodName;
+        int expectedParameterCount = snapshot == null
+                ? extractParameterCountFromUsefulnessKey(targetKey)
+                : snapshot.parameterCount;
+        String signatureKey = snapshot != null && snapshot.methodKey != null && !snapshot.methodKey.isBlank()
+                ? snapshot.methodKey
+                : targetKey;
+        java.util.List<String> expectedParameterTypes = extractParameterTypesFromUsefulnessKey(signatureKey);
+
+        PsiMethod byParameterTypes = findUniqueMethodByLooseSignature(
+                methods.values(),
+                expectedClass,
+                expectedMethod,
+                expectedParameterCount,
+                expectedParameterTypes,
+                true
+        );
+        if (byParameterTypes != null) return byParameterTypes;
+
+        if (expectedParameterTypes != null && !expectedParameterTypes.isEmpty()) return null;
+
+        return findUniqueMethodByLooseSignature(
+                methods.values(),
+                expectedClass,
+                expectedMethod,
+                expectedParameterCount,
+                expectedParameterTypes,
+                false
+        );
+    }
+
+    static WorkflowMethodSnapshotSupport.CloneMethodSnapshot findSnapshot(
+            java.util.List<WorkflowMethodSnapshotSupport.CloneMethodSnapshot> snapshots,
+            String targetKey) {
+        if (snapshots == null || snapshots.isEmpty() || targetKey == null || targetKey.isBlank()) return null;
+        for (WorkflowMethodSnapshotSupport.CloneMethodSnapshot snapshot : snapshots) {
+            if (snapshot == null) continue;
+            if (targetKey.equals(snapshot.methodKey)) return snapshot;
+            String fallbackKey = WorkflowMethodSnapshotSupport.buildMethodTrackingKey(
+                    snapshot.className,
+                    snapshot.methodName,
+                    snapshot.parameterCount
+            );
+            if (targetKey.equals(fallbackKey)) return snapshot;
+        }
+        return null;
+    }
+
+    static PsiMethod findUniqueMethodByLooseSignature(java.util.Collection<PsiMethod> methods,
+                                                      String expectedClass,
+                                                      String expectedMethod,
+                                                      int expectedParameterCount,
+                                                      java.util.List<String> expectedParameterTypes,
+                                                      boolean requireParameterTypes) {
+        if (methods == null || methods.isEmpty() || expectedMethod == null || expectedMethod.isBlank()) return null;
+        if (requireParameterTypes && (expectedParameterTypes == null || expectedParameterTypes.isEmpty())) return null;
+
+        PsiMethod match = null;
+        int matches = 0;
+        for (PsiMethod method : methods) {
+            if (method == null) continue;
+            if (!expectedMethod.equals(method.getName())) continue;
+            int parameterCount = method.getParameterList() == null ? 0 : method.getParameterList().getParametersCount();
+            if (expectedParameterCount >= 0 && expectedParameterCount != parameterCount) continue;
+            if (!methodClassNameMatches(expectedClass, method)) continue;
+            if (requireParameterTypes && !methodParameterTypesMatch(expectedParameterTypes, method)) continue;
+
+            match = method;
+            matches++;
+            if (matches > 1) return null;
+        }
+        return match;
+    }
+
+    static boolean methodClassNameMatches(String expectedClass, PsiMethod method) {
+        if (expectedClass == null || expectedClass.isBlank()) return true;
+        String actualClass = WorkflowMethodSnapshotSupport.getMethodClassName(method);
+        if (actualClass == null || actualClass.isBlank()) return false;
+        if (expectedClass.equals(actualClass)) return true;
+        return simpleClassName(expectedClass).equals(simpleClassName(actualClass));
+    }
+
+    static boolean methodParameterTypesMatch(java.util.List<String> expectedParameterTypes, PsiMethod method) {
+        if (expectedParameterTypes == null || method == null || method.getParameterList() == null) return false;
+        com.intellij.psi.PsiParameter[] parameters = method.getParameterList().getParameters();
+        if (expectedParameterTypes.size() != parameters.length) return false;
+        for (int i = 0; i < parameters.length; i++) {
+            com.intellij.psi.PsiType type = parameters[i] == null ? null : parameters[i].getType();
+            String actualCanonical = type == null ? "" : type.getCanonicalText();
+            String actualPresentable = type == null ? "" : type.getPresentableText();
+            String expected = expectedParameterTypes.get(i);
+            if (!typeNamesLooselyMatch(expected, actualCanonical)
+                    && !typeNamesLooselyMatch(expected, actualPresentable)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     static java.util.LinkedHashSet<String> collectCalledAddedMethodKeys(PsiMethod method,
@@ -499,6 +621,53 @@ Follow the required output format for the refactoring task.
             else if (ch == ',' && genericDepth == 0) count++;
         }
         return count;
+    }
+
+    static java.util.List<String> extractParameterTypesFromUsefulnessKey(String usefulnessKey) {
+        if (usefulnessKey == null || usefulnessKey.isBlank()) return java.util.List.of();
+        int start = usefulnessKey.indexOf('(');
+        int end = usefulnessKey.lastIndexOf(')');
+        if (start < 0 || end < start) return java.util.List.of();
+        String params = usefulnessKey.substring(start + 1, end).trim();
+        if (params.isEmpty()) return java.util.List.of();
+
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        int genericDepth = 0;
+        int tokenStart = 0;
+        for (int i = 0; i < params.length(); i++) {
+            char ch = params.charAt(i);
+            if (ch == '<') genericDepth++;
+            else if (ch == '>' && genericDepth > 0) genericDepth--;
+            else if (ch == ',' && genericDepth == 0) {
+                out.add(params.substring(tokenStart, i).trim());
+                tokenStart = i + 1;
+            }
+        }
+        out.add(params.substring(tokenStart).trim());
+        return out;
+    }
+
+    static boolean typeNamesLooselyMatch(String expected, String actual) {
+        String left = normalizeTypeNameForLooseMatch(expected);
+        String right = normalizeTypeNameForLooseMatch(actual);
+        return !left.isBlank() && left.equals(right);
+    }
+
+    static String normalizeTypeNameForLooseMatch(String typeName) {
+        if (typeName == null || typeName.isBlank()) return "";
+        String normalized = typeName.replaceAll("\\s+", "");
+        normalized = normalized.replace("...", "[]");
+        normalized = normalized.replaceAll("\\b(?:[a-z_]\\w*\\.)+([A-Z_]\\w*)", "$1");
+        return normalized;
+    }
+
+    static String simpleClassName(String className) {
+        if (className == null || className.isBlank()) return "";
+        String normalized = className.trim();
+        int dot = normalized.lastIndexOf('.');
+        int dollar = normalized.lastIndexOf('$');
+        int idx = Math.max(dot, dollar);
+        return idx >= 0 && idx + 1 < normalized.length() ? normalized.substring(idx + 1) : normalized;
     }
 
     static boolean looksLikeValidExtractMethodDelegation(String beforeSource, String afterSource,
